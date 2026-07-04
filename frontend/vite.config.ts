@@ -1,33 +1,33 @@
-import path from "node:path";
-import { defineConfig } from "vite";
+import path from "node:path"
+import { defineConfig } from "vite"
 
-export const COMFY_APP_IMPORT = 'import { app } from "/scripts/app.js";';
-export const FRONTEND_ROOT = __dirname;
-export const FRONTEND_ENTRY = path.resolve(FRONTEND_ROOT, "src/index.ts");
+export const COMFY_APP_IMPORT = 'import { app } from "/scripts/app.js";'
+export const FRONTEND_ROOT = __dirname
+export const FRONTEND_ENTRY = path.resolve(FRONTEND_ROOT, "src/index.ts")
 
 export function prependComfyAppImport(code: string): string {
-  return `${COMFY_APP_IMPORT}\n${code}`;
+  return `${COMFY_APP_IMPORT}\n${code}`
 }
 
 function stripViteModuleSuffix(id: string): string {
-  return id.split("?", 1)[0];
+  return id.split("?", 1)[0]
 }
 
 export function shouldInjectComfyAppImport(id: string): boolean {
-  return path.normalize(stripViteModuleSuffix(id)) === path.normalize(FRONTEND_ENTRY);
+  return path.normalize(stripViteModuleSuffix(id)) === path.normalize(FRONTEND_ENTRY)
 }
 
 export function createComfyAppImportPlugin() {
   return {
-  name: "insert-comfyui-custom-import",
-  transform(code: string, id: string) {
-    if (!shouldInjectComfyAppImport(id)) {
-      return undefined;
-    }
+    name: "insert-comfyui-custom-import",
+    transform(code: string, id: string) {
+      if (!shouldInjectComfyAppImport(id)) {
+        return undefined
+      }
 
-    return prependComfyAppImport(code);
-  },
-  };
+      return prependComfyAppImport(code)
+    },
+  }
 }
 
 export default defineConfig({
@@ -48,4 +48,4 @@ export default defineConfig({
       },
     },
   },
-});
+})

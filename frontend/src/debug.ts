@@ -1,12 +1,12 @@
-import { LOGGING_PREFIX, SETTINGS_IDS } from "./constants";
+import { LOGGING_PREFIX, SETTINGS_IDS } from "./constants.ts"
 
-export type DebugSettingReader = (id: string) => boolean;
+export type DebugSettingReader = (id: string) => boolean
 
 export function isDebugEnabled(reader: DebugSettingReader | undefined): boolean {
   try {
-    return reader?.(SETTINGS_IDS.DEBUG_LOGGING) ?? false;
+    return reader?.(SETTINGS_IDS.DEBUG_LOGGING) ?? false
   } catch {
-    return false;
+    return false
   }
 }
 
@@ -16,6 +16,6 @@ export function debugLog(
   ...args: readonly unknown[]
 ): void {
   if (isDebugEnabled(reader)) {
-    console.log(`${LOGGING_PREFIX} ${message}`, ...args);
+    console.log(`${LOGGING_PREFIX} ${message}`, ...args)
   }
 }

@@ -1,6 +1,6 @@
 [project]
-name = "comfyui-custom-node"
-description = "A ComfyUI custom node"
+name = "comfyui-manager-extension"
+description = "A ComfyUI custom node for handling ComfyUI-Manager."
 version = "1.0.0"
 requires-python = ">=3.12"
 readme = "README.md"
@@ -13,12 +13,12 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/your-username/comfyui-custom-node"
+Repository = "https://github.com/craftingmod/comfyui-manager-extension"
 
 [tool.comfy]
-PublisherId = "your-username"
-DisplayName = "My Custom Node"
-Icon = "https://raw.githubusercontent.com/your-username/comfyui-custom-node/main/assets/icon.svg"
+PublisherId = "craftingmod"
+DisplayName = "Manager Extension"
+Icon = "https://raw.githubusercontent.com/craftingmod/comfyui-manager-extension/main/assets/icon.svg"
 requires-comfyui = ">=0.3.0"
 includes = ['dist']
 

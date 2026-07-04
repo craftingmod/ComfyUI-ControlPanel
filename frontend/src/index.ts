@@ -1,11 +1,11 @@
-import type { ComfyApp } from "@comfyorg/comfyui-frontend-types";
-import { SETTINGS_IDS } from "./constants";
+import type { ComfyApp } from "@comfyorg/comfyui-frontend-types"
+import { SETTINGS_IDS } from "./constants.ts"
 
 declare global {
-  const app: ComfyApp;
+  const app: ComfyApp
 
   interface Window {
-    app: ComfyApp;
+    app: ComfyApp
   }
 }
 
@@ -16,13 +16,13 @@ app.registerExtension({
       id: SETTINGS_IDS.VERSION,
       name: "Version 1.0.0",
       type: () => {
-        const spanEl = document.createElement("span");
+        const spanEl = document.createElement("span")
         spanEl.insertAdjacentHTML(
           "beforeend",
           `<a href="https://github.com/your-username/comfyui-custom-node" target="_blank" rel="noopener noreferrer" style="padding-right: 12px;">Homepage</a>`,
-        );
+        )
 
-        return spanEl;
+        return spanEl
       },
       defaultValue: undefined,
     },
@@ -34,4 +34,4 @@ app.registerExtension({
       defaultValue: false,
     },
   ],
-});
+})
