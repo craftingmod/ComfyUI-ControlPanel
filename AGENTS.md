@@ -10,3 +10,27 @@ Single publishable ComfyUI custom node pack.
 
 For testing details, see `docs/TESTING.md`.
 For ComfyUI API changes, verify current official docs before changing architecture or advanced frontend hooks.
+
+## About CSS
+ComfyUI supports tailwindcss so tailwindcss style is preferred.
+
+## Useful Commands
+
+1. Check type in typescript
+```sh
+pnpm run typecheck
+```
+
+2. Lint frontend code
+```sh
+pnpm run eslint
+```
+ * Lint with fix
+ ```sh
+pnpm run eslint:fix
+ ```
+
+3. Build frontend
+```sh
+pnpm run build
+```

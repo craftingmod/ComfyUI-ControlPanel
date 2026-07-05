@@ -28,8 +28,8 @@
   "license": "MIT",
   "packageManager": "pnpm@10.17.1",
   "dependencies": {
-    "typescript": "^5.9.3",
-    "vite": "^7.1.12"
+    "vite": "^7.1.12",
+    "typescript": "7.0.1-rc"
   },
   "devDependencies": {
     "@comfyorg/comfyui-frontend-types": "^1.32.1",

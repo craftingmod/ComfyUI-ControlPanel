@@ -22,3 +22,4 @@ docs/superpowers/
 .e2e/
 test-results/
 playwright-report/
+.pnpm-store

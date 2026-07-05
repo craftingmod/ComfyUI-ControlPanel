@@ -1,0 +1,138 @@
+.cme-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 0.55);
+}
+
+.cme-panel {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 32px));
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 8px;
+  background: #18191d;
+  color: #f1f3f7;
+  box-shadow: 0 18px 48px rgb(0 0 0 / 0.36);
+  font: 14px/1.45 system-ui, sans-serif;
+}
+
+.cme-modal {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.cme-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.cme-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.cme-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.cme-field {
+  display: grid;
+  gap: 6px;
+}
+
+.cme-field-wide {
+  grid-column: 1 / -1;
+}
+
+.cme-field label {
+  color: #c9ced8;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cme-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  border-radius: 6px;
+  background: #22242a;
+  color: #f1f3f7;
+}
+
+.cme-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.cme-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.cme-button {
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 6px;
+  background: #2d3436;
+  color: #f1f3f7;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.cme-button:hover {
+  background: #394245;
+}
+
+.cme-danger {
+  background: #6b1610;
+}
+
+.cme-danger:hover {
+  background: #842116;
+}
+
+.cme-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.cme-log {
+  min-height: 180px;
+  max-height: 300px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 6px;
+  background: #101115;
+  color: #d6dae2;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .cme-grid,
+  .cme-actions {
+    grid-template-columns: 1fr;
+  }
+}

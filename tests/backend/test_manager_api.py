@@ -45,3 +45,19 @@ def test_install_git_url_uses_git_clone_without_shell(monkeypatch, tmp_path):
         )
     ]
     assert result["destination"] == str(tmp_path / "comfyui-test")
+
+
+def test_restart_current_process_execs_original_python_command(monkeypatch):
+    calls = []
+    original_argv = ["python", "-s", "main.py", "--listen", "0.0.0.0"]
+
+    def fake_execv(path, args):
+        calls.append((path, args))
+
+    monkeypatch.setattr(manager_api.sys, "executable", "C:/Python/python.exe")
+    monkeypatch.setattr(manager_api.sys, "orig_argv", original_argv, raising=False)
+    monkeypatch.setattr(manager_api.os, "execv", fake_execv)
+
+    manager_api.restart_current_process()
+
+    assert calls == [("C:/Python/python.exe", original_argv)]

@@ -4,6 +4,7 @@ import asyncio
 import os
 import re
 import shutil
+import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -179,11 +180,18 @@ async def _with_operation_lock(operation):
 
 
 def schedule_restart(delay_seconds: float = 1.0) -> None:
-    async def delayed_exit() -> None:
+    async def delayed_restart() -> None:
         await asyncio.sleep(delay_seconds)
-        os._exit(0)
+        restart_current_process()
 
-    asyncio.create_task(delayed_exit())
+    asyncio.create_task(delayed_restart())
+
+
+def restart_current_process() -> None:
+    args = list(getattr(sys, "orig_argv", None) or [sys.executable, *sys.argv])
+    if not args:
+        args = [sys.executable]
+    os.execv(sys.executable, args)
 
 
 def register_routes() -> bool:
@@ -238,7 +246,7 @@ def register_routes() -> bool:
         if data.get("confirm") is not True:
             return _error_response("Restart requires confirm=true.", status=400)
         schedule_restart()
-        return _json_response({"ok": True, "message": "Restart requested. The ComfyUI process will exit shortly."})
+        return _json_response({"ok": True, "message": "Restart requested. The ComfyUI process will restart shortly."})
 
     _ROUTES_REGISTERED = True
     return True
