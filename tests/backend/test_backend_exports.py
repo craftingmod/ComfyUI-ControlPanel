@@ -26,4 +26,5 @@ def test_backend_package_exports_example_node_mappings():
         "ExampleNormalizeTextNode",
         "NODE_CLASS_MAPPINGS",
         "NODE_DISPLAY_NAME_MAPPINGS",
+        "register_routes",
     ]

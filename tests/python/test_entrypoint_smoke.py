@@ -42,6 +42,7 @@ def test_template_entrypoint_exports_expected_symbols_via_package_loader():
         "ExampleNormalizeTextNode",
         "NODE_CLASS_MAPPINGS",
         "NODE_DISPLAY_NAME_MAPPINGS",
+        "register_routes",
         "WEB_DIRECTORY",
     ]
 
