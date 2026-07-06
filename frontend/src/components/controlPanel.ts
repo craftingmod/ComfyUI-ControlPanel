@@ -166,16 +166,39 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     }
   }
 
+  async function fetchStatus(): Promise<JsonObject> {
+    debugLog(readBooleanSetting, "Status request", { route: API_ROUTES.STATUS })
+    return await api.fetchJson(API_ROUTES.STATUS)
+  }
+
   async function refreshPanelStatus(): Promise<void> {
-    const data = await runOperation("Status", API_ROUTES.STATUS, undefined, { toastOnSuccess: false })
-    const settings = asRecord(data?.settings)
-    const managerCacheEnabled = settings?.manager_repository_data_override === true
-    setManagerCacheControlsEnabled(
-      managerCacheEnabled,
-      managerCacheEnabled
-        ? "Replace Manager Repository Data is enabled."
-        : "Enable Replace Manager Repository Data in settings to use these actions.",
-    )
+    try {
+      const data = await fetchStatus()
+      const settings = asRecord(data.settings)
+      const managerCacheEnabled = settings?.manager_repository_data_override === true
+      setManagerCacheControlsEnabled(
+        managerCacheEnabled,
+        managerCacheEnabled
+          ? "Replace Manager Repository Data is enabled."
+          : "Enable Replace Manager Repository Data in settings to use these actions.",
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setManagerCacheControlsEnabled(false, "Status check failed. See the log for details.")
+      writeLog(`Status check failed: ${message}`)
+    }
+  }
+
+  async function showStatusJson(): Promise<void> {
+    writeLog("Status JSON started.")
+    try {
+      const data = await fetchStatus()
+      writeLog("Status JSON completed.", data)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      writeLog(`Status JSON failed: ${message}`)
+      toast("error", "ComfyUI-ControlPanel", message)
+    }
   }
 
   const gitInstallModal = createGitInstallModalController({
@@ -680,13 +703,21 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     const logWrap = document.createElement("div")
     logWrap.className = "cp-log-wrap"
 
+    const logActions = document.createElement("div")
+    logActions.className = "cp-log-actions"
+    const showStatusButton = createButton("Show Status", () => {
+      void showStatusJson()
+    }, "cp-button cp-log-action")
+    showStatusButton.setAttribute("aria-label", "Show status JSON")
+
     const clearLogButton = createButton("Clear Log", clearLog, "cp-button cp-log-clear")
     clearLogButton.setAttribute("aria-label", "Clear log")
+    logActions.append(showStatusButton, clearLogButton)
 
     logEl = document.createElement("pre")
     logEl.className = "cp-log"
     logEl.textContent = "Ready.\n"
-    logWrap.append(clearLogButton, logEl)
+    logWrap.append(logActions, logEl)
     scrollLogToBottom()
 
     panel.append(header, maintenanceActions, cacheActions, snapshotActions, actions, restartNoticeEl, logWrap)
