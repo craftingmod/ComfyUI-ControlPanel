@@ -15,13 +15,41 @@ This custom node pack is primarily maintained as a personal-use replacement for
 ## Features
 
 - Install a custom node directly from a Git URL.
-- Update ComfyUI and Git-installed custom nodes.
-- Restart ComfyUI from the control panel.
+- Update ComfyUI and Git-installed custom nodes without enabling the legacy Manager UI.
+- Sync custom node dependencies through `comfy node uv-sync`.
 - Replace the Manager repository cache with a safer and more efficient cache path.
+- Update or rebuild the Manager cache when Replace Manager Repository Data is enabled.
+- Save and restore Manager snapshots through the Comfy CLI.
+- Open the `custom_nodes` and Manager snapshots folders from the panel on local installs.
+- Show the parsed `comfy --json env` output in a table-style environment dialog.
+- Restart ComfyUI from the control panel.
+- Inspect the latest status JSON and clear the local operation log.
 
 ## Install
 
-Install the development dependencies before building or testing:
+### From a GitHub Release
+
+For normal use, install from the GitHub Release zip attached to a version tag,
+not from GitHub's automatic source archive. The release zip includes the built
+frontend file at `dist/index.js`, which ComfyUI needs at runtime.
+
+For example, for `v1.0.1`, download the attached release asset named like:
+
+```text
+ComfyUI-ControlPanel-v1.0.1.zip
+```
+
+Extract the `ComfyUI-ControlPanel/` folder from the zip into:
+
+```text
+ComfyUI/custom_nodes/
+```
+
+Then restart ComfyUI.
+
+### From Source
+
+Install the development dependencies before building or testing from source:
 
 ```bash
 pnpm install
@@ -46,6 +74,18 @@ pnpm test:e2e
 
 `pnpm test:e2e` builds the frontend, provisions a scoped ComfyUI install, and runs the Playwright smoke suite.
 
+The backend is split by responsibility:
+
+- `backend/manager_api.py` keeps the ComfyUI-facing compatibility facade.
+- `backend/manager_routes.py` registers HTTP routes.
+- `backend/manager_jobs.py` tracks background update jobs.
+- `backend/manager_process.py` runs external commands and opens local folders.
+- `backend/manager_cache.py` handles Manager and Comfy Registry cache data.
+- `backend/manager_settings.py` reads and writes ControlPanel/Manager settings.
+- `backend/manager_git.py` handles Git-based update flows.
+- `backend/manager_cli.py` formats Comfy CLI responses.
+- `backend/manager_runtime.py` handles runtime paths and restart helpers.
+
 ## Release
 
 Publishing to the Comfy Registry is intentionally not automated. Releases are
@@ -54,8 +94,8 @@ GitHub Release zip artifacts built from version tags.
 Create and push a version tag to publish an installable zip:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.1
+git push origin v1.0.1
 ```
 
 The release workflow:
@@ -75,6 +115,14 @@ it is created after `pnpm build` and includes the required `dist/index.js` file.
 
 The separate `CI` workflow is manual-only and can be run when an extra validation
 pass is useful before tagging.
+
+### v1.0.1 notes
+
+`v1.0.1` is expected to be released from a tag-built GitHub Release artifact.
+Compared with the early `v1.0.0` shape, the control panel now includes Manager
+cache rebuild/update actions, snapshot save/restore, local folder open actions,
+Comfy CLI environment display, status JSON inspection, and a modularized backend
+implementation.
 
 ## Docs
 

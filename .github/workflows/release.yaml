@@ -62,7 +62,7 @@ jobs:
         shell: bash
         run: |
           release_name="ComfyUI-ControlPanel-${GITHUB_REF_NAME:-manual}"
-          package_root="release/${release_name}"
+          package_root="release/ComfyUI-ControlPanel"
 
           mkdir -p "${package_root}"
           cp -R __init__.py backend dist assets pyproject.toml README.md LICENSE "${package_root}/"
