@@ -29,6 +29,8 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
   let restartNoticeEl: HTMLElement | undefined
   let managerCacheStatusEl: HTMLElement | undefined
   let managerCacheButtons: HTMLButtonElement[] = []
+  let snapshotRestoreModalEl: HTMLElement | undefined
+  let snapshotSelectEl: HTMLSelectElement | undefined
   let statusPollTimer: number | undefined
 
   function toast(severity: ToastSeverity, summary: string, detail: string): void {
@@ -216,12 +218,12 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     }, 1500)
   }
 
-  async function startUpdateJob(label: string, route: string): Promise<void> {
+  async function startUpdateJob(label: string, route: string, body: JsonObject = {}): Promise<void> {
     writeLog(`${label} queued.`)
-    debugLog(readBooleanSetting, `${label} request`, { route })
+    debugLog(readBooleanSetting, `${label} request`, { route, body })
 
     try {
-      const data = await api.fetchJson(route, {})
+      const data = await api.fetchJson(route, body)
       const job = data.job
       if (!isUpdateJob(job)) {
         throw new Error("Update job response was missing job details.")
@@ -233,6 +235,55 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       const message = error instanceof Error ? error.message : String(error)
       writeLog(`${label} failed to start: ${message}`)
       toast("error", "ComfyUI-ControlPanel", message)
+    }
+  }
+
+  function closeSnapshotRestoreModal(): void {
+    snapshotRestoreModalEl?.remove()
+  }
+
+  function snapshotNamesFromResponse(data: JsonObject): string[] {
+    const snapshots = Array.isArray(data.snapshots) ? data.snapshots : []
+    return snapshots
+      .map((snapshot) => asRecord(snapshot)?.name)
+      .filter((name): name is string => typeof name === "string" && name.length > 0)
+  }
+
+  async function openSnapshotRestoreModal(): Promise<void> {
+    writeLog("Snapshot List started.")
+    try {
+      const data = await api.fetchJson(API_ROUTES.SNAPSHOT_LIST)
+      const names = snapshotNamesFromResponse(data)
+      writeLog(`Snapshot List completed.\n${JSON.stringify(data, null, 2)}`)
+      if (names.length === 0) {
+        toast("warn", "ComfyUI-ControlPanel", "No snapshots were found.")
+        return
+      }
+      snapshotRestoreModalEl?.remove()
+      snapshotRestoreModalEl = createSnapshotRestoreModal(names)
+      document.body.append(snapshotRestoreModalEl)
+      snapshotSelectEl?.focus()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      writeLog(`Snapshot List failed: ${message}`)
+      toast("error", "ComfyUI-ControlPanel", message)
+    }
+  }
+
+  async function confirmRestoreSnapshot(): Promise<void> {
+    const target = snapshotSelectEl?.value
+    if (!target) {
+      toast("warn", "ComfyUI-ControlPanel", "Select a snapshot to restore.")
+      return
+    }
+
+    const confirmed = await app.extensionManager.dialog.confirm({
+      title: "Restore Snapshot",
+      message: `Restoring "${target}" may change installed custom nodes and dependencies. Continue?`,
+    })
+    if (confirmed) {
+      closeSnapshotRestoreModal()
+      await startUpdateJob("Restore Snapshot", API_ROUTES.SNAPSHOT_RESTORE, { target })
     }
   }
 
@@ -271,6 +322,64 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       writeLog(`${label} failed: ${message}`)
       toast("error", "ComfyUI-ControlPanel", message)
     }
+  }
+
+  function createSnapshotRestoreModal(snapshotNames: string[]): HTMLElement {
+    ensureStyles()
+
+    const backdrop = document.createElement("div")
+    backdrop.className = "cp-backdrop"
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) {
+        closeSnapshotRestoreModal()
+      }
+    })
+
+    const panel = document.createElement("section")
+    panel.className = "cp-panel cp-modal"
+    panel.setAttribute("role", "dialog")
+    panel.setAttribute("aria-modal", "true")
+    panel.setAttribute("aria-labelledby", "cp-snapshot-restore-title")
+
+    const header = document.createElement("div")
+    header.className = "cp-header"
+
+    const title = document.createElement("h2")
+    title.id = "cp-snapshot-restore-title"
+    title.className = "cp-title"
+    title.textContent = "Restore Snapshot"
+
+    const closeButton = createButton("×", closeSnapshotRestoreModal, "cp-button cp-close")
+    closeButton.setAttribute("aria-label", "Close")
+    header.append(title, closeButton)
+
+    const field = document.createElement("div")
+    field.className = "cp-field"
+    const label = document.createElement("label")
+    label.htmlFor = "cp-snapshot-select"
+    label.textContent = "Snapshot"
+    snapshotSelectEl = document.createElement("select")
+    snapshotSelectEl.id = "cp-snapshot-select"
+    for (const name of snapshotNames) {
+      const option = document.createElement("option")
+      option.value = name
+      option.textContent = name
+      snapshotSelectEl.append(option)
+    }
+    field.append(label, snapshotSelectEl)
+
+    const actions = document.createElement("div")
+    actions.className = "cp-modal-actions"
+    actions.append(
+      createButton("Cancel", closeSnapshotRestoreModal),
+      createButton("Restore", () => {
+        void confirmRestoreSnapshot()
+      }, "cp-button cp-danger"),
+    )
+
+    panel.append(header, field, actions)
+    backdrop.append(panel)
+    return backdrop
   }
 
   function createPanel(): HTMLElement {
@@ -333,6 +442,19 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     setManagerCacheControlsEnabled(false, "Checking Replace Manager Repository Data setting...")
     cacheActions.append(managerCacheStatusEl, updateManagerCacheButton, rebuildManagerCacheButton)
 
+    const snapshotActions = createActionGroup("Snapshot", "Snapshot actions")
+    snapshotActions.append(
+      createButton("Save Snapshot", () => {
+        void startUpdateJob("Save Snapshot", API_ROUTES.SNAPSHOT_SAVE)
+      }),
+      createButton("Restore Snapshot", () => {
+        void openSnapshotRestoreModal()
+      }, "cp-button cp-danger"),
+      createButton("Open Snapshots Folder", () => {
+        void runOperation("Open Snapshots Folder", API_ROUTES.OPEN_SNAPSHOTS, {})
+      }),
+    )
+
     const actions = document.createElement("div")
     actions.className = "cp-actions"
     actions.append(
@@ -361,7 +483,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     logWrap.append(clearLogButton, logEl)
     scrollLogToBottom()
 
-    panel.append(header, maintenanceActions, cacheActions, actions, restartNoticeEl, logWrap)
+    panel.append(header, maintenanceActions, cacheActions, snapshotActions, actions, restartNoticeEl, logWrap)
     backdrop.append(panel)
     return backdrop
   }
@@ -379,6 +501,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
   function close(): void {
     stopPolling()
     gitInstallModal.close()
+    closeSnapshotRestoreModal()
     panelEl?.remove()
   }
 

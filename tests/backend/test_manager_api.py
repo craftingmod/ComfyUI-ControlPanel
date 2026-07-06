@@ -69,6 +69,69 @@ def test_open_path_in_file_manager_rejects_missing_path(tmp_path):
         manager_api.open_path_in_file_manager(missing_path)
 
 
+def test_list_manager_snapshots_returns_sorted_json_files(tmp_path):
+    snapshot_dir = tmp_path / "__manager" / "snapshots"
+    snapshot_dir.mkdir(parents=True)
+    (snapshot_dir / "2026-07-04_08-07-20_autosave.json").write_text("{}", encoding="utf-8")
+    (snapshot_dir / "2026-07-05_08-07-20_snapshot.json").write_text("{}", encoding="utf-8")
+    (snapshot_dir / "ignored.txt").write_text("", encoding="utf-8")
+
+    result = manager_api.list_manager_snapshots(tmp_path)
+
+    assert result["snapshot_dir"] == str(snapshot_dir)
+    assert [snapshot["name"] for snapshot in result["snapshots"]] == [
+        "2026-07-05_08-07-20_snapshot",
+        "2026-07-04_08-07-20_autosave",
+    ]
+
+
+def test_validate_snapshot_name_rejects_path_traversal():
+    with pytest.raises(manager_api.ManagerApiError, match="Snapshot name is invalid"):
+        manager_api.validate_snapshot_name("../snapshot")
+
+
+def test_save_snapshot_with_comfy_cli_uses_comfy_command(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(manager_api, "comfy_cli_command", lambda *args: ["comfy", *args])
+    monkeypatch.setattr(manager_api, "list_manager_snapshots", lambda: {"snapshots": [], "snapshot_dir": "snapshots"})
+
+    async def fake_run_command_stream(command, cwd, timeout=1800, on_line=None):
+        calls.append((command, cwd, timeout))
+        return {"stdout": "saved", "stderr": ""}
+
+    monkeypatch.setattr(manager_api, "run_command_stream", fake_run_command_stream)
+
+    result = asyncio.run(manager_api.save_snapshot_with_comfy_cli())
+
+    assert calls == [(["comfy", "node", "save-snapshot"], manager_api.COMFYUI_ROOT, 1800)]
+    assert result["provider"] == "comfy-cli"
+    assert result["restart_required"] is False
+
+
+def test_restore_snapshot_with_comfy_cli_uses_comfy_command(monkeypatch, tmp_path):
+    calls = []
+    snapshot_dir = tmp_path / "__manager" / "snapshots"
+    snapshot_dir.mkdir(parents=True)
+    (snapshot_dir / "snapshot-a.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(manager_api, "COMFYUI_USER_DIR", tmp_path)
+    monkeypatch.setattr(manager_api, "comfy_cli_command", lambda *args: ["comfy", *args])
+
+    async def fake_run_command_stream(command, cwd, timeout=1800, on_line=None):
+        calls.append((command, cwd, timeout))
+        return {"stdout": "restored", "stderr": ""}
+
+    monkeypatch.setattr(manager_api, "run_command_stream", fake_run_command_stream)
+
+    result = asyncio.run(manager_api.restore_snapshot_with_comfy_cli("snapshot-a"))
+
+    assert calls == [(["comfy", "node", "restore-snapshot", "snapshot-a"], manager_api.COMFYUI_ROOT, 3600)]
+    assert result["provider"] == "comfy-cli"
+    assert result["restart_required"] is True
+    assert result["snapshot"] == "snapshot-a"
+
+
 def test_same_server_url_uses_current_request_host():
     request = SimpleNamespace(headers={"Host": "127.0.0.1:8188"}, scheme="http")
 

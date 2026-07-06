@@ -63,7 +63,8 @@
   font-weight: 600;
 }
 
-.cp-field input {
+.cp-field input,
+.cp-field select {
   width: 100%;
   box-sizing: border-box;
   padding: 10px 12px;

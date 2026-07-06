@@ -348,6 +348,10 @@ def manager_user_dir(user_dir: Path | None = None) -> Path:
     return (user_dir or COMFYUI_USER_DIR) / "__manager"
 
 
+def manager_snapshot_dir(user_dir: Path | None = None) -> Path:
+    return manager_user_dir(user_dir) / "snapshots"
+
+
 def read_controlpanel_settings(user_dir: Path | None = None) -> dict[str, Any]:
     config_path = controlpanel_config_path(user_dir)
     if not config_path.exists():
@@ -1258,6 +1262,70 @@ async def sync_dependencies_with_comfy_cli(on_line: Callable[[str], None] | None
     }
 
 
+def validate_snapshot_name(name: str) -> str:
+    normalized = name.strip()
+    if not normalized:
+        raise ManagerApiError("Snapshot name is required.")
+    if "/" in normalized or "\\" in normalized or ".." in normalized or "\x00" in normalized:
+        raise ManagerApiError("Snapshot name is invalid.")
+    if normalized.endswith(".json"):
+        normalized = normalized[:-5]
+    if not normalized:
+        raise ManagerApiError("Snapshot name is required.")
+    return normalized
+
+
+def list_manager_snapshots(user_dir: Path | None = None) -> dict[str, Any]:
+    snapshot_dir = manager_snapshot_dir(user_dir)
+    snapshots: list[dict[str, Any]] = []
+    if snapshot_dir.exists():
+        for path in sorted(snapshot_dir.glob("*.json"), key=lambda item: item.name, reverse=True):
+            stat = path.stat()
+            snapshots.append(
+                {
+                    "name": path.stem,
+                    "path": str(path),
+                    "mtime": stat.st_mtime,
+                    "size": stat.st_size,
+                }
+            )
+    return {
+        "snapshot_dir": str(snapshot_dir),
+        "snapshots": snapshots,
+    }
+
+
+async def save_snapshot_with_comfy_cli(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
+    command = comfy_cli_command("node", "save-snapshot")
+    result = await run_command_stream(command, COMFYUI_ROOT, timeout=1800, on_line=on_line)
+    return {
+        "provider": "comfy-cli",
+        "restart_required": False,
+        "result": result,
+        **list_manager_snapshots(),
+    }
+
+
+async def restore_snapshot_with_comfy_cli(
+    snapshot_name: str,
+    on_line: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    target = validate_snapshot_name(snapshot_name)
+    snapshot_path = manager_snapshot_dir() / f"{target}.json"
+    if not snapshot_path.exists():
+        raise ManagerApiError(f"Snapshot was not found: {target}")
+
+    command = comfy_cli_command("node", "restore-snapshot", target)
+    result = await run_command_stream(command, COMFYUI_ROOT, timeout=3600, on_line=on_line)
+    return {
+        "provider": "comfy-cli",
+        "restart_required": True,
+        "snapshot": target,
+        "snapshot_path": str(snapshot_path),
+        "result": result,
+    }
+
+
 async def inspect_torch_runtime() -> dict[str, Any]:
     code = (
         "import json\n"
@@ -1607,6 +1675,28 @@ def register_routes() -> bool:
     async def open_custom_nodes(_request):
         return await _with_operation_lock(_operation_open_custom_nodes)
 
+    @routes.post(f"{API_PREFIX}/open/snapshots")
+    async def open_snapshots(_request):
+        return await _with_operation_lock(_operation_open_snapshots)
+
+    @routes.get(f"{API_PREFIX}/snapshot/list")
+    async def list_snapshots(_request):
+        return _json_response({"ok": True, **list_manager_snapshots()})
+
+    @routes.post(f"{API_PREFIX}/snapshot/save")
+    async def save_snapshot(_request):
+        return await _start_job_response("snapshot", "Save Snapshot", _job_save_snapshot)
+
+    @routes.post(f"{API_PREFIX}/snapshot/restore")
+    async def restore_snapshot(request):
+        data = await _read_json(request)
+        target = str(data.get("target", ""))
+        return await _start_job_response(
+            "snapshot",
+            "Restore Snapshot",
+            lambda job: _job_restore_snapshot(job, target),
+        )
+
     @routes.post(f"{API_PREFIX}/update-all")
     async def update_all(_request):
         return await _start_job_response("git-nodes", "Update Git Nodes", _job_update_git_nodes)
@@ -1678,6 +1768,15 @@ async def _job_sync_dependencies(job: ManagerJob) -> dict[str, Any]:
     return await sync_dependencies_with_comfy_cli(job.append_log)
 
 
+async def _job_save_snapshot(job: ManagerJob) -> dict[str, Any]:
+    return await save_snapshot_with_comfy_cli(job.append_log)
+
+
+async def _job_restore_snapshot(job: ManagerJob, target: str) -> dict[str, Any]:
+    job.append_log(f"Restoring snapshot: {target}")
+    return await restore_snapshot_with_comfy_cli(target, job.append_log)
+
+
 async def _job_refresh_manager_cache(job: ManagerJob) -> dict[str, Any]:
     return await refresh_manager_cache_from_cdn(job.append_log)
 
@@ -1705,3 +1804,9 @@ async def _operation_install_git_url(url: str, name: str | None) -> dict[str, An
 
 async def _operation_open_custom_nodes() -> dict[str, Any]:
     return open_path_in_file_manager(CUSTOM_NODES_DIR)
+
+
+async def _operation_open_snapshots() -> dict[str, Any]:
+    snapshot_dir = manager_snapshot_dir()
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    return open_path_in_file_manager(snapshot_dir)
