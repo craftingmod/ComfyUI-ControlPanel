@@ -62,6 +62,28 @@ For local ComfyUI usage, build the frontend once after installing dependencies:
 pnpm build
 ```
 
+## Security Model
+
+ComfyUI-ControlPanel is local-first. ComfyUI does not provide a built-in user or
+permission model for custom node HTTP routes, so the panel treats loopback access
+as the default trust boundary.
+
+By default, all `/control-panel/*` routes and the frontend panel UI are available
+only to localhost clients such as `localhost`, `127.0.0.1`, and `::1`. This is
+intentional because the panel can install Git repositories, update custom nodes,
+restore snapshots, open local folders, and restart ComfyUI.
+
+To allow remote clients on a trusted private deployment, set this in the
+ControlPanel config file under the ComfyUI user directory:
+
+```json
+{
+  "allow_remote_control": true
+}
+```
+
+Do not enable remote control for ComfyUI instances exposed to untrusted networks.
+
 ## Development
 
 ```bash

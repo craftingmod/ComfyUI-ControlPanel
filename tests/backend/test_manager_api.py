@@ -36,6 +36,26 @@ def test_resolve_custom_nodes_dir_uses_comfyui_root_child(tmp_path):
     assert manager_api.resolve_custom_nodes_dir(comfyui_root) == (comfyui_root / "custom_nodes").resolve()
 
 
+def test_control_request_allows_loopback_clients(monkeypatch):
+    monkeypatch.setattr(manager_api, "read_controlpanel_settings", lambda user_dir=None: {})
+
+    assert manager_api.is_control_request_allowed(SimpleNamespace(remote="127.0.0.1")) is True
+    assert manager_api.is_control_request_allowed(SimpleNamespace(remote="::1")) is True
+    assert manager_api.is_control_request_allowed(SimpleNamespace(remote="localhost")) is True
+
+
+def test_control_request_rejects_remote_clients_by_default(monkeypatch):
+    monkeypatch.setattr(manager_api, "read_controlpanel_settings", lambda user_dir=None: {})
+
+    assert manager_api.is_control_request_allowed(SimpleNamespace(remote="192.168.0.10")) is False
+
+
+def test_control_request_allows_remote_clients_when_configured(monkeypatch):
+    monkeypatch.setattr(manager_api, "read_controlpanel_settings", lambda user_dir=None: {"allow_remote_control": True})
+
+    assert manager_api.is_control_request_allowed(SimpleNamespace(remote="192.168.0.10")) is True
+
+
 def test_open_path_in_file_manager_uses_windows_startfile(monkeypatch, tmp_path):
     calls = []
 
@@ -714,6 +734,49 @@ def test_refresh_manager_cache_uses_fresh_source_without_fetching(monkeypatch, t
         "custom-node-list.json",
     )
     assert manager_path.exists()
+
+
+def test_refresh_manager_cache_hashes_existing_fresh_manager_cache(monkeypatch, tmp_path):
+    user_dir = tmp_path / "user"
+    manager_dir = user_dir / "__manager"
+    source_dir = user_dir / "__controlpanel" / "manager-cache" / "sources" / "jsdelivr"
+    manager_cache_dir = manager_dir / "cache"
+    source_dir.mkdir(parents=True)
+    manager_cache_dir.mkdir(parents=True)
+    source_path = source_dir / "custom-node-list.json"
+    source_path.write_text(json.dumps({"custom_nodes": []}), encoding="utf-8")
+    manager_path = manager_cache_dir / manager_api.manager_cache_filename(
+        manager_api._DEFAULT_MANAGER_CHANNEL_URL,
+        "custom-node-list.json",
+    )
+    manager_path.write_text(json.dumps({"custom_nodes": []}), encoding="utf-8")
+
+    class FailSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        def get(self, _url):
+            raise AssertionError("fresh Manager cache should not fetch")
+
+    monkeypatch.setattr(manager_api, "_MANAGER_CACHE_FILES", ("custom-node-list.json",))
+    monkeypatch.setattr(manager_api, "ClientSession", FailSession)
+
+    async def fake_refresh_registry(session, source_dir, on_line=None, channel=None):
+        (source_dir / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME).write_text(
+            json.dumps({"nodes": []}),
+            encoding="utf-8",
+        )
+        return {"file": "registry-node-list.json", "action": "skipped"}
+
+    monkeypatch.setattr(manager_api, "refresh_comfy_registry_nodes_cache", fake_refresh_registry)
+
+    result = asyncio.run(manager_api.refresh_manager_cache_from_cdn(user_dir=user_dir))
+
+    assert result["results"][0]["action"] == "fresh"
+    assert result["results"][0]["sha256"]
 
 
 def test_rebuild_manager_cache_removes_existing_source_and_refetches(monkeypatch, tmp_path):

@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import configparser
+import hashlib
+import ipaddress
 import json
 import logging
 import platform
@@ -85,6 +87,7 @@ _SETTING_MANAGER_REPOSITORY_OVERRIDE = "manager_repository_data_override_enabled
 _SETTING_MANAGER_REPOSITORY_DATA_CHANNEL = "manager_repository_data_channel"
 _SETTING_PREVIOUS_MANAGER_NETWORK_MODE = "manager_network_mode_before_override"
 _SETTING_MANAGER_CONFIG_WAS_MISSING = "manager_config_was_missing_before_override"
+_SETTING_ALLOW_REMOTE_CONTROL = "allow_remote_control"
 LOGGER = logging.getLogger(__name__)
 
 
@@ -191,6 +194,56 @@ def write_controlpanel_settings(settings: dict[str, Any], user_dir: Path | None 
 
 def is_manager_repository_override_enabled(user_dir: Path | None = None) -> bool:
     return bool(read_controlpanel_settings(user_dir).get(_SETTING_MANAGER_REPOSITORY_OVERRIDE))
+
+
+def is_remote_control_allowed(user_dir: Path | None = None) -> bool:
+    return bool(read_controlpanel_settings(user_dir).get(_SETTING_ALLOW_REMOTE_CONTROL))
+
+
+def _request_remote_host(request) -> str | None:
+    remote = getattr(request, "remote", None)
+    if isinstance(remote, str) and remote:
+        return remote
+
+    transport = getattr(request, "transport", None)
+    if transport is None:
+        return None
+    peername = transport.get_extra_info("peername")
+    if isinstance(peername, tuple) and peername:
+        return str(peername[0])
+    if isinstance(peername, str) and peername:
+        return peername
+    return None
+
+
+def is_loopback_host(host: str | None) -> bool:
+    if not host:
+        return False
+    normalized = host.strip().strip("[]").lower()
+    if normalized == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def is_loopback_request(request) -> bool:
+    return is_loopback_host(_request_remote_host(request))
+
+
+def is_control_request_allowed(request) -> bool:
+    return is_remote_control_allowed() or is_loopback_request(request)
+
+
+def control_request_denied_response(request):
+    if is_control_request_allowed(request):
+        return None
+    return _error_response(
+        "ComfyUI-ControlPanel is available only from localhost by default. "
+        "Set allow_remote_control=true in the ControlPanel config only for trusted private deployments.",
+        status=403,
+    )
 
 
 def normalize_manager_repository_data_channel(channel: Any) -> str:

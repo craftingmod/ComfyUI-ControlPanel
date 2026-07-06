@@ -18,6 +18,16 @@ type ControlPanelSettingsResponse = {
   manager_repository_data_channel?: string
 }
 
+class ControlPanelFetchError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+    this.name = "ControlPanelFetchError"
+  }
+}
+
 function getSetting<T>(id: string): T | undefined {
   return app.extensionManager.setting.get<T>(id)
 }
@@ -38,11 +48,30 @@ async function fetchJson(route: string, body?: Record<string, unknown>): Promise
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   })
-  const data = (await response.json()) as Record<string, unknown>
+  const text = await response.text()
+  let data: Record<string, unknown>
+  try {
+    data = (text ? JSON.parse(text) : {}) as Record<string, unknown>
+  } catch {
+    throw new ControlPanelFetchError(`HTTP ${response.status} for ${route}: ${text.trim() || response.statusText}`, response.status)
+  }
   if (!response.ok || data.ok === false) {
-    throw new Error(String(data.error ?? response.statusText))
+    throw new ControlPanelFetchError(String(data.error ?? response.statusText), response.status)
   }
   return data
+}
+
+async function shouldRegisterControlPanel(): Promise<boolean> {
+  try {
+    await fetchJson(API_ROUTES.STATUS)
+    return true
+  } catch (error) {
+    if (error instanceof ControlPanelFetchError && error.status === 403) {
+      console.info("ComfyUI-ControlPanel is hidden because this client is not localhost.")
+      return false
+    }
+    return true
+  }
 }
 
 async function syncManagerRepositoryDataOverrideSetting(): Promise<void> {
@@ -170,4 +199,10 @@ function createExtensionObject(): ManagerExtension {
   }
 }
 
-app.registerExtension(createExtensionObject())
+async function registerControlPanelExtension(): Promise<void> {
+  if (await shouldRegisterControlPanel()) {
+    app.registerExtension(createExtensionObject())
+  }
+}
+
+void registerControlPanelExtension()

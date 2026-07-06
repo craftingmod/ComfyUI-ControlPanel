@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import wraps
 from typing import Any
 
 
@@ -11,7 +12,18 @@ def register_routes(api: Any) -> bool:
 
     routes = PromptServer.instance.routes
 
+    def control_route(handler):
+        @wraps(handler)
+        async def wrapper(request):
+            denied = api.control_request_denied_response(request)
+            if denied is not None:
+                return denied
+            return await handler(request)
+
+        return wrapper
+
     @routes.get(f"{api.API_PREFIX}/status")
+    @control_route
     async def status(_request):
         repos = [{"name": repo.name, "path": str(repo)} for repo in api.discover_git_repositories()]
         return api._json_response(
@@ -36,6 +48,7 @@ def register_routes(api: Any) -> bool:
         )
 
     @routes.get(f"{api.API_PREFIX}/settings")
+    @control_route
     async def get_settings(_request):
         manager_dir = api.manager_user_dir()
         return api._json_response(
@@ -49,6 +62,7 @@ def register_routes(api: Any) -> bool:
         )
 
     @routes.post(f"{api.API_PREFIX}/settings/manager-repository-data-override")
+    @control_route
     async def set_manager_repository_data_override(request):
         data = await api._read_json(request)
         try:
@@ -58,6 +72,7 @@ def register_routes(api: Any) -> bool:
             return api._error_response(str(error), status=500)
 
     @routes.post(f"{api.API_PREFIX}/settings/manager-repository-data-channel")
+    @control_route
     async def set_manager_repository_data_channel_route(request):
         data = await api._read_json(request)
         try:
@@ -67,6 +82,7 @@ def register_routes(api: Any) -> bool:
             return api._error_response(str(error), status=500)
 
     @routes.post(f"{api.API_PREFIX}/install-git-url")
+    @control_route
     async def install(request):
         data = await api._read_json(request)
         return await api._with_operation_lock(
@@ -77,26 +93,32 @@ def register_routes(api: Any) -> bool:
         )
 
     @routes.post(f"{api.API_PREFIX}/open/custom-nodes")
+    @control_route
     async def open_custom_nodes(_request):
         return await api._with_operation_lock(api._operation_open_custom_nodes)
 
     @routes.post(f"{api.API_PREFIX}/open/snapshots")
+    @control_route
     async def open_snapshots(_request):
         return await api._with_operation_lock(api._operation_open_snapshots)
 
     @routes.post(f"{api.API_PREFIX}/environment")
+    @control_route
     async def environment(_request):
         return await api._with_operation_lock(api._operation_show_environment)
 
     @routes.get(f"{api.API_PREFIX}/snapshot/list")
+    @control_route
     async def list_snapshots(_request):
         return api._json_response({"ok": True, **api.list_manager_snapshots()})
 
     @routes.post(f"{api.API_PREFIX}/snapshot/save")
+    @control_route
     async def save_snapshot(_request):
         return await api._start_job_response("snapshot", "Save Snapshot", api._job_save_snapshot)
 
     @routes.post(f"{api.API_PREFIX}/snapshot/restore")
+    @control_route
     async def restore_snapshot(request):
         data = await api._read_json(request)
         target = str(data.get("target", ""))
@@ -107,39 +129,48 @@ def register_routes(api: Any) -> bool:
         )
 
     @routes.post(f"{api.API_PREFIX}/update-all")
+    @control_route
     async def update_all(_request):
         return await api._start_job_response("git-nodes", "Update Git Nodes", api._job_update_git_nodes)
 
     @routes.post(f"{api.API_PREFIX}/update/custom-nodes")
+    @control_route
     async def update_custom_nodes(_request):
         return await api._start_job_response("git-nodes", "Update Git Nodes", api._job_update_git_nodes)
 
     @routes.post(f"{api.API_PREFIX}/deps/uv-sync")
+    @control_route
     async def sync_dependencies(_request):
         return await api._start_job_response("deps", "Sync Dependencies", api._job_sync_dependencies)
 
     @routes.post(f"{api.API_PREFIX}/manager-cache/refresh")
+    @control_route
     async def refresh_manager_cache(_request):
         return await api._start_job_response("manager-cache", "Update Manager Cache", api._job_refresh_manager_cache)
 
     @routes.post(f"{api.API_PREFIX}/manager-cache/rebuild")
+    @control_route
     async def rebuild_manager_cache(_request):
         return await api._start_job_response("manager-cache", "Rebuild Manager Cache", api._job_rebuild_manager_cache)
 
     @routes.post(f"{api.API_PREFIX}/update-comfyui")
+    @control_route
     async def update_core(_request):
         return await api._start_job_response("comfyui", "Update ComfyUI", api._job_update_comfyui)
 
     @routes.post(f"{api.API_PREFIX}/update/comfyui")
+    @control_route
     async def update_comfyui_route(_request):
         return await api._start_job_response("comfyui", "Update ComfyUI", api._job_update_comfyui)
 
     @routes.get(f"{api.API_PREFIX}/update/status")
+    @control_route
     async def update_status(_request):
         job = api.latest_job()
         return api._json_response({"ok": True, "job": job.to_dict() if job else None})
 
     @routes.get(f"{api.API_PREFIX}/update/jobs/{{job_id}}")
+    @control_route
     async def update_job_status(request):
         job = api._JOBS.get(str(request.match_info["job_id"]))
         if job is None:
@@ -147,6 +178,7 @@ def register_routes(api: Any) -> bool:
         return api._json_response({"ok": True, "job": job.to_dict()})
 
     @routes.post(f"{api.API_PREFIX}/restart")
+    @control_route
     async def restart(request):
         data = await api._read_json(request)
         if data.get("confirm") is not True:
