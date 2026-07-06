@@ -1,5 +1,5 @@
 [project]
-name = "comfyui-control-panel"
+name = "comfyui-controlpanel"
 description = "A ComfyUI custom node for restoring control panel workflows."
 version = "1.0.0"
 requires-python = ">=3.12"
@@ -16,12 +16,12 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/craftingmod/comfyui-control-panel"
+Repository = "https://github.com/craftingmod/comfyui-controlpanel"
 
 [tool.comfy]
 PublisherId = "craftingmod"
 DisplayName = "ComfyUI-ControlPanel"
-Icon = "https://raw.githubusercontent.com/craftingmod/comfyui-control-panel/main/assets/icon.svg"
+Icon = "https://raw.githubusercontent.com/craftingmod/comfyui-controlpanel/main/assets/icon.svg"
 requires-comfyui = ">=0.3.0"
 includes = ['dist']
 

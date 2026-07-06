@@ -70,7 +70,7 @@ def test_root_packaging_metadata_matches_layout():
     tool_comfy = pyproject["tool"]["comfy"]
     bump_files = pyproject["tool"]["bumpversion"]["files"]
 
-    assert pyproject["project"]["name"] == "comfyui-control-panel"
+    assert pyproject["project"]["name"] == "comfyui-controlpanel"
     assert pyproject["project"]["description"] == "A ComfyUI custom node for restoring control panel workflows."
     assert pyproject["project"]["dependencies"] == ["aiohttp>=3.9"]
     assert tool_comfy["DisplayName"] == "ComfyUI-ControlPanel"

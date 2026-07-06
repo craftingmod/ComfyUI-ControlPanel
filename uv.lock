@@ -215,7 +215,7 @@ wheels = [
 ]
 
 [[package]]
-name = "comfyui-control-panel"
+name = "comfyui-controlpanel"
 version = "1.0.0"
 source = { virtual = "." }
 dependencies = [

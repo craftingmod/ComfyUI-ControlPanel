@@ -89,7 +89,7 @@ function createExtensionObject(): ManagerExtension {
         type: () => {
           const spanEl = document.createElement("span")
           const linkEl = document.createElement("a")
-          linkEl.href = "https://github.com/craftingmod/comfyui-control-panel"
+          linkEl.href = "https://github.com/craftingmod/comfyui-controlpanel"
           linkEl.target = "_blank"
           linkEl.rel = "noopener noreferrer"
           linkEl.textContent = "Homepage"

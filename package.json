@@ -1,5 +1,5 @@
 {
-  "name": "comfyui-control-panel",
+  "name": "comfyui-controlpanel",
   "version": "1.0.0",
   "private": true,
   "description": "A ComfyUI custom node for restoring control panel workflows.",
