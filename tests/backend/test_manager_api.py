@@ -38,8 +38,8 @@ def test_resolve_custom_nodes_dir_uses_comfyui_root_child(tmp_path):
 def test_open_path_in_file_manager_uses_windows_startfile(monkeypatch, tmp_path):
     calls = []
 
-    monkeypatch.setattr(manager_api.platform, "system", lambda: "Windows")
-    monkeypatch.setattr(manager_api.os, "startfile", lambda path: calls.append(path), raising=False)
+    monkeypatch.setattr(manager_api.manager_process.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(manager_api.manager_process.os, "startfile", lambda path: calls.append(path), raising=False)
 
     result = manager_api.open_path_in_file_manager(tmp_path)
 
@@ -52,9 +52,9 @@ def test_open_path_in_file_manager_uses_windows_startfile(monkeypatch, tmp_path)
 def test_open_path_in_file_manager_uses_xdg_open_on_linux(monkeypatch, tmp_path):
     calls = []
 
-    monkeypatch.setattr(manager_api.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(manager_api, "_command_args", lambda *args: list(args))
-    monkeypatch.setattr(manager_api.subprocess, "Popen", lambda command: calls.append(command))
+    monkeypatch.setattr(manager_api.manager_process.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(manager_api.manager_process, "command_args", lambda *args: list(args))
+    monkeypatch.setattr(manager_api.manager_process.subprocess, "Popen", lambda command: calls.append(command))
 
     result = manager_api.open_path_in_file_manager(tmp_path)
 

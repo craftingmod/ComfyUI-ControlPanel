@@ -13,14 +13,16 @@ import uuid
 import os
 import re
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Awaitable, Callable
-from urllib.parse import urlencode, urlparse, urlunparse
-from aiohttp import ClientError, ClientSession
+from urllib.parse import urlencode, urlparse
+from aiohttp import ClientSession
 
 from .hash import manager_cache_key_hash
+from . import manager_cli
+from . import manager_git
+from . import manager_http
 from .manager_jobs import JOBS as _JOBS
 from .manager_jobs import LATEST_JOB_ID as _LATEST_JOB_ID
 from .manager_jobs import ManagerJob, latest_job, start_job
@@ -146,25 +148,11 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
 
 
 def repo_name_from_git_url(url: str) -> str:
-    parsed = urlparse(url)
-    raw_name = Path(parsed.path.rstrip("/")).name
-    if raw_name.endswith(".git"):
-        raw_name = raw_name[:-4]
-
-    name = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw_name).strip(".-")
-    if not name:
-        raise ManagerApiError("Cannot infer a folder name from the Git URL.")
-    return name
+    return manager_git.repo_name_from_git_url(url)
 
 
 def validate_git_url(url: str) -> str:
-    normalized = url.strip()
-    parsed = urlparse(normalized)
-    if parsed.scheme in {"https", "http", "ssh", "git"} and parsed.netloc:
-        return normalized
-    if re.match(r"^git@[^:]+:[A-Za-z0-9_.~/-]+(?:\.git)?$", normalized):
-        return normalized
-    raise ManagerApiError("Only http(s), ssh, git, and git@host:path URLs are supported.")
+    return manager_git.validate_git_url(url)
 
 
 def resolve_custom_node_destination(name: str) -> Path:
@@ -1047,16 +1035,7 @@ async def _refresh_manager_cache_from_cdn_unlocked(
 
 
 def _is_local_changes_pull_failure(message: str) -> bool:
-    normalized = message.lower()
-    return any(
-        phrase in normalized
-        for phrase in (
-            "your local changes to the following files would be overwritten",
-            "the following untracked working tree files would be overwritten",
-            "would be overwritten by merge",
-            "please commit your changes or stash them before you merge",
-        )
-    )
+    return manager_git.is_local_changes_pull_failure(message)
 
 
 async def update_git_repository(repo: Path) -> dict[str, Any]:
@@ -1118,79 +1097,27 @@ async def update_git_nodes_with_git(on_line: Callable[[str], None] | None = None
 async def sync_dependencies_with_comfy_cli(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
     command = comfy_cli_command("node", "uv-sync")
     result = await run_command_stream(command, COMFYUI_ROOT, timeout=3600, on_line=on_line)
-    return {
-        "provider": "comfy-cli",
-        "restart_required": True,
-        "protected_packages": sorted(_TORCH_PACKAGES),
-        "result": result,
-    }
+    return manager_cli.sync_dependencies_response(result, _TORCH_PACKAGES)
 
 
 async def show_environment_with_comfy_cli() -> dict[str, Any]:
     command = comfy_cli_command("--json", "env")
     result = await run_command_stream(command, COMFYUI_ROOT, timeout=120)
-    try:
-        envelope = json.loads(str(result.get("stdout", "")))
-    except json.JSONDecodeError as error:
-        raise ManagerApiError(f"comfy --json env returned invalid JSON: {error}") from error
-    if not isinstance(envelope, dict):
-        raise ManagerApiError("comfy --json env returned an unexpected payload.")
-    if envelope.get("ok") is not True:
-        raise ManagerApiError(str(envelope.get("error") or "comfy env failed."))
-    return {
-        "provider": "comfy-cli",
-        "cli": {
-            "command": envelope.get("command"),
-            "version": envelope.get("version"),
-            "where": envelope.get("where"),
-        },
-        "environment": envelope.get("data") if isinstance(envelope.get("data"), dict) else {},
-        "result": result,
-    }
+    return manager_cli.environment_response(result)
 
 
 def validate_snapshot_name(name: str) -> str:
-    normalized = name.strip()
-    if not normalized:
-        raise ManagerApiError("Snapshot name is required.")
-    if "/" in normalized or "\\" in normalized or ".." in normalized or "\x00" in normalized:
-        raise ManagerApiError("Snapshot name is invalid.")
-    if normalized.endswith(".json"):
-        normalized = normalized[:-5]
-    if not normalized:
-        raise ManagerApiError("Snapshot name is required.")
-    return normalized
+    return manager_cli.validate_snapshot_name(name)
 
 
 def list_manager_snapshots(user_dir: Path | None = None) -> dict[str, Any]:
-    snapshot_dir = manager_snapshot_dir(user_dir)
-    snapshots: list[dict[str, Any]] = []
-    if snapshot_dir.exists():
-        for path in sorted(snapshot_dir.glob("*.json"), key=lambda item: item.name, reverse=True):
-            stat = path.stat()
-            snapshots.append(
-                {
-                    "name": path.stem,
-                    "path": str(path),
-                    "mtime": stat.st_mtime,
-                    "size": stat.st_size,
-                }
-            )
-    return {
-        "snapshot_dir": str(snapshot_dir),
-        "snapshots": snapshots,
-    }
+    return manager_cli.list_manager_snapshots(manager_snapshot_dir(user_dir))
 
 
 async def save_snapshot_with_comfy_cli(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
     command = comfy_cli_command("node", "save-snapshot")
     result = await run_command_stream(command, COMFYUI_ROOT, timeout=1800, on_line=on_line)
-    return {
-        "provider": "comfy-cli",
-        "restart_required": False,
-        "result": result,
-        **list_manager_snapshots(),
-    }
+    return manager_cli.save_snapshot_response(result, list_manager_snapshots())
 
 
 async def restore_snapshot_with_comfy_cli(
@@ -1204,13 +1131,7 @@ async def restore_snapshot_with_comfy_cli(
 
     command = comfy_cli_command("node", "restore-snapshot", target)
     result = await run_command_stream(command, COMFYUI_ROOT, timeout=3600, on_line=on_line)
-    return {
-        "provider": "comfy-cli",
-        "restart_required": True,
-        "snapshot": target,
-        "snapshot_path": str(snapshot_path),
-        "result": result,
-    }
+    return manager_cli.restore_snapshot_response(target, snapshot_path, result)
 
 
 async def inspect_torch_runtime() -> dict[str, Any]:
@@ -1244,20 +1165,8 @@ async def update_comfyui() -> list[dict[str, Any]]:
     return results
 
 
-_COMFYUI_VERSION_TAG_PATTERN = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
-
-
 def _latest_version_tag(tag_output: str) -> str:
-    versions: list[tuple[tuple[int, int, int], str]] = []
-    for tag in (line.strip() for line in tag_output.splitlines()):
-        match = _COMFYUI_VERSION_TAG_PATTERN.match(tag)
-        if match:
-            versions.append(((int(match.group(1)), int(match.group(2)), int(match.group(3))), tag))
-
-    if not versions:
-        raise ManagerApiError("No ComfyUI version tags were found in the repository.")
-
-    return max(versions, key=lambda item: item[0])[1]
+    return manager_git.latest_version_tag(tag_output)
 
 
 async def update_comfyui_with_git(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
@@ -1310,29 +1219,11 @@ async def _read_json(request) -> dict[str, Any]:
 
 
 def _same_server_url(request, path: str) -> str:
-    scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
-    host = request.headers.get("Host")
-    if not host:
-        raise ManagerApiError("Cannot determine the current ComfyUI server host.")
-    return urlunparse((scheme, host, path, "", "", ""))
+    return manager_http.same_server_url(request, path)
 
 
 async def request_manager_no_body_post(url: str, provider: str) -> dict[str, Any]:
-    try:
-        async with ClientSession() as session:
-            async with session.post(url) as response:
-                text = await response.text()
-                if response.status >= 400:
-                    raise ManagerApiError(f"ComfyUI Manager request failed with HTTP {response.status}: {text}")
-                return {
-                    "provider": provider,
-                    "status": response.status,
-                    "message": text.strip(),
-                }
-    except ManagerApiError:
-        raise
-    except ClientError as error:
-        raise ManagerApiError(f"ComfyUI Manager route is not available: {error}") from error
+    return await manager_http.request_manager_no_body_post(url, provider)
 
 
 async def request_first_manager_route(request, paths: list[str], provider: str) -> dict[str, Any]:
@@ -1380,29 +1271,7 @@ async def restart_comfyui(_request) -> dict[str, Any]:
 
 
 def open_path_in_file_manager(path: Path) -> dict[str, Any]:
-    target = path.resolve()
-    if not target.exists():
-        raise ManagerApiError(f"Path does not exist: {target}")
-
-    system = platform.system()
-    if system == "Windows":
-        startfile = getattr(os, "startfile", None)
-        if not callable(startfile):
-            raise ManagerApiError("Windows file manager opener is not available.")
-        startfile(str(target))
-        command = ["os.startfile", str(target)]
-    elif system == "Darwin":
-        command = _command_args("open", str(target))
-        subprocess.Popen(command)
-    else:
-        command = _command_args("xdg-open", str(target))
-        subprocess.Popen(command)
-
-    return {
-        "provider": "local-file-manager",
-        "path": str(target),
-        "command": command,
-    }
+    return manager_process.open_path_in_file_manager(path)
 
 
 async def _with_operation_lock(operation):
