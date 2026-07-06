@@ -12,7 +12,7 @@ PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 GITIGNORE_PATH = REPO_ROOT / ".gitignore"
 PNPM_WORKSPACE_PATH = REPO_ROOT / "pnpm-workspace.yaml"
 CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ci.yaml"
-PUBLISH_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "publish_action.yaml"
+RELEASE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release.yaml"
 README_PATH = REPO_ROOT / "README.md"
 AGENTS_PATH = REPO_ROOT / "AGENTS.md"
 TESTING_DOC_PATH = REPO_ROOT / "docs" / "TESTING.md"
@@ -102,7 +102,7 @@ def test_e2e_harness_files_exist():
 
 def test_ci_workflows_use_repo_command_surface():
     ci_workflow = CI_WORKFLOW_PATH.read_text(encoding="utf-8")
-    publish_workflow = PUBLISH_WORKFLOW_PATH.read_text(encoding="utf-8")
+    release_workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
 
     assert "pnpm install --frozen-lockfile" in ci_workflow
     assert "uv sync --locked --group dev" in ci_workflow
@@ -110,11 +110,16 @@ def test_ci_workflows_use_repo_command_surface():
     assert "pnpm test:unit" in ci_workflow
     assert "pnpm test:e2e" in ci_workflow
 
-    assert "pnpm install --frozen-lockfile" in publish_workflow
-    assert "uv sync --locked --group dev" in publish_workflow
-    assert "pnpm test" in publish_workflow
-    assert "git add pyproject.toml package.json frontend/src/index.ts uv.lock" in publish_workflow
-    assert "Comfy-Org/publish-node-action@1.0.1" in publish_workflow
+    assert "v*.*.*" in release_workflow
+    assert "node-version: 24" in release_workflow
+    assert "pnpm install --frozen-lockfile" in release_workflow
+    assert "uv sync --locked --group dev" in release_workflow
+    assert "pnpm typecheck" in release_workflow
+    assert "pnpm test:unit" in release_workflow
+    assert "pnpm build" in release_workflow
+    assert "test -f dist/index.js" in release_workflow
+    assert "softprops/action-gh-release@v2" in release_workflow
+    assert "Comfy-Org/publish-node-action" not in release_workflow
 
 
 def test_docs_explain_the_slim_command_surface():
