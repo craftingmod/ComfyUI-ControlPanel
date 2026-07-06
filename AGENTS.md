@@ -13,7 +13,7 @@ For ComfyUI API changes, verify current official docs before changing architectu
 
 ## pnpm warning
 Use system pnpm, NOT codex built-in pnpm!
-It causes 
+Turn off `verifyDepsBeforeRun` while using pnpm.
 
 ## About CSS
 ComfyUI supports tailwindcss so tailwindcss style is preferred.
