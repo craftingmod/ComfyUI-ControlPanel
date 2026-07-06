@@ -62,6 +62,23 @@ def test_restart_comfyui_falls_back_when_manager_route_fails(monkeypatch):
     assert result["manager_error"] == "manager route unavailable"
 
 
+def test_request_manager_update_comfyui_uses_v2_queue_route(monkeypatch):
+    calls = []
+    request = SimpleNamespace(headers={"Host": "127.0.0.1:8188"}, scheme="http")
+
+    async def fake_request_manager_no_body_post(url, provider):
+        calls.append((url, provider))
+        return {"provider": provider, "status": 200, "message": ""}
+
+    monkeypatch.setattr(manager_api, "request_manager_no_body_post", fake_request_manager_no_body_post)
+
+    result = asyncio.run(manager_api.request_manager_update_comfyui(request))
+
+    assert calls == [("http://127.0.0.1:8188/v2/manager/queue/update_comfyui", "manager-rest")]
+    assert result["restart_required"] is True
+    assert result["message"] == "ComfyUI update was queued through ComfyUI Manager."
+
+
 def test_repo_name_from_git_url_handles_common_url_shapes():
     assert manager_api.repo_name_from_git_url("https://github.com/user/ComfyUI-Foo.git") == "ComfyUI-Foo"
     assert manager_api.repo_name_from_git_url("git@github.com:user/comfyui-bar.git") == "comfyui-bar"

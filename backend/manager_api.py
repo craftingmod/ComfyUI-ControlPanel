@@ -382,24 +382,57 @@ def _same_server_url(request, path: str) -> str:
     return urlunparse((scheme, host, path, "", "", ""))
 
 
-async def request_manager_reboot(request) -> dict[str, Any]:
-
-    reboot_url = _same_server_url(request, "/v2/manager/reboot")
+async def request_manager_no_body_post(url: str, provider: str) -> dict[str, Any]:
     try:
         async with ClientSession() as session:
-            async with session.post(reboot_url) as response:
+            async with session.post(url) as response:
                 text = await response.text()
                 if response.status >= 400:
-                    raise ManagerApiError(f"ComfyUI Manager reboot failed with HTTP {response.status}: {text}")
+                    raise ManagerApiError(f"ComfyUI Manager request failed with HTTP {response.status}: {text}")
                 return {
-                    "provider": "manager-rest",
+                    "provider": provider,
                     "status": response.status,
-                    "message": text.strip() or "Restart requested through ComfyUI Manager.",
+                    "message": text.strip(),
                 }
     except ManagerApiError:
         raise
     except ClientError as error:
-        raise ManagerApiError(f"ComfyUI Manager reboot route is not available: {error}") from error
+        raise ManagerApiError(f"ComfyUI Manager route is not available: {error}") from error
+
+
+async def request_first_manager_route(request, paths: list[str], provider: str) -> dict[str, Any]:
+    errors: list[str] = []
+    for path in paths:
+        try:
+            return await request_manager_no_body_post(_same_server_url(request, path), provider)
+        except ManagerApiError as error:
+            errors.append(f"{path}: {error}")
+    raise ManagerApiError("; ".join(errors))
+
+
+async def request_manager_update_comfyui(request) -> dict[str, Any]:
+    result = await request_first_manager_route(
+        request,
+        ["/v2/manager/queue/update_comfyui"],
+        "manager-rest",
+    )
+    return {
+        **result,
+        "message": result["message"] or "ComfyUI update was queued through ComfyUI Manager.",
+        "restart_required": True,
+        "notes": [
+            "ComfyUI Manager performs the update asynchronously in its own queue.",
+            "Use the Manager logs or task queue for detailed update progress.",
+        ],
+    }
+
+
+async def request_manager_reboot(request) -> dict[str, Any]:
+    result = await request_first_manager_route(request, ["/v2/manager/reboot", "/manager/reboot"], "manager-rest")
+    return {
+        **result,
+        "message": result["message"] or "Restart requested through ComfyUI Manager.",
+    }
 
 
 async def restart_comfyui(request) -> dict[str, Any]:
@@ -538,12 +571,12 @@ def register_routes() -> bool:
         return await _start_job_response("deps", "Sync Dependencies", _job_sync_dependencies)
 
     @routes.post(f"{API_PREFIX}/update-comfyui")
-    async def update_core(_request):
-        return await _start_job_response("comfyui", "Update ComfyUI", _job_update_comfyui)
+    async def update_core(request):
+        return await _start_job_response("comfyui", "Update ComfyUI", lambda job: _job_update_comfyui(job, request))
 
     @routes.post(f"{API_PREFIX}/update/comfyui")
-    async def update_comfyui_route(_request):
-        return await _start_job_response("comfyui", "Update ComfyUI", _job_update_comfyui)
+    async def update_comfyui_route(request):
+        return await _start_job_response("comfyui", "Update ComfyUI", lambda job: _job_update_comfyui(job, request))
 
     @routes.get(f"{API_PREFIX}/update/status")
     async def update_status(_request):
@@ -588,8 +621,14 @@ async def _job_sync_dependencies(job: ManagerJob) -> dict[str, Any]:
     return await sync_dependencies_with_comfy_cli(job.append_log)
 
 
-async def _job_update_comfyui(job: ManagerJob) -> dict[str, Any]:
-    return await update_comfyui_with_git(job.append_log)
+async def _job_update_comfyui(job: ManagerJob, request) -> dict[str, Any]:
+    try:
+        result = await request_manager_update_comfyui(request)
+        job.append_log(result["message"])
+        return result
+    except ManagerApiError as error:
+        job.append_log(f"ComfyUI Manager update route failed; falling back to git provider: {error}")
+        return await update_comfyui_with_git(job.append_log)
 
 
 async def _operation_update_all() -> dict[str, Any]:
