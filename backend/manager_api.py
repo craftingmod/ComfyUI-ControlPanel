@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -1423,6 +1424,32 @@ async def restart_comfyui(_request) -> dict[str, Any]:
     }
 
 
+def open_path_in_file_manager(path: Path) -> dict[str, Any]:
+    target = path.resolve()
+    if not target.exists():
+        raise ManagerApiError(f"Path does not exist: {target}")
+
+    system = platform.system()
+    if system == "Windows":
+        startfile = getattr(os, "startfile", None)
+        if not callable(startfile):
+            raise ManagerApiError("Windows file manager opener is not available.")
+        startfile(str(target))
+        command = ["os.startfile", str(target)]
+    elif system == "Darwin":
+        command = _command_args("open", str(target))
+        subprocess.Popen(command)
+    else:
+        command = _command_args("xdg-open", str(target))
+        subprocess.Popen(command)
+
+    return {
+        "provider": "local-file-manager",
+        "path": str(target),
+        "command": command,
+    }
+
+
 async def _with_operation_lock(operation):
     if _OPERATION_LOCK.locked():
         return _error_response("Another manager operation is already running.", status=409)
@@ -1576,6 +1603,10 @@ def register_routes() -> bool:
             )
         )
 
+    @routes.post(f"{API_PREFIX}/open/custom-nodes")
+    async def open_custom_nodes(_request):
+        return await _with_operation_lock(_operation_open_custom_nodes)
+
     @routes.post(f"{API_PREFIX}/update-all")
     async def update_all(_request):
         return await _start_job_response("git-nodes", "Update Git Nodes", _job_update_git_nodes)
@@ -1670,3 +1701,7 @@ async def _operation_update_comfyui() -> dict[str, Any]:
 
 async def _operation_install_git_url(url: str, name: str | None) -> dict[str, Any]:
     return {"install": await install_git_url(url, name)}
+
+
+async def _operation_open_custom_nodes() -> dict[str, Any]:
+    return open_path_in_file_manager(CUSTOM_NODES_DIR)

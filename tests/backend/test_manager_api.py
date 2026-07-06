@@ -35,6 +35,40 @@ def test_resolve_custom_nodes_dir_uses_comfyui_root_child(tmp_path):
     assert manager_api.resolve_custom_nodes_dir(comfyui_root) == (comfyui_root / "custom_nodes").resolve()
 
 
+def test_open_path_in_file_manager_uses_windows_startfile(monkeypatch, tmp_path):
+    calls = []
+
+    monkeypatch.setattr(manager_api.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(manager_api.os, "startfile", lambda path: calls.append(path), raising=False)
+
+    result = manager_api.open_path_in_file_manager(tmp_path)
+
+    assert calls == [str(tmp_path.resolve())]
+    assert result["provider"] == "local-file-manager"
+    assert result["path"] == str(tmp_path.resolve())
+    assert result["command"] == ["os.startfile", str(tmp_path.resolve())]
+
+
+def test_open_path_in_file_manager_uses_xdg_open_on_linux(monkeypatch, tmp_path):
+    calls = []
+
+    monkeypatch.setattr(manager_api.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(manager_api, "_command_args", lambda *args: list(args))
+    monkeypatch.setattr(manager_api.subprocess, "Popen", lambda command: calls.append(command))
+
+    result = manager_api.open_path_in_file_manager(tmp_path)
+
+    assert calls == [["xdg-open", str(tmp_path.resolve())]]
+    assert result["command"] == ["xdg-open", str(tmp_path.resolve())]
+
+
+def test_open_path_in_file_manager_rejects_missing_path(tmp_path):
+    missing_path = tmp_path / "missing"
+
+    with pytest.raises(manager_api.ManagerApiError, match="Path does not exist"):
+        manager_api.open_path_in_file_manager(missing_path)
+
+
 def test_same_server_url_uses_current_request_host():
     request = SimpleNamespace(headers={"Host": "127.0.0.1:8188"}, scheme="http")
 

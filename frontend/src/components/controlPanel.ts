@@ -27,6 +27,8 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
   let panelEl: HTMLElement | undefined
   let logEl: HTMLPreElement | undefined
   let restartNoticeEl: HTMLElement | undefined
+  let managerCacheStatusEl: HTMLElement | undefined
+  let managerCacheButtons: HTMLButtonElement[] = []
   let statusPollTimer: number | undefined
 
   function toast(severity: ToastSeverity, summary: string, detail: string): void {
@@ -42,6 +44,36 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     window.requestAnimationFrame(() => {
       currentLogEl.scrollTop = currentLogEl.scrollHeight
     })
+  }
+
+  function clearLog(): void {
+    if (!logEl) {
+      return
+    }
+    logEl.textContent = "Ready.\n"
+    scrollLogToBottom()
+  }
+
+  function createActionGroup(titleText: string, ariaLabel: string): HTMLDivElement {
+    const group = document.createElement("div")
+    group.className = "cp-action-group"
+    group.setAttribute("aria-label", ariaLabel)
+
+    const title = document.createElement("h3")
+    title.className = "cp-group-title"
+    title.textContent = titleText
+    group.append(title)
+    return group
+  }
+
+  function setManagerCacheControlsEnabled(enabled: boolean, message: string): void {
+    for (const button of managerCacheButtons) {
+      button.disabled = !enabled
+    }
+    if (managerCacheStatusEl) {
+      managerCacheStatusEl.textContent = message
+      managerCacheStatusEl.classList.toggle("cp-group-status-disabled", !enabled)
+    }
   }
 
   function asRecord(value: unknown): JsonObject | undefined {
@@ -110,7 +142,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     }
   }
 
-  async function runOperation(label: string, route: string, body?: JsonObject, operationOptions: OperationOptions = {}): Promise<void> {
+  async function runOperation(label: string, route: string, body?: JsonObject, operationOptions: OperationOptions = {}): Promise<JsonObject | undefined> {
     const { toastOnSuccess = true } = operationOptions
     writeLog(`${label} started.`)
     debugLog(readBooleanSetting, `${label} request`, { route, body })
@@ -121,11 +153,25 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       if (toastOnSuccess) {
         toast("success", "ComfyUI-ControlPanel", `${label} completed.`)
       }
+      return data
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       writeLog(`${label} failed: ${message}`)
       toast("error", "ComfyUI-ControlPanel", message)
+      return undefined
     }
+  }
+
+  async function refreshPanelStatus(): Promise<void> {
+    const data = await runOperation("Status", API_ROUTES.STATUS, undefined, { toastOnSuccess: false })
+    const settings = asRecord(data?.settings)
+    const managerCacheEnabled = settings?.manager_repository_data_override === true
+    setManagerCacheControlsEnabled(
+      managerCacheEnabled,
+      managerCacheEnabled
+        ? "Replace Manager Repository Data is enabled."
+        : "Enable Replace Manager Repository Data in settings to use these actions.",
+    )
   }
 
   const gitInstallModal = createGitInstallModalController({
@@ -200,6 +246,16 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     }
   }
 
+  async function confirmRebuildManagerCache(): Promise<void> {
+    const confirmed = await app.extensionManager.dialog.confirm({
+      title: "Rebuild Manager Cache",
+      message: "Rebuilding the Manager cache may take some time. Continue?",
+    })
+    if (confirmed) {
+      await startUpdateJob("Rebuild Manager Cache", API_ROUTES.REBUILD_MANAGER_CACHE)
+    }
+  }
+
   async function restartComfyUI(): Promise<void> {
     const label = "Restart"
     const body = { confirm: true }
@@ -246,32 +302,42 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     closeButton.setAttribute("aria-label", "Close")
     header.append(title, closeButton)
 
-    const maintenanceActions = document.createElement("div")
-    maintenanceActions.className = "cp-action-group"
-    maintenanceActions.setAttribute("aria-label", "Maintenance actions")
+    const maintenanceActions = createActionGroup("Install / Update", "Install and update actions")
     maintenanceActions.append(
       createButton("Install via Git URL", () => {
         gitInstallModal.open()
       }),
-      createButton("Update Git Nodes", () => {
-        void startUpdateJob("Update Git Nodes", API_ROUTES.UPDATE_CUSTOM_NODES)
+      createButton("Sync Dependencies", () => {
+        void startUpdateJob("Sync Dependencies", API_ROUTES.SYNC_DEPENDENCIES)
       }),
       createButton("Update ComfyUI", () => {
         void startUpdateJob("Update ComfyUI", API_ROUTES.UPDATE_COMFYUI)
       }),
-      createButton("Sync Dependencies", () => {
-        void startUpdateJob("Sync Dependencies", API_ROUTES.SYNC_DEPENDENCIES)
+      createButton("Update Git Nodes", () => {
+        void startUpdateJob("Update Git Nodes", API_ROUTES.UPDATE_CUSTOM_NODES)
       }),
     )
+
+    const cacheActions = createActionGroup("Manager Cache", "Manager cache actions")
+    managerCacheStatusEl = document.createElement("div")
+    managerCacheStatusEl.className = "cp-group-status cp-group-status-disabled"
+    managerCacheStatusEl.textContent = "Checking Replace Manager Repository Data setting..."
+
+    const updateManagerCacheButton = createButton("Update Manager Cache", () => {
+      void startUpdateJob("Update Manager Cache", API_ROUTES.REFRESH_MANAGER_CACHE)
+    })
+    const rebuildManagerCacheButton = createButton("Rebuild Manager Cache", () => {
+      void confirmRebuildManagerCache()
+    })
+    managerCacheButtons = [updateManagerCacheButton, rebuildManagerCacheButton]
+    setManagerCacheControlsEnabled(false, "Checking Replace Manager Repository Data setting...")
+    cacheActions.append(managerCacheStatusEl, updateManagerCacheButton, rebuildManagerCacheButton)
 
     const actions = document.createElement("div")
     actions.className = "cp-actions"
     actions.append(
-      createButton("Update Manager Cache", () => {
-        void startUpdateJob("Update Manager Cache", API_ROUTES.REFRESH_MANAGER_CACHE)
-      }),
-      createButton("Rebuild Manager Cache", () => {
-        void startUpdateJob("Rebuild Manager Cache", API_ROUTES.REBUILD_MANAGER_CACHE)
+      createButton("Open custom_nodes Folder", () => {
+        void runOperation("Open custom_nodes Folder", API_ROUTES.OPEN_CUSTOM_NODES, {})
       }),
       createButton("Restart", () => {
         void confirmRestart()
@@ -283,12 +349,19 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     restartNoticeEl.hidden = true
     restartNoticeEl.textContent = "Restart required to finish applying updates."
 
+    const logWrap = document.createElement("div")
+    logWrap.className = "cp-log-wrap"
+
+    const clearLogButton = createButton("Clear Log", clearLog, "cp-button cp-log-clear")
+    clearLogButton.setAttribute("aria-label", "Clear log")
+
     logEl = document.createElement("pre")
     logEl.className = "cp-log"
     logEl.textContent = "Ready.\n"
+    logWrap.append(clearLogButton, logEl)
     scrollLogToBottom()
 
-    panel.append(header, maintenanceActions, actions, restartNoticeEl, logEl)
+    panel.append(header, maintenanceActions, cacheActions, actions, restartNoticeEl, logWrap)
     backdrop.append(panel)
     return backdrop
   }
@@ -300,7 +373,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     if (!panelEl.isConnected) {
       document.body.append(panelEl)
     }
-    void runOperation("Status", API_ROUTES.STATUS, undefined, { toastOnSuccess: false })
+    void refreshPanelStatus()
   }
 
   function close(): void {
