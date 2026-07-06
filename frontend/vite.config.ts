@@ -36,7 +36,7 @@ export default defineConfig({
   build: {
     emptyOutDir: true,
     outDir: path.resolve(__dirname, "..", "dist"),
-    rollupOptions: {
+    rolldownOptions: {
       external: ["/scripts/app.js", "/scripts/api.js"],
       input: {
         index: path.resolve(__dirname, "src/index.ts"),

@@ -26,23 +26,23 @@
   ],
   "author": "craftingmod",
   "license": "MIT",
-  "packageManager": "pnpm@10.17.1",
+  "packageManager": "pnpm@11.10.0",
   "dependencies": {
-    "typescript-7": "npm:typescript@rc",
-    "vite": "^7.1.12"
+    "vite": "^8.1.2",
+    "typescript": "npm:@typescript/typescript6@^6.0.1"
   },
   "devDependencies": {
-    "@comfyorg/comfyui-frontend-types": "^1.32.1",
+    "@comfyorg/comfyui-frontend-types": "^1.45.20",
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.61.1",
     "@stylistic/eslint-plugin": "^5.10.0",
-    "@types/node": "^24.10.0",
-    "@vitest/coverage-v8": "^4.0.16",
+    "@types/node": "^24.13.2",
+    "@vitest/coverage-v8": "^4.1.9",
     "eslint": "^10.6.0",
     "globals": "^17.7.0",
     "jiti": "^2.7.0",
-    "typescript": "npm:@typescript/typescript6@^6.0.0",
+    "typescript-7": "npm:typescript@7.0.1-rc",
     "typescript-eslint": "^8.62.1",
-    "vitest": "^4.0.16"
+    "vitest": "^4.1.9"
   }
 }
