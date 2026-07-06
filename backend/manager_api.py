@@ -10,7 +10,6 @@ import platform
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
 import os
 import re
 import shutil
@@ -22,6 +21,12 @@ from urllib.parse import urlencode, urlparse, urlunparse
 from aiohttp import ClientError, ClientSession
 
 from .hash import manager_cache_key_hash
+from .manager_jobs import JOBS as _JOBS
+from .manager_jobs import LATEST_JOB_ID as _LATEST_JOB_ID
+from .manager_jobs import ManagerJob, latest_job, start_job
+from . import manager_process
+from .manager_process import ManagerApiError
+from .manager_process import run_command, run_command_stream
 
 
 EXTENSION_ROOT = Path(__file__).resolve().parents[1]
@@ -74,10 +79,6 @@ API_PREFIX = "/control-panel"
 _ROUTES_REGISTERED = False
 _OPERATION_LOCK = asyncio.Lock()
 _MANAGER_CACHE_REFRESH_LOCK = threading.Lock()
-_JOB_LOCK = asyncio.Lock()
-_JOBS: dict[str, "ManagerJob"] = {}
-_LATEST_JOB_ID: str | None = None
-_JOB_LIMIT = 10
 _TORCH_PACKAGES = {"torch", "torchvision", "torchaudio"}
 _CLEAR_TERMINAL_CSI = "\033[2J\033[H"
 _MANAGER_CACHE_FILES = (
@@ -111,46 +112,6 @@ _SETTING_MANAGER_CONFIG_WAS_MISSING = "manager_config_was_missing_before_overrid
 LOGGER = logging.getLogger(__name__)
 
 
-@dataclass
-class ManagerJob:
-    id: str
-    kind: str
-    label: str
-    status: str = "queued"
-    created_at: float = field(default_factory=time.time)
-    started_at: float | None = None
-    finished_at: float | None = None
-    logs: list[str] = field(default_factory=list)
-    result: dict[str, Any] | None = None
-    error: str | None = None
-    restart_required: bool = False
-
-    def append_log(self, message: str) -> None:
-        line = message.rstrip()
-        self.logs.append(line)
-        if line:
-            LOGGER.info("[ControlPanel] %s", line)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "kind": self.kind,
-            "label": self.label,
-            "status": self.status,
-            "created_at": self.created_at,
-            "started_at": self.started_at,
-            "finished_at": self.finished_at,
-            "logs": self.logs,
-            "result": self.result,
-            "error": self.error,
-            "restart_required": self.restart_required,
-        }
-
-
-class ManagerApiError(ValueError):
-    pass
-
-
 def _json_response(data: dict[str, Any], status: int = 200):
     from aiohttp import web
 
@@ -166,7 +127,7 @@ def _command_available(command: str) -> bool:
 
 
 def _find_executable(command: str) -> str | None:
-    return shutil.which(command)
+    return manager_process.find_executable(command)
 
 
 def _command_args(command: str, *args: str) -> list[str]:
@@ -215,103 +176,6 @@ def resolve_custom_node_destination(name: str) -> Path:
     if not _is_relative_to(destination, CUSTOM_NODES_DIR):
         raise ManagerApiError("Destination must stay inside ComfyUI/custom_nodes.")
     return destination
-
-
-async def run_command(args: list[str], cwd: Path, timeout: int = 600) -> dict[str, Any]:
-    if not args:
-        raise ManagerApiError("No command was provided.")
-    if not Path(args[0]).is_file() and not _command_available(args[0]):
-        raise ManagerApiError(f"Required command is not available on PATH: {args[0]}")
-
-    process = await asyncio.create_subprocess_exec(
-        *args,
-        cwd=str(cwd),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-    except TimeoutError:
-        process.kill()
-        await process.communicate()
-        raise ManagerApiError(f"Command timed out: {' '.join(args)}") from None
-
-    result = {
-        "command": args,
-        "cwd": str(cwd),
-        "returncode": process.returncode,
-        "stdout": stdout.decode("utf-8", errors="replace").strip(),
-        "stderr": stderr.decode("utf-8", errors="replace").strip(),
-    }
-    if process.returncode != 0:
-        detail = result["stderr"] or result["stdout"] or f"exit code {process.returncode}"
-        raise ManagerApiError(f"Command failed: {' '.join(args)}\n{detail}")
-    return result
-
-
-async def run_command_stream(
-    args: list[str],
-    cwd: Path,
-    timeout: int = 1800,
-    on_line: Callable[[str], None] | None = None,
-) -> dict[str, Any]:
-    if not args:
-        raise ManagerApiError("No command was provided.")
-    if not Path(args[0]).is_file() and not _command_available(args[0]):
-        raise ManagerApiError(f"Required command is not available: {args[0]}")
-
-    started = time.monotonic()
-    process = await asyncio.create_subprocess_exec(
-        *args,
-        cwd=str(cwd),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout_lines: list[str] = []
-    stderr_lines: list[str] = []
-
-    async def read_stream(stream, prefix: str, sink: list[str]) -> None:
-        if stream is None:
-            return
-        while True:
-            line = await stream.readline()
-            if not line:
-                break
-            decoded = line.decode("utf-8", errors="replace").rstrip()
-            sink.append(decoded)
-            if on_line:
-                on_line(f"{prefix}{decoded}")
-
-    readers = [
-        asyncio.create_task(read_stream(process.stdout, "", stdout_lines)),
-        asyncio.create_task(read_stream(process.stderr, "stderr: ", stderr_lines)),
-    ]
-    try:
-        try:
-            await asyncio.wait_for(process.wait(), timeout=max(0.1, timeout - (time.monotonic() - started)))
-        except TimeoutError:
-            process.kill()
-            await process.wait()
-            raise ManagerApiError(f"Command timed out: {' '.join(args)}") from None
-        await asyncio.gather(*readers)
-    finally:
-        for reader in readers:
-            if not reader.done():
-                reader.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await reader
-
-    result = {
-        "command": args,
-        "cwd": str(cwd),
-        "returncode": process.returncode,
-        "stdout": "\n".join(stdout_lines).strip(),
-        "stderr": "\n".join(stderr_lines).strip(),
-    }
-    if process.returncode != 0:
-        detail = result["stderr"] or result["stdout"] or f"exit code {process.returncode}"
-        raise ManagerApiError(f"Command failed: {' '.join(args)}\n{detail}")
-    return result
 
 
 def discover_git_repositories(root: Path = CUSTOM_NODES_DIR) -> list[Path]:
@@ -1552,50 +1416,6 @@ async def _with_operation_lock(operation):
             return _error_response(str(error), status=400)
         except Exception as error:  # noqa: BLE001 - surface backend failures to the UI.
             return _error_response(str(error), status=500)
-
-
-def _prune_jobs() -> None:
-    if len(_JOBS) <= _JOB_LIMIT:
-        return
-    for job_id in sorted(_JOBS, key=lambda key: _JOBS[key].created_at)[: len(_JOBS) - _JOB_LIMIT]:
-        del _JOBS[job_id]
-
-
-async def start_job(kind: str, label: str, operation: Callable[[ManagerJob], Awaitable[dict[str, Any]]]) -> ManagerJob:
-    global _LATEST_JOB_ID
-    async with _JOB_LOCK:
-        if any(job.status in {"queued", "running"} for job in _JOBS.values()):
-            raise ManagerApiError("Another manager update job is already running.")
-        job = ManagerJob(id=uuid.uuid4().hex, kind=kind, label=label)
-        _JOBS[job.id] = job
-        _LATEST_JOB_ID = job.id
-        _prune_jobs()
-        asyncio.create_task(_run_job(job, operation))
-        return job
-
-
-async def _run_job(job: ManagerJob, operation: Callable[[ManagerJob], Awaitable[dict[str, Any]]]) -> None:
-    job.status = "running"
-    job.started_at = time.time()
-    job.append_log(f"{job.label} started.")
-    try:
-        result = await operation(job)
-        job.result = result
-        job.restart_required = bool(result.get("restart_required"))
-        job.status = "succeeded"
-        job.append_log(f"{job.label} completed.")
-    except Exception as error:  # noqa: BLE001 - persist job failures for the UI.
-        job.error = str(error)
-        job.status = "failed"
-        job.append_log(f"{job.label} failed: {error}")
-    finally:
-        job.finished_at = time.time()
-
-
-def latest_job() -> ManagerJob | None:
-    if _LATEST_JOB_ID is None:
-        return None
-    return _JOBS.get(_LATEST_JOB_ID)
 
 
 def schedule_restart(delay_seconds: float = 1.0) -> None:
