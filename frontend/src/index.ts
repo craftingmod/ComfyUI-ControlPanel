@@ -472,45 +472,45 @@ function createExtensionObject(useActionBar: boolean): ManagerExtension {
     async setup() {
       await attachTopMenuButton()
     },
-  commands: [
-    {
-      id: "control-panel.open",
-      label: "ComfyUI-ControlPanel",
-      icon: "pi pi-wrench",
-      function: openPanel,
-    },
-  ],
-  menuCommands: [
-    {
-      path: ["ComfyUI-ControlPanel"],
-      commands: ["control-panel.open"],
-    },
-  ],
-  settings: [
-    {
-      id: SETTINGS_IDS.VERSION,
-      name: "ComfyUI-ControlPanel 1.0.0",
-      type: () => {
-        const spanEl = document.createElement("span")
-        const linkEl = document.createElement("a")
-        linkEl.href = "https://github.com/craftingmod/comfyui-control-panel"
-        linkEl.target = "_blank"
-        linkEl.rel = "noopener noreferrer"
-        linkEl.textContent = "Homepage"
-        linkEl.style.paddingRight = "12px"
-        spanEl.append(linkEl)
-        return spanEl
+    commands: [
+      {
+        id: "control-panel.open",
+        label: "ComfyUI-ControlPanel",
+        icon: "pi pi-wrench",
+        function: openPanel,
       },
-      defaultValue: undefined,
-    },
-    {
-      id: SETTINGS_IDS.DEBUG_LOGGING,
-      name: "Enable Debug Logging",
-      type: "boolean",
-      tooltip: "Show detailed debug logs in browser console during manager operations",
-      defaultValue: false,
-    },
-  ],
+    ],
+    menuCommands: [
+      {
+        path: ["ComfyUI-ControlPanel"],
+        commands: ["control-panel.open"],
+      },
+    ],
+    settings: [
+      {
+        id: SETTINGS_IDS.VERSION,
+        name: "ComfyUI-ControlPanel 1.0.0",
+        type: () => {
+          const spanEl = document.createElement("span")
+          const linkEl = document.createElement("a")
+          linkEl.href = "https://github.com/craftingmod/comfyui-control-panel"
+          linkEl.target = "_blank"
+          linkEl.rel = "noopener noreferrer"
+          linkEl.textContent = "Homepage"
+          linkEl.style.paddingRight = "12px"
+          spanEl.append(linkEl)
+          return spanEl
+        },
+        defaultValue: undefined,
+      },
+      {
+        id: SETTINGS_IDS.DEBUG_LOGGING,
+        name: "Enable Debug Logging",
+        type: "boolean",
+        tooltip: "Show detailed debug logs in browser console during manager operations",
+        defaultValue: false,
+      },
+    ],
   }
 
   if (useActionBar) {

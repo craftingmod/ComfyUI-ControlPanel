@@ -24,22 +24,17 @@ E2E_TEARDOWN_PATH = REPO_ROOT / "tests" / "e2e" / "global.teardown.ts"
 E2E_SMOKE_SPEC_PATH = REPO_ROOT / "tests" / "e2e" / "smoke.spec.ts"
 
 
-def test_template_entrypoint_exports_expected_symbols_via_package_loader():
+def test_control_panel_entrypoint_exports_expected_symbols_via_package_loader():
     module = load_package_from_path(
-        "template_entrypoint",
+        "control_panel_entrypoint",
         ENTRYPOINT_PATH,
         repo_root=REPO_ROOT,
     )
 
     assert module.WEB_DIRECTORY == "./dist"
-    assert module.NODE_CLASS_MAPPINGS == {
-        "TemplateExampleNormalizeText": module.ExampleNormalizeTextNode,
-    }
-    assert module.NODE_DISPLAY_NAME_MAPPINGS == {
-        "TemplateExampleNormalizeText": "Template Example Normalize Text",
-    }
+    assert module.NODE_CLASS_MAPPINGS == {}
+    assert module.NODE_DISPLAY_NAME_MAPPINGS == {}
     assert module.__all__ == [
-        "ExampleNormalizeTextNode",
         "NODE_CLASS_MAPPINGS",
         "NODE_DISPLAY_NAME_MAPPINGS",
         "register_routes",
@@ -75,17 +70,24 @@ def test_root_packaging_metadata_matches_layout():
     tool_comfy = pyproject["tool"]["comfy"]
     bump_files = pyproject["tool"]["bumpversion"]["files"]
 
+    assert pyproject["project"]["name"] == "comfyui-control-panel"
+    assert pyproject["project"]["description"] == "A ComfyUI custom node for restoring control panel workflows."
+    assert pyproject["project"]["dependencies"] == ["aiohttp>=3.9"]
+    assert tool_comfy["DisplayName"] == "ComfyUI-ControlPanel"
     assert tool_comfy["includes"] == ["dist"]
     assert any(file_config["filename"] == "frontend/src/index.ts" for file_config in bump_files)
 
 
 def test_root_gitignore_and_workspace_surface_match_harness_expectations():
     gitignore = GITIGNORE_PATH.read_text(encoding="utf-8")
+    pnpm_workspace = PNPM_WORKSPACE_PATH.read_text(encoding="utf-8")
 
     assert ".e2e/" in gitignore
     assert "test-results/" in gitignore
     assert "playwright-report/" in gitignore
-    assert not PNPM_WORKSPACE_PATH.exists()
+    assert PNPM_WORKSPACE_PATH.exists()
+    assert "packages:\n  - ." in pnpm_workspace
+    assert "allowBuilds:\n  esbuild: true" in pnpm_workspace
 
 
 def test_e2e_harness_files_exist():
@@ -123,6 +125,8 @@ def test_docs_explain_the_slim_command_surface():
     assert "uv sync --locked --group dev" in readme
     assert "pnpm test:e2e" in readme
     assert "docs/TESTING.md" in readme
+    assert "ComfyUI Custom Node Template" not in readme
+    assert "Customize This Template" not in readme
 
     assert "frontend/" in agents
     assert "backend/" in agents

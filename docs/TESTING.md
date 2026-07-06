@@ -23,7 +23,7 @@ pnpm setup:e2e
 - ComfyUI is pinned to `v0.18.1`.
 - `comfy-cli` is pinned inside `.e2e/venv`.
 - The ComfyUI checkout and Python runtime live under `.e2e/comfyui`.
-- The template repo is mounted into `.e2e/comfyui/custom_nodes/comfyui-custom-node`.
+- This repo is mounted into `.e2e/comfyui/custom_nodes/ComfyUI-ControlPanel`.
 - The harness is CPU-only so local and CI behavior are predictable.
 - The default test server port is `8199`; set `COMFYUI_E2E_PORT` if that port is busy.
 
