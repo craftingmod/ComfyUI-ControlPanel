@@ -9,7 +9,8 @@ The extension is packaged as a single ComfyUI custom node pack. Backend routes
 live in `backend/`, the frontend extension lives in `frontend/`, and ComfyUI
 loads the built frontend from `dist/index.js` through `WEB_DIRECTORY = "./dist"`.
 
-This custom nodes is built to personal use replacement of [ComfyUI-Manager#3048](https://github.com/Comfy-Org/ComfyUI-Manager/pull/3048).
+This custom node pack is primarily maintained as a personal-use replacement for
+[ComfyUI-Manager#3048](https://github.com/Comfy-Org/ComfyUI-Manager/pull/3048).
 
 ## Features
 
@@ -47,31 +48,30 @@ pnpm test:e2e
 
 ## Release
 
-Publishing is handled by the `Publish to Comfy registry` GitHub Actions workflow.
-Run it manually from the `main` branch, choose a patch/minor/major bump, and make
-sure the repository has a `REGISTRY_ACCESS_TOKEN` secret.
+Publishing to the Comfy Registry is intentionally not automated. Releases are
+GitHub Release zip artifacts built from version tags.
 
-The workflow:
+Create and push a version tag to publish an installable zip:
 
-1. Runs typecheck, tests, and a frontend build.
-2. Bumps the version in `pyproject.toml`, `package.json`, and `frontend/src/index.ts`.
-3. Creates and pushes a `vX.Y.Z` tag.
-4. Checks out that tag, runs `pnpm build`, and publishes the custom node to the registry.
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The release workflow:
+
+1. Checks out the tagged source.
+2. Installs dependencies with Node.js 24, pnpm, and uv.
+3. Runs typecheck and unit tests.
+4. Builds the frontend.
+5. Verifies that `dist/index.js` exists.
+6. Uploads `ComfyUI-ControlPanel-vX.Y.Z.zip` to the GitHub Release.
 
 ### About `dist/index.js` in tag releases
 
 `dist/` is intentionally ignored by Git, so GitHub's automatic source archives
-for tags do not contain `dist/index.js`. The registry release still includes the
-built frontend because the publish job runs `pnpm build` after checking out the
-tag and before calling `Comfy-Org/publish-node-action`.
-
-If a GitHub tag source archive itself must be directly installable, include a
-prebuilt artifact instead of relying on the automatic source archive. Two common
-options are:
-
-- Commit `dist/index.js` before creating the release tag, using `git add -f dist/index.js`.
-- Create a release zip in CI after `pnpm build` and upload that zip as a GitHub
-  Release asset.
+for tags do not contain `dist/index.js`. Use the attached release zip instead;
+it is created after `pnpm build` and includes the required `dist/index.js` file.
 
 ## Docs
 

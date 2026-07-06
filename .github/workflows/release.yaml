@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build release zip
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Use Python from .python-version
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "pnpm"
+
+      - name: Install Node dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sync Python dependencies
+        run: uv sync --locked --group dev
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Run unit tests
+        run: pnpm test:unit
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Verify required release files
+        run: |
+          test -f __init__.py
+          test -f backend/__init__.py
+          test -f dist/index.js
+          test -f pyproject.toml
+
+      - name: Create installable zip
+        shell: bash
+        run: |
+          release_name="ComfyUI-ControlPanel-${GITHUB_REF_NAME:-manual}"
+          package_root="release/${release_name}"
+
+          mkdir -p "${package_root}"
+          cp -R __init__.py backend dist assets pyproject.toml README.md LICENSE "${package_root}/"
+
+          cd release
+          zip -r "${release_name}.zip" "${release_name}"
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/ComfyUI-ControlPanel-${{ github.ref_name }}.zip
+          generate_release_notes: true
