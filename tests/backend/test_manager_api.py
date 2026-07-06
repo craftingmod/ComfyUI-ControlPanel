@@ -306,26 +306,32 @@ def test_start_job_rejects_concurrent_running_jobs(monkeypatch):
     manager_api._LATEST_JOB_ID = None
 
 
-def test_restart_current_process_execs_original_python_command(monkeypatch, capsys):
+def test_restart_current_process_execs_active_python_command(monkeypatch, capsys):
     calls = []
-    original_argv = ["python", "-s", "main.py", "--listen", "0.0.0.0"]
+    original_argv = ["C:/Users/alyac/AppData/Roaming/uv/python/cpython-3.13/python.exe", "main.py", "--listen", "0.0.0.0"]
 
     def fake_execv(path, args):
         calls.append((path, args))
 
-    monkeypatch.setattr(manager_api.sys, "executable", "C:/Python/python.exe")
+    monkeypatch.setattr(manager_api.sys, "executable", "V:/ComfyUI/portable_260706/.venv/Scripts/python.exe")
     monkeypatch.setattr(manager_api.sys, "orig_argv", original_argv, raising=False)
+    monkeypatch.setattr(manager_api.sys, "argv", ["main.py", "--listen", "0.0.0.0"], raising=False)
     monkeypatch.setattr(manager_api.os, "execv", fake_execv)
 
     manager_api.restart_current_process()
 
-    assert calls == [("C:/Python/python.exe", original_argv)]
+    assert calls == [
+        (
+            "V:/ComfyUI/portable_260706/.venv/Scripts/python.exe",
+            ["V:/ComfyUI/portable_260706/.venv/Scripts/python.exe", "main.py", "--listen", "0.0.0.0"],
+        )
+    ]
     assert "Restarting..." in capsys.readouterr().out
 
 
-def test_restart_exec_args_falls_back_to_current_argv(monkeypatch):
+def test_restart_exec_args_uses_active_python_and_current_argv(monkeypatch):
     monkeypatch.setattr(manager_api.sys, "executable", "C:/Python/python.exe")
-    monkeypatch.delattr(manager_api.sys, "orig_argv", raising=False)
+    monkeypatch.setattr(manager_api.sys, "orig_argv", ["C:/Base/python.exe", "main.py"], raising=False)
     monkeypatch.setattr(manager_api.sys, "argv", ["main.py", "--listen"], raising=False)
 
     assert manager_api.restart_exec_args() == ["C:/Python/python.exe", "main.py", "--listen"]

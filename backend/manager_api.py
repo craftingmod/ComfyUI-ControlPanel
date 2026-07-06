@@ -583,7 +583,7 @@ def schedule_restart(delay_seconds: float = 1.0) -> None:
 
 
 def restart_exec_args() -> list[str]:
-    return list(getattr(sys, "orig_argv", None) or [sys.executable, *sys.argv])
+    return [sys.executable, *sys.argv]
 
 
 def restart_current_process() -> None:
