@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import configparser
-import hashlib
 import json
 import logging
 import platform
@@ -14,15 +13,19 @@ import os
 import re
 import shutil
 import sys
+import importlib
 from pathlib import Path
 from typing import Any, Awaitable, Callable
-from urllib.parse import urlencode, urlparse
 from aiohttp import ClientSession
 
 from .hash import manager_cache_key_hash
+from . import manager_cache
 from . import manager_cli
 from . import manager_git
 from . import manager_http
+from . import manager_runtime
+from . import manager_routes
+from . import manager_settings
 from .manager_jobs import JOBS as _JOBS
 from .manager_jobs import LATEST_JOB_ID as _LATEST_JOB_ID
 from .manager_jobs import ManagerJob, latest_job, start_job
@@ -35,43 +38,15 @@ EXTENSION_ROOT = Path(__file__).resolve().parents[1]
 
 
 def resolve_comfyui_root() -> Path:
-    configured_path = os.environ.get("COMFYUI_PATH")
-    if configured_path:
-        return Path(configured_path).expanduser().resolve()
-
-    try:
-        import folder_paths
-
-        return Path(folder_paths.base_path).resolve()
-    except Exception:
-        return EXTENSION_ROOT.parent.parent.resolve()
+    return manager_runtime.resolve_comfyui_root(EXTENSION_ROOT, os.environ.get("COMFYUI_PATH"))
 
 
 def resolve_custom_nodes_dir(comfyui_root: Path) -> Path:
-    return (comfyui_root / "custom_nodes").resolve()
+    return manager_runtime.resolve_custom_nodes_dir(comfyui_root)
 
 
 def resolve_comfyui_user_dir() -> Path:
-    try:
-        import folder_paths
-
-        get_user_directory = getattr(folder_paths, "get_user_directory", None)
-        if callable(get_user_directory):
-            return Path(get_user_directory()).resolve()
-
-        get_system_user_directory = getattr(folder_paths, "get_system_user_directory", None)
-        if callable(get_system_user_directory):
-            manager_dir = Path(get_system_user_directory("manager")).resolve()
-            return manager_dir.parent
-    except Exception:
-        pass
-
-    if "--user-directory" in sys.argv:
-        index = sys.argv.index("--user-directory")
-        if index + 1 < len(sys.argv):
-            return Path(sys.argv[index + 1]).expanduser().resolve()
-
-    return (COMFYUI_ROOT / "user").resolve()
+    return manager_runtime.resolve_comfyui_user_dir(COMFYUI_ROOT, sys.argv)
 
 
 COMFYUI_ROOT = resolve_comfyui_root()
@@ -185,40 +160,34 @@ async def install_git_url(url: str, name: str | None = None) -> dict[str, Any]:
 
 
 def controlpanel_manager_cache_dir(user_dir: Path | None = None) -> Path:
-    return (user_dir or COMFYUI_USER_DIR) / "__controlpanel" / "manager-cache"
+    return manager_settings.controlpanel_manager_cache_dir(user_dir or COMFYUI_USER_DIR)
 
 
 def controlpanel_manager_cache_source_dir(user_dir: Path | None = None, channel: str | None = None) -> Path:
-    return controlpanel_manager_cache_dir(user_dir) / "sources" / normalize_manager_repository_data_channel(channel)
+    return manager_settings.controlpanel_manager_cache_source_dir(
+        user_dir or COMFYUI_USER_DIR,
+        normalize_manager_repository_data_channel(channel),
+    )
 
 
 def controlpanel_config_path(user_dir: Path | None = None) -> Path:
-    return (user_dir or COMFYUI_USER_DIR) / "__controlpanel" / _CONTROLPANEL_CONFIG_FILENAME
+    return manager_settings.controlpanel_config_path(user_dir or COMFYUI_USER_DIR, _CONTROLPANEL_CONFIG_FILENAME)
 
 
 def manager_user_dir(user_dir: Path | None = None) -> Path:
-    return (user_dir or COMFYUI_USER_DIR) / "__manager"
+    return manager_settings.manager_user_dir(user_dir or COMFYUI_USER_DIR)
 
 
 def manager_snapshot_dir(user_dir: Path | None = None) -> Path:
-    return manager_user_dir(user_dir) / "snapshots"
+    return manager_settings.manager_snapshot_dir(user_dir or COMFYUI_USER_DIR)
 
 
 def read_controlpanel_settings(user_dir: Path | None = None) -> dict[str, Any]:
-    config_path = controlpanel_config_path(user_dir)
-    if not config_path.exists():
-        return {}
-
-    try:
-        data = json.loads(config_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        LOGGER.warning("[ControlPanel] Ignoring invalid internal config: %s", config_path)
-        return {}
-    return data if isinstance(data, dict) else {}
+    return manager_settings.read_controlpanel_settings(controlpanel_config_path(user_dir), LOGGER.warning)
 
 
 def write_controlpanel_settings(settings: dict[str, Any], user_dir: Path | None = None) -> str:
-    return write_json_atomic(controlpanel_config_path(user_dir), settings)
+    return manager_settings.write_controlpanel_settings(controlpanel_config_path(user_dir), settings, write_json_atomic)
 
 
 def is_manager_repository_override_enabled(user_dir: Path | None = None) -> bool:
@@ -240,22 +209,17 @@ def read_manager_repository_data_channel(user_dir: Path | None = None) -> str:
 
 def set_manager_repository_data_channel(channel: Any, user_dir: Path | None = None) -> dict[str, Any]:
     resolved_user_dir = user_dir or COMFYUI_USER_DIR
-    normalized = normalize_manager_repository_data_channel(channel)
-    settings = read_controlpanel_settings(resolved_user_dir)
-    settings[_SETTING_MANAGER_REPOSITORY_DATA_CHANNEL] = normalized
-    write_controlpanel_settings(settings, resolved_user_dir)
-
-    deployment: dict[str, Any] = {"skipped": "Manager repository data override is disabled."}
-    if is_manager_repository_override_enabled(resolved_user_dir):
-        manager_dir = manager_user_dir(resolved_user_dir)
-        write_manager_config_values(manager_dir, {"channel_url": manager_repository_data_channel_url(normalized)})
-        deployment = deploy_controlpanel_manager_cache_to_manager(resolved_user_dir)
-
-    return {
-        "channel": normalized,
-        "channel_url": manager_repository_data_channel_url(normalized),
-        "deployment": deployment,
-    }
+    return manager_settings.set_manager_repository_data_channel(
+        channel=channel,
+        user_dir=resolved_user_dir,
+        setting_channel_key=_SETTING_MANAGER_REPOSITORY_DATA_CHANNEL,
+        is_override_enabled=is_manager_repository_override_enabled,
+        normalize_channel=normalize_manager_repository_data_channel,
+        channel_url=manager_repository_data_channel_url,
+        read_settings=read_controlpanel_settings,
+        write_settings=write_controlpanel_settings,
+        deploy_cache=deploy_controlpanel_manager_cache_to_manager,
+    )
 
 
 def manager_repository_data_channel_url(channel: str | None = None) -> str:
@@ -263,131 +227,63 @@ def manager_repository_data_channel_url(channel: str | None = None) -> str:
 
 
 def read_manager_config(manager_dir: Path) -> configparser.ConfigParser:
-    parser = configparser.ConfigParser()
-    config_path = manager_dir / "config.ini"
-    if config_path.exists():
-        parser.read(config_path, encoding="utf-8")
-    if not parser.has_section("default"):
-        parser.add_section("default")
-    return parser
+    return manager_settings.read_manager_config(manager_dir)
 
 
 def manager_config_path(manager_dir: Path) -> Path:
-    return manager_dir / "config.ini"
+    return manager_settings.manager_config_path(manager_dir)
 
 
 def manager_config_backup_path(manager_dir: Path) -> Path:
-    return manager_dir / "config_org.ini"
+    return manager_settings.manager_config_backup_path(manager_dir)
 
 
 def backup_manager_config_once(manager_dir: Path) -> bool:
-    backup_path = manager_config_backup_path(manager_dir)
-    if backup_path.exists():
-        return False
-
-    config_path = manager_config_path(manager_dir)
-    manager_dir.mkdir(parents=True, exist_ok=True)
-    if config_path.exists():
-        shutil.copy2(config_path, backup_path)
-    return True
+    return manager_settings.backup_manager_config_once(manager_dir)
 
 
 def restore_manager_config_backup(manager_dir: Path) -> bool:
-    backup_path = manager_config_backup_path(manager_dir)
-    if not backup_path.exists():
-        return False
-
-    config_path = manager_config_path(manager_dir)
-    manager_dir.mkdir(parents=True, exist_ok=True)
-    os.replace(backup_path, config_path)
-    return True
+    return manager_settings.restore_manager_config_backup(manager_dir)
 
 
 def write_manager_config(manager_dir: Path, parser: configparser.ConfigParser) -> None:
-    manager_dir.mkdir(parents=True, exist_ok=True)
-    config_path = manager_config_path(manager_dir)
-    temp_path = config_path.with_name(f".{config_path.name}.{uuid.uuid4().hex}.tmp")
-    with temp_path.open("w", encoding="utf-8") as file:
-        parser.write(file)
-    os.replace(temp_path, config_path)
+    manager_settings.write_manager_config(manager_dir, parser)
 
 
 def read_manager_network_mode(manager_dir: Path) -> str | None:
-    config_path = manager_dir / "config.ini"
-    if not config_path.exists():
-        return None
-
-    parser = read_manager_config(manager_dir)
-    value = parser.get("default", "network_mode", fallback="").strip()
-    return value or None
+    return manager_settings.read_manager_network_mode(manager_dir)
 
 
 def write_manager_network_mode(manager_dir: Path, network_mode: str | None) -> None:
-    parser = read_manager_config(manager_dir)
-    if network_mode is None:
-        parser.remove_option("default", "network_mode")
-    else:
-        parser.set("default", "network_mode", network_mode)
-    write_manager_config(manager_dir, parser)
+    manager_settings.write_manager_network_mode(manager_dir, network_mode)
 
 
 def read_manager_config_value(manager_dir: Path, option: str) -> str | None:
-    config_path = manager_config_path(manager_dir)
-    if not config_path.exists():
-        return None
-
-    parser = read_manager_config(manager_dir)
-    value = parser.get("default", option, fallback="").strip()
-    return value or None
+    return manager_settings.read_manager_config_value(manager_dir, option)
 
 
 def write_manager_config_values(manager_dir: Path, values: dict[str, str | None]) -> None:
-    parser = read_manager_config(manager_dir)
-    for option, value in values.items():
-        if value is None:
-            parser.remove_option("default", option)
-        else:
-            parser.set("default", option, value)
-    write_manager_config(manager_dir, parser)
+    manager_settings.write_manager_config_values(manager_dir, values)
 
 
 def read_manager_channel_url(manager_dir: Path) -> str:
-    config_path = manager_config_path(manager_dir)
-    if not config_path.exists():
-        return _DEFAULT_MANAGER_CHANNEL_URL
-
-    parser = read_manager_config(manager_dir)
-    channel_url = parser.get("default", "channel_url", fallback=_DEFAULT_MANAGER_CHANNEL_URL).strip()
-    return channel_url.rstrip("/") or _DEFAULT_MANAGER_CHANNEL_URL
+    return manager_settings.read_manager_channel_url(manager_dir, _DEFAULT_MANAGER_CHANNEL_URL)
 
 
 def manager_cache_filename(channel_url: str, filename: str) -> str:
-    cache_key_url = f"{channel_url.rstrip('/')}/{filename}"
-    return f"{manager_cache_key_hash(cache_key_url)}_{filename}"
+    return manager_cache.manager_cache_filename(channel_url, filename, manager_cache_key_hash)
 
 
 def manager_url_cache_filename(url: str) -> str:
-    parsed = urlparse(url)
-    filename = Path(parsed.path.rstrip("/")).name or "cache"
-    if not Path(filename).suffix:
-        filename = f"{filename}.json"
-    return f"{manager_cache_key_hash(url)}_{filename}"
+    return manager_cache.manager_url_cache_filename(url, manager_cache_key_hash)
 
 
 def is_cache_file_fresh(path: Path, max_age_seconds: int = _CACHE_MAX_AGE_SECONDS) -> bool:
-    if not path.exists():
-        return False
-    return time.time() - path.stat().st_mtime < max_age_seconds
+    return manager_cache.is_cache_file_fresh(path, max_age_seconds, time.time)
 
 
 def write_json_atomic(path: Path, data: Any) -> str:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True)
-    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-    temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    temp_path.write_text(payload, encoding="utf-8")
-    os.replace(temp_path, path)
-    return digest
+    return manager_cache.write_json_atomic(path, data)
 
 
 def _current_registry_form_factor() -> str:
@@ -424,26 +320,21 @@ def _registry_nodes_request_params(
     metadata: dict[str, str | None] | None = None,
 ) -> dict[str, str | int | bool]:
     resolved_metadata = metadata or _current_registry_cache_metadata()
-    params: dict[str, str | int | bool] = {
-        "limit": _COMFY_REGISTRY_NODES_PAGE_LIMIT,
-        "form_factor": resolved_metadata["form_factor"] or _current_registry_form_factor(),
-        # Keep supported_os out of the request so nodes with missing OS metadata stay in the cache.
-        # "supported_os": "...",
-        # "latest": True,
-    }
-    comfyui_version = resolved_metadata["comfyui_version"]
-    if comfyui_version:
-        params["comfyui_version"] = comfyui_version
-    if timestamp:
-        params["timestamp"] = timestamp
-    return params
+    return manager_cache.registry_nodes_request_params(
+        page_limit=_COMFY_REGISTRY_NODES_PAGE_LIMIT,
+        form_factor=resolved_metadata["form_factor"] or _current_registry_form_factor(),
+        comfyui_version=resolved_metadata["comfyui_version"],
+        timestamp=timestamp,
+    )
 
 
 def _registry_cache_metadata_matches(cache_data: dict[str, Any], metadata: dict[str, str | None]) -> bool:
-    cached_metadata = cache_data.get(_COMFY_REGISTRY_CACHE_METADATA_KEY)
-    if not isinstance(cached_metadata, dict):
-        return False
-    return all(cached_metadata.get(key) == metadata.get(key) for key in _COMFY_REGISTRY_CACHE_INVALIDATION_KEYS)
+    return manager_cache.registry_cache_metadata_matches(
+        cache_data,
+        metadata,
+        _COMFY_REGISTRY_CACHE_METADATA_KEY,
+        _COMFY_REGISTRY_CACHE_INVALIDATION_KEYS,
+    )
 
 
 def _with_registry_cache_metadata(
@@ -451,125 +342,45 @@ def _with_registry_cache_metadata(
     metadata: dict[str, str | None],
     previous_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    now = _format_iso_timestamp(time.time())
-    created_at = previous_metadata.get("created_at") if isinstance(previous_metadata, dict) else None
-    result = dict(data)
-    result[_COMFY_REGISTRY_CACHE_METADATA_KEY] = {
-        **metadata,
-        "created_at": created_at if isinstance(created_at, str) and created_at else now,
-        "updated_at": now,
-    }
-    return result
+    return manager_cache.with_registry_cache_metadata(
+        data,
+        metadata,
+        _COMFY_REGISTRY_CACHE_METADATA_KEY,
+        time.time(),
+        previous_metadata,
+    )
 
 
 def _registry_nodes_url(params: dict[str, str | int | bool]) -> str:
-    encoded_params = {key: str(value).lower() if isinstance(value, bool) else value for key, value in params.items()}
-    return f"{_COMFY_REGISTRY_NODES_URL}?{urlencode(encoded_params)}"
+    return manager_cache.registry_nodes_url(_COMFY_REGISTRY_NODES_URL, params)
 
 
 def _parse_iso_datetime(value: Any) -> float | None:
-    if not isinstance(value, str) or not value:
-        return None
-    normalized = value.replace("Z", "+00:00")
-    with contextlib.suppress(ValueError):
-        return datetime_fromisoformat(normalized)
-    return None
+    return manager_cache.parse_iso_datetime(value)
 
 
 def datetime_fromisoformat(value: str) -> float:
-    from datetime import datetime
-
-    return datetime.fromisoformat(value).timestamp()
+    return manager_cache.datetime_fromisoformat(value)
 
 
 def _format_iso_timestamp(timestamp: float) -> str:
-    from datetime import UTC, datetime
-
-    return datetime.fromtimestamp(timestamp, tz=UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return manager_cache.format_iso_timestamp(timestamp)
 
 
 def _node_updated_timestamp(node: dict[str, Any]) -> float | None:
-    candidates = (
-        node.get("updated_at"),
-        node.get("updatedAt"),
-        node.get("updated"),
-        node.get("created_at"),
-        node.get("createdAt"),
-    )
-    latest_version = node.get("latest_version")
-    if isinstance(latest_version, dict):
-        candidates += (
-            latest_version.get("updated_at"),
-            latest_version.get("updatedAt"),
-            latest_version.get("createdAt"),
-            latest_version.get("created_at"),
-        )
-
-    parsed = [_parse_iso_datetime(value) for value in candidates]
-    timestamps = [value for value in parsed if value is not None]
-    return max(timestamps) if timestamps else None
+    return manager_cache.node_updated_timestamp(node)
 
 
 def registry_nodes_incremental_timestamp(cache_data: dict[str, Any]) -> str | None:
-    nodes = cache_data.get("nodes")
-    if not isinstance(nodes, list):
-        return None
-
-    timestamps = [_node_updated_timestamp(node) for node in nodes if isinstance(node, dict)]
-    latest_timestamp = max((value for value in timestamps if value is not None), default=None)
-    if latest_timestamp is None:
-        return None
-    return _format_iso_timestamp(latest_timestamp - 10)
+    return manager_cache.registry_nodes_incremental_timestamp(cache_data)
 
 
 def merge_registry_nodes_cache(cache_data: dict[str, Any], update_data: dict[str, Any]) -> dict[str, Any]:
-    cached_nodes = cache_data.get("nodes")
-    update_nodes = update_data.get("nodes")
-    if not isinstance(cached_nodes, list) or not isinstance(update_nodes, list):
-        return update_data
-
-    merged: dict[str, dict[str, Any]] = {}
-    order: list[str] = []
-    for node in cached_nodes + update_nodes:
-        if not isinstance(node, dict):
-            continue
-        key = str(node.get("id") or node.get("node_id") or node.get("name") or "")
-        if not key:
-            continue
-        if key not in merged:
-            order.append(key)
-        merged[key] = node
-
-    nodes = [merged[key] for key in order]
-    result = dict(update_data)
-    result["nodes"] = nodes
-    result["page"] = 1
-    result["limit"] = _COMFY_REGISTRY_NODES_PAGE_LIMIT
-    result["total"] = len(nodes)
-    result["totalPages"] = 1
-    return result
+    return manager_cache.merge_registry_nodes_cache(cache_data, update_data, _COMFY_REGISTRY_NODES_PAGE_LIMIT)
 
 
 def manager_compatible_registry_nodes_cache(data: dict[str, Any]) -> dict[str, Any]:
-    nodes = data.get("nodes")
-    if not isinstance(nodes, list):
-        return data
-
-    compatible_nodes = []
-    for node in nodes:
-        if not isinstance(node, dict):
-            continue
-        latest_version = node.get("latest_version")
-        if not isinstance(latest_version, dict) or not latest_version.get("version"):
-            continue
-        compatible_nodes.append(node)
-
-    result = dict(data)
-    result["nodes"] = compatible_nodes
-    result["total"] = len(compatible_nodes)
-    result["page"] = 1
-    result["totalPages"] = 1
-    return result
+    return manager_cache.manager_compatible_registry_nodes_cache(data)
 
 
 def deploy_registry_nodes_cache_to_manager(
@@ -579,37 +390,15 @@ def deploy_registry_nodes_cache_to_manager(
 ) -> dict[str, Any]:
     source_path = source_dir / _COMFY_REGISTRY_NODES_CACHE_FILENAME
     manager_path = manager_cache_dir / manager_url_cache_filename(_COMFY_REGISTRY_NODES_URL)
-    if not source_path.exists():
-        on_line and on_line(f"Comfy Registry nodes cache source missing: {_COMFY_REGISTRY_NODES_CACHE_FILENAME}")
-        return {
-            "file": _COMFY_REGISTRY_NODES_CACHE_FILENAME,
-            "action": "missing",
-            "source_url": _COMFY_REGISTRY_NODES_URL,
-            "source_path": str(source_path),
-            "manager_cache_path": str(manager_path),
-        }
-
-    data = json.loads(source_path.read_text(encoding="utf-8"))
-    manager_data = manager_compatible_registry_nodes_cache(data) if isinstance(data, dict) else data
-    digest = write_json_atomic(manager_path, manager_data)
-    filtered = 0
-    if (
-        isinstance(data, dict)
-        and isinstance(manager_data, dict)
-        and isinstance(data.get("nodes"), list)
-        and isinstance(manager_data.get("nodes"), list)
-    ):
-        filtered = len(data["nodes"]) - len(manager_data["nodes"])
-    on_line and on_line("Comfy Registry nodes cache deployed for Manager")
-    return {
-        "file": _COMFY_REGISTRY_NODES_CACHE_FILENAME,
-        "action": "deployed",
-        "source_url": _COMFY_REGISTRY_NODES_URL,
-        "source_path": str(source_path),
-        "manager_cache_path": str(manager_path),
-        "filtered": filtered,
-        "sha256": digest,
-    }
+    return manager_cache.deploy_registry_nodes_cache_to_manager(
+        source_path=source_path,
+        manager_path=manager_path,
+        filename=_COMFY_REGISTRY_NODES_CACHE_FILENAME,
+        source_url=_COMFY_REGISTRY_NODES_URL,
+        compatible_cache=manager_compatible_registry_nodes_cache,
+        write_json=write_json_atomic,
+        on_line=on_line,
+    )
 
 
 def deploy_controlpanel_manager_cache_to_manager(
@@ -639,27 +428,15 @@ def deploy_controlpanel_manager_cache_to_manager(
     manager_cache_dir = manager_dir / "cache"
     manager_cache_dir.mkdir(parents=True, exist_ok=True)
 
-    results: list[dict[str, Any]] = []
-    for filename in _MANAGER_CACHE_FILES:
-        source_path = source_dir / filename
-        manager_path = manager_cache_dir / manager_cache_filename(channel_url, filename)
-        if not source_path.exists():
-            on_line and on_line(f"Manager cache source missing: {filename}")
-            results.append({"file": filename, "action": "missing", "source_path": str(source_path)})
-            continue
-
-        data = json.loads(source_path.read_text(encoding="utf-8"))
-        digest = write_json_atomic(manager_path, data)
-        on_line and on_line(f"Manager repository data deployed: {filename}")
-        results.append(
-            {
-                "file": filename,
-                "action": "deployed",
-                "source_path": str(source_path),
-                "manager_cache_path": str(manager_path),
-                "sha256": digest,
-            }
-        )
+    results = manager_cache.deploy_repository_cache_files(
+        source_dir=source_dir,
+        manager_cache_dir=manager_cache_dir,
+        channel_url=channel_url,
+        filenames=_MANAGER_CACHE_FILES,
+        cache_filename=manager_cache_filename,
+        write_json=write_json_atomic,
+        on_line=on_line,
+    )
 
     registry_nodes = deploy_registry_nodes_cache_to_manager(source_dir, manager_cache_dir, on_line)
 
@@ -676,50 +453,19 @@ def deploy_controlpanel_manager_cache_to_manager(
 
 def set_manager_repository_override(enabled: bool, user_dir: Path | None = None) -> dict[str, Any]:
     resolved_user_dir = user_dir or COMFYUI_USER_DIR
-    settings = read_controlpanel_settings(resolved_user_dir)
-    manager_dir = manager_user_dir(resolved_user_dir)
-    previous_network_mode = settings.get(_SETTING_PREVIOUS_MANAGER_NETWORK_MODE)
-    was_enabled = bool(settings.get(_SETTING_MANAGER_REPOSITORY_OVERRIDE))
-
-    if enabled:
-        if not was_enabled:
-            config_path = manager_config_path(manager_dir)
-            settings[_SETTING_MANAGER_CONFIG_WAS_MISSING] = not config_path.exists()
-            backup_manager_config_once(manager_dir)
-        current_network_mode = read_manager_network_mode(manager_dir)
-        if _SETTING_PREVIOUS_MANAGER_NETWORK_MODE not in settings:
-            settings[_SETTING_PREVIOUS_MANAGER_NETWORK_MODE] = current_network_mode
-        settings[_SETTING_MANAGER_REPOSITORY_OVERRIDE] = True
-        write_manager_config_values(
-            manager_dir,
-            {
-                "network_mode": "offline",
-                "channel_url": manager_repository_data_channel_url(
-                    read_manager_repository_data_channel(resolved_user_dir)
-                ),
-            },
-        )
-        deployment = deploy_controlpanel_manager_cache_to_manager(resolved_user_dir)
-    else:
-        config_was_missing = settings.get(_SETTING_MANAGER_CONFIG_WAS_MISSING) is True
-        restored = restore_manager_config_backup(manager_dir)
-        if not restored and config_was_missing:
-            with contextlib.suppress(FileNotFoundError):
-                manager_config_path(manager_dir).unlink()
-        elif not restored and (previous_network_mode is None or isinstance(previous_network_mode, str)):
-            write_manager_network_mode(manager_dir, previous_network_mode)
-        settings[_SETTING_MANAGER_REPOSITORY_OVERRIDE] = False
-        settings.pop(_SETTING_PREVIOUS_MANAGER_NETWORK_MODE, None)
-        settings.pop(_SETTING_MANAGER_CONFIG_WAS_MISSING, None)
-        deployment = {"skipped": "Manager repository data override is disabled."}
-
-    write_controlpanel_settings(settings, resolved_user_dir)
-    return {
-        "enabled": bool(settings.get(_SETTING_MANAGER_REPOSITORY_OVERRIDE)),
-        "manager_dir": str(manager_dir),
-        "network_mode": read_manager_network_mode(manager_dir),
-        "deployment": deployment,
-    }
+    return manager_settings.set_manager_repository_override(
+        enabled=enabled,
+        user_dir=resolved_user_dir,
+        setting_override_key=_SETTING_MANAGER_REPOSITORY_OVERRIDE,
+        setting_channel_key=_SETTING_MANAGER_REPOSITORY_DATA_CHANNEL,
+        setting_previous_network_mode_key=_SETTING_PREVIOUS_MANAGER_NETWORK_MODE,
+        setting_config_missing_key=_SETTING_MANAGER_CONFIG_WAS_MISSING,
+        normalize_channel=normalize_manager_repository_data_channel,
+        channel_url=manager_repository_data_channel_url,
+        read_settings=read_controlpanel_settings,
+        write_settings=write_controlpanel_settings,
+        deploy_cache=deploy_controlpanel_manager_cache_to_manager,
+    )
 
 
 def apply_startup_manager_repository_override(user_dir: Path | None = None) -> dict[str, Any]:
@@ -727,21 +473,12 @@ def apply_startup_manager_repository_override(user_dir: Path | None = None) -> d
     if not is_manager_repository_override_enabled(resolved_user_dir):
         return {"enabled": False, "skipped": "Manager repository data override is disabled."}
 
-    manager_dir = manager_user_dir(resolved_user_dir)
-    write_manager_config_values(
-        manager_dir,
-        {
-            "network_mode": "offline",
-            "channel_url": manager_repository_data_channel_url(read_manager_repository_data_channel(resolved_user_dir)),
-        },
+    return manager_settings.apply_startup_manager_repository_override(
+        user_dir=resolved_user_dir,
+        channel=read_manager_repository_data_channel(resolved_user_dir),
+        channel_url=manager_repository_data_channel_url,
+        deploy_cache=deploy_controlpanel_manager_cache_to_manager,
     )
-    deployment = deploy_controlpanel_manager_cache_to_manager(resolved_user_dir)
-    return {
-        "enabled": True,
-        "manager_dir": str(manager_dir),
-        "network_mode": read_manager_network_mode(manager_dir),
-        "deployment": deployment,
-    }
 
 
 def schedule_startup_manager_cache_refresh(user_dir: Path | None = None) -> dict[str, Any]:
@@ -781,14 +518,7 @@ def schedule_startup_manager_cache_refresh(user_dir: Path | None = None) -> dict
 
 
 async def fetch_json(session: ClientSession, url: str) -> Any:
-    async with session.get(url) as response:
-        text = await response.text()
-        if response.status >= 400:
-            raise ManagerApiError(f"Failed to fetch {url}: HTTP {response.status}: {text[:500]}")
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as error:
-            raise ManagerApiError(f"Fetched data was not valid JSON: {url}") from error
+    return await manager_cache.fetch_json(session, url, ManagerApiError)
 
 
 async def fetch_registry_nodes_pages(
@@ -798,36 +528,18 @@ async def fetch_registry_nodes_pages(
     metadata: dict[str, str | None] | None = None,
     on_line: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    nodes: list[dict[str, Any]] = []
-    page = 1
-    total_pages = 1
-    base_params = _registry_nodes_request_params(timestamp, metadata)
-
-    while page <= total_pages:
-        params = {**base_params, "page": page}
-        url = _registry_nodes_url(params)
-        data = await fetch_json(session, url)
-        if not isinstance(data, dict):
-            raise ManagerApiError("Comfy Registry nodes response was not an object.")
-
-        page_nodes = data.get("nodes")
-        if not isinstance(page_nodes, list):
-            raise ManagerApiError("Comfy Registry nodes response did not include a nodes list.")
-        nodes.extend(node for node in page_nodes if isinstance(node, dict))
-
-        total_pages_value = data.get("totalPages", 1)
-        total_pages = total_pages_value if isinstance(total_pages_value, int) and total_pages_value > 0 else 1
-        if on_line and (page % 10 == 0 or page >= total_pages):
-            on_line(f"Updating ComfyRegistry nodes ({page}/{total_pages})")
-        page += 1
-
-    return {
-        "limit": _COMFY_REGISTRY_NODES_PAGE_LIMIT,
-        "nodes": nodes,
-        "page": 1,
-        "total": len(nodes),
-        "totalPages": total_pages,
-    }
+    return await manager_cache.fetch_registry_nodes_pages(
+        session,
+        page_limit=_COMFY_REGISTRY_NODES_PAGE_LIMIT,
+        registry_nodes_url=_registry_nodes_url,
+        fetch_json_func=fetch_json,
+        api_error_type=ManagerApiError,
+        timestamp=timestamp,
+        request_metadata=metadata,
+        current_metadata=_current_registry_cache_metadata,
+        current_form_factor=_current_registry_form_factor,
+        on_line=on_line,
+    )
 
 
 async def refresh_comfy_registry_nodes_cache(
@@ -836,49 +548,27 @@ async def refresh_comfy_registry_nodes_cache(
     on_line: Callable[[str], None] | None = None,
     channel: str | None = None,
 ) -> dict[str, Any]:
-    cache_path = source_dir / _COMFY_REGISTRY_NODES_CACHE_FILENAME
-    cache_data: dict[str, Any] | None = None
-    timestamp: str | None = None
-    metadata = _current_registry_cache_metadata(channel) if channel is not None else _current_registry_cache_metadata()
-    previous_metadata: dict[str, Any] | None = None
-    action = "updated"
+    def current_metadata_adapter(resolved_channel: str | None = None) -> dict[str, str | None]:
+        if resolved_channel is None:
+            return _current_registry_cache_metadata()
+        return _current_registry_cache_metadata(resolved_channel)
 
-    if cache_path.exists():
-        try:
-            loaded = json.loads(cache_path.read_text(encoding="utf-8"))
-            cache_data = loaded if isinstance(loaded, dict) else None
-        except json.JSONDecodeError:
-            cache_data = None
-        if cache_data is not None and isinstance(cache_data.get(_COMFY_REGISTRY_CACHE_METADATA_KEY), dict):
-            previous_metadata = cache_data[_COMFY_REGISTRY_CACHE_METADATA_KEY]
-        if cache_data is not None and _registry_cache_metadata_matches(cache_data, metadata):
-            timestamp = registry_nodes_incremental_timestamp(cache_data)
-            if timestamp:
-                action = "incremental"
-        elif cache_data is not None:
-            cache_data = None
-            previous_metadata = None
-            action = "invalidated"
-
-    if timestamp:
-        on_line and on_line(f"Updating Comfy Registry nodes since {timestamp}")
-    else:
-        on_line and on_line("Building Comfy Registry nodes cache")
-
-    fetched_data = await fetch_registry_nodes_pages(session, timestamp=timestamp, metadata=metadata, on_line=on_line)
-    data = merge_registry_nodes_cache(cache_data, fetched_data) if cache_data is not None else fetched_data
-    data = _with_registry_cache_metadata(data, metadata, previous_metadata)
-    digest = write_json_atomic(cache_path, data)
-    return {
-        "file": _COMFY_REGISTRY_NODES_CACHE_FILENAME,
-        "action": action,
-        "source_url": _COMFY_REGISTRY_NODES_URL,
-        "source_path": str(cache_path),
-        "timestamp": timestamp,
-        "cache_metadata": data[_COMFY_REGISTRY_CACHE_METADATA_KEY],
-        "total": len(data.get("nodes", [])) if isinstance(data.get("nodes"), list) else 0,
-        "sha256": digest,
-    }
+    return await manager_cache.refresh_comfy_registry_nodes_cache(
+        session=session,
+        source_dir=source_dir,
+        filename=_COMFY_REGISTRY_NODES_CACHE_FILENAME,
+        source_url=_COMFY_REGISTRY_NODES_URL,
+        metadata_key=_COMFY_REGISTRY_CACHE_METADATA_KEY,
+        current_metadata=current_metadata_adapter,
+        metadata_matches=_registry_cache_metadata_matches,
+        incremental_timestamp=registry_nodes_incremental_timestamp,
+        fetch_pages=fetch_registry_nodes_pages,
+        merge_cache=merge_registry_nodes_cache,
+        with_metadata=_with_registry_cache_metadata,
+        write_json=write_json_atomic,
+        channel=channel,
+        on_line=on_line,
+    )
 
 
 async def refresh_manager_cache_from_cdn(
@@ -890,15 +580,12 @@ async def refresh_manager_cache_from_cdn(
     resolved_user_dir = user_dir or COMFYUI_USER_DIR
     channel = read_manager_repository_data_channel(resolved_user_dir)
     if not _MANAGER_CACHE_REFRESH_LOCK.acquire(blocking=False):
-        message = "Manager cache refresh is already running."
-        on_line and on_line(message)
-        return {
-            "provider": channel,
-            "restart_required": False,
-            "skipped": message,
-            "user_dir": str(resolved_user_dir),
-            "manager_dir": str(manager_user_dir(resolved_user_dir)),
-        }
+        return manager_cache.locked_refresh_skipped_response(
+            channel=channel,
+            user_dir=resolved_user_dir,
+            manager_dir=manager_user_dir(resolved_user_dir),
+            on_line=on_line,
+        )
 
     try:
         return await _refresh_manager_cache_from_cdn_unlocked(
@@ -918,15 +605,12 @@ async def rebuild_manager_cache_from_cdn(
     resolved_user_dir = user_dir or COMFYUI_USER_DIR
     channel = read_manager_repository_data_channel(resolved_user_dir)
     if not _MANAGER_CACHE_REFRESH_LOCK.acquire(blocking=False):
-        message = "Manager cache refresh is already running."
-        on_line and on_line(message)
-        return {
-            "provider": channel,
-            "restart_required": False,
-            "skipped": message,
-            "user_dir": str(resolved_user_dir),
-            "manager_dir": str(manager_user_dir(resolved_user_dir)),
-        }
+        return manager_cache.locked_refresh_skipped_response(
+            channel=channel,
+            user_dir=resolved_user_dir,
+            manager_dir=manager_user_dir(resolved_user_dir),
+            on_line=on_line,
+        )
 
     source_dir = controlpanel_manager_cache_source_dir(resolved_user_dir, channel)
     try:
@@ -954,12 +638,11 @@ async def _refresh_manager_cache_from_cdn_unlocked(
     resolved_user_dir = user_dir or COMFYUI_USER_DIR
     manager_dir = manager_user_dir(resolved_user_dir)
     if not manager_dir.exists():
-        on_line and on_line(f"ComfyUI Manager user directory was not found: {manager_dir}")
-        return {
-            "provider": read_manager_repository_data_channel(resolved_user_dir),
-            "skipped": "ComfyUI Manager user directory was not found.",
-            "manager_dir": str(manager_dir),
-        }
+        return manager_cache.missing_manager_dir_response(
+            channel=read_manager_repository_data_channel(resolved_user_dir),
+            manager_dir=manager_dir,
+            on_line=on_line,
+        )
 
     channel = read_manager_repository_data_channel(resolved_user_dir)
     repository_data_url = manager_repository_data_channel_url(channel)
@@ -968,49 +651,21 @@ async def _refresh_manager_cache_from_cdn_unlocked(
     manager_cache_dir = manager_dir / "cache"
     manager_cache_dir.mkdir(parents=True, exist_ok=True)
 
-    results: list[dict[str, Any]] = []
-    for filename in _MANAGER_CACHE_FILES:
-        source_path = source_dir / filename
-        manager_path = manager_cache_dir / manager_cache_filename(channel_url, filename)
-        source_url = f"{repository_data_url}/{filename}"
-        cache_key_url = f"{channel_url.rstrip('/')}/{filename}"
-
-        if is_cache_file_fresh(source_path, max_age_seconds=max_age_seconds):
-            on_line and on_line(f"Manager cache fresh: {filename}")
-            if not manager_path.exists():
-                data = json.loads(source_path.read_text(encoding="utf-8"))
-                digest = write_json_atomic(manager_path, data)
-                action = "deployed"
-            else:
-                digest = hashlib.sha256(source_path.read_bytes()).hexdigest()
-                action = "fresh"
-            results.append(
-                {
-                    "file": filename,
-                    "action": action,
-                    "source_path": str(source_path),
-                    "manager_cache_path": str(manager_path),
-                    "sha256": digest,
-                }
-            )
-            continue
-
-        on_line and on_line(f"Fetching Manager cache: {filename}")
-        async with ClientSession() as session:
-            data = await fetch_json(session, source_url)
-        digest = write_json_atomic(source_path, data)
-        write_json_atomic(manager_path, data)
-        results.append(
-            {
-                "file": filename,
-                "action": "updated",
-                "source_url": source_url,
-                "cache_key_url": cache_key_url,
-                "source_path": str(source_path),
-                "manager_cache_path": str(manager_path),
-                "sha256": digest,
-            }
-        )
+    results = await manager_cache.refresh_repository_cache_files(
+        filenames=_MANAGER_CACHE_FILES,
+        source_dir=source_dir,
+        manager_cache_dir=manager_cache_dir,
+        repository_data_url=repository_data_url,
+        channel_url=channel_url,
+        max_age_seconds=max_age_seconds,
+        cache_filename=manager_cache_filename,
+        is_fresh=lambda path, max_age: is_cache_file_fresh(path, max_age_seconds=max_age),
+        write_json=write_json_atomic,
+        fetch_json_func=fetch_json,
+        client_session_factory=ClientSession,
+        sha256_bytes=lambda data: hashlib.sha256(data).hexdigest(),
+        on_line=on_line,
+    )
 
     async with ClientSession() as session:
         registry_result = await refresh_comfy_registry_nodes_cache(session, source_dir, on_line, channel)
@@ -1254,20 +909,11 @@ async def request_manager_update_comfyui(request) -> dict[str, Any]:
 
 
 def clear_terminal_for_restart() -> None:
-    try:
-        sys.stdout.write(_CLEAR_TERMINAL_CSI)
-        sys.stdout.flush()
-    except Exception:  # noqa: BLE001 - terminal cleanup must not block restart.
-        LOGGER.debug("[ControlPanel] Failed to clear terminal before restart.", exc_info=True)
+    manager_runtime.clear_terminal_for_restart(sys.stdout, _CLEAR_TERMINAL_CSI, LOGGER)
 
 
 async def restart_comfyui(_request) -> dict[str, Any]:
-    clear_terminal_for_restart()
-    schedule_restart()
-    return {
-        "provider": "local-restart",
-        "message": "Local ComfyUI restart was scheduled.",
-    }
+    return await manager_runtime.restart_comfyui(clear_terminal_for_restart, schedule_restart)
 
 
 def open_path_in_file_manager(path: Path) -> dict[str, Any]:
@@ -1288,22 +934,15 @@ async def _with_operation_lock(operation):
 
 
 def schedule_restart(delay_seconds: float = 1.0) -> None:
-    async def delayed_restart() -> None:
-        await asyncio.sleep(delay_seconds)
-        restart_current_process()
-
-    asyncio.create_task(delayed_restart())
+    manager_runtime.schedule_restart(restart_current_process, delay_seconds)
 
 
 def restart_exec_args() -> list[str]:
-    return [sys.executable, *sys.argv]
+    return manager_runtime.restart_exec_args(sys.executable, sys.argv)
 
 
 def restart_current_process() -> None:
-    args = restart_exec_args()
-    print("\nRestarting...\n\n", flush=True)
-    print(f"Command: {args}", flush=True)
-    os.execv(sys.executable, args)
+    manager_runtime.restart_current_process(sys.executable, sys.argv, os.execv)
 
 
 def register_routes() -> bool:
@@ -1311,161 +950,10 @@ def register_routes() -> bool:
     if _ROUTES_REGISTERED:
         return False
 
-    try:
-        from server import PromptServer
-    except Exception:
-        return False
-
-    routes = PromptServer.instance.routes
-
-    @routes.get(f"{API_PREFIX}/status")
-    async def status(_request):
-        repos = [{"name": repo.name, "path": str(repo)} for repo in discover_git_repositories()]
-        return _json_response(
-            {
-                "ok": True,
-                "paths": {
-                    "extension": str(EXTENSION_ROOT),
-                    "custom_nodes": str(CUSTOM_NODES_DIR),
-                    "comfyui": str(COMFYUI_ROOT),
-                    "user": str(COMFYUI_USER_DIR),
-                },
-                "tools": {"git": _command_available("git"), "uv": _command_available("uv")},
-                "latest_job": latest_job().to_dict() if latest_job() else None,
-                "repositories": repos,
-                "settings": {
-                    "manager_repository_data_override": is_manager_repository_override_enabled(),
-                    "manager_repository_data_channel": read_manager_repository_data_channel(),
-                    "manager_network_mode": read_manager_network_mode(manager_user_dir()),
-                    "manager_channel_url": read_manager_channel_url(manager_user_dir()),
-                },
-            }
-        )
-
-    @routes.get(f"{API_PREFIX}/settings")
-    async def get_settings(_request):
-        manager_dir = manager_user_dir()
-        return _json_response(
-            {
-                "ok": True,
-                "manager_repository_data_override": is_manager_repository_override_enabled(),
-                "manager_repository_data_channel": read_manager_repository_data_channel(),
-                "manager_network_mode": read_manager_network_mode(manager_dir),
-                "manager_channel_url": read_manager_channel_url(manager_dir),
-            }
-        )
-
-    @routes.post(f"{API_PREFIX}/settings/manager-repository-data-override")
-    async def set_manager_repository_data_override(request):
-        data = await _read_json(request)
-        try:
-            result = set_manager_repository_override(data.get("enabled") is True)
-            return _json_response({"ok": True, **result})
-        except Exception as error:  # noqa: BLE001 - settings errors should surface to the UI.
-            return _error_response(str(error), status=500)
-
-    @routes.post(f"{API_PREFIX}/settings/manager-repository-data-channel")
-    async def set_manager_repository_data_channel_route(request):
-        data = await _read_json(request)
-        try:
-            result = set_manager_repository_data_channel(data.get("channel"))
-            return _json_response({"ok": True, **result})
-        except Exception as error:  # noqa: BLE001 - settings errors should surface to the UI.
-            return _error_response(str(error), status=500)
-
-    @routes.post(f"{API_PREFIX}/install-git-url")
-    async def install(request):
-        data = await _read_json(request)
-        return await _with_operation_lock(
-            lambda: _operation_install_git_url(
-                str(data.get("url", "")),
-                str(data["name"]) if data.get("name") else None,
-            )
-        )
-
-    @routes.post(f"{API_PREFIX}/open/custom-nodes")
-    async def open_custom_nodes(_request):
-        return await _with_operation_lock(_operation_open_custom_nodes)
-
-    @routes.post(f"{API_PREFIX}/open/snapshots")
-    async def open_snapshots(_request):
-        return await _with_operation_lock(_operation_open_snapshots)
-
-    @routes.post(f"{API_PREFIX}/environment")
-    async def environment(_request):
-        return await _with_operation_lock(_operation_show_environment)
-
-    @routes.get(f"{API_PREFIX}/snapshot/list")
-    async def list_snapshots(_request):
-        return _json_response({"ok": True, **list_manager_snapshots()})
-
-    @routes.post(f"{API_PREFIX}/snapshot/save")
-    async def save_snapshot(_request):
-        return await _start_job_response("snapshot", "Save Snapshot", _job_save_snapshot)
-
-    @routes.post(f"{API_PREFIX}/snapshot/restore")
-    async def restore_snapshot(request):
-        data = await _read_json(request)
-        target = str(data.get("target", ""))
-        return await _start_job_response(
-            "snapshot",
-            "Restore Snapshot",
-            lambda job: _job_restore_snapshot(job, target),
-        )
-
-    @routes.post(f"{API_PREFIX}/update-all")
-    async def update_all(_request):
-        return await _start_job_response("git-nodes", "Update Git Nodes", _job_update_git_nodes)
-
-    @routes.post(f"{API_PREFIX}/update/custom-nodes")
-    async def update_custom_nodes(_request):
-        return await _start_job_response("git-nodes", "Update Git Nodes", _job_update_git_nodes)
-
-    @routes.post(f"{API_PREFIX}/deps/uv-sync")
-    async def sync_dependencies(_request):
-        return await _start_job_response("deps", "Sync Dependencies", _job_sync_dependencies)
-
-    @routes.post(f"{API_PREFIX}/manager-cache/refresh")
-    async def refresh_manager_cache(_request):
-        return await _start_job_response("manager-cache", "Update Manager Cache", _job_refresh_manager_cache)
-
-    @routes.post(f"{API_PREFIX}/manager-cache/rebuild")
-    async def rebuild_manager_cache(_request):
-        return await _start_job_response("manager-cache", "Rebuild Manager Cache", _job_rebuild_manager_cache)
-
-    @routes.post(f"{API_PREFIX}/update-comfyui")
-    async def update_core(_request):
-        return await _start_job_response("comfyui", "Update ComfyUI", _job_update_comfyui)
-
-    @routes.post(f"{API_PREFIX}/update/comfyui")
-    async def update_comfyui_route(_request):
-        return await _start_job_response("comfyui", "Update ComfyUI", _job_update_comfyui)
-
-    @routes.get(f"{API_PREFIX}/update/status")
-    async def update_status(_request):
-        job = latest_job()
-        return _json_response({"ok": True, "job": job.to_dict() if job else None})
-
-    @routes.get(f"{API_PREFIX}/update/jobs/{{job_id}}")
-    async def update_job_status(request):
-        job = _JOBS.get(str(request.match_info["job_id"]))
-        if job is None:
-            return _error_response("Update job was not found.", status=404)
-        return _json_response({"ok": True, "job": job.to_dict()})
-
-    @routes.post(f"{API_PREFIX}/restart")
-    async def restart(request):
-        data = await _read_json(request)
-        if data.get("confirm") is not True:
-            return _error_response("Restart requires confirm=true.", status=400)
-        try:
-            result = await restart_comfyui(request)
-            return _json_response({"ok": True, **result})
-        except Exception as error:  # noqa: BLE001 - surface restart failures to the UI.
-            return _error_response(str(error), status=500)
-
-    _ROUTES_REGISTERED = True
-    return True
+    current_module = importlib.import_module(__name__)
+    registered = manager_routes.register_routes(current_module)
+    _ROUTES_REGISTERED = registered
+    return registered
 
 
 async def _start_job_response(kind: str, label: str, operation: Callable[[ManagerJob], Awaitable[dict[str, Any]]]):
