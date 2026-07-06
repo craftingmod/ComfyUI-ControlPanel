@@ -1,4 +1,4 @@
-.cme-backdrop {
+.cp-backdrop {
   position: fixed;
   inset: 0;
   z-index: 1200;
@@ -7,11 +7,11 @@
   background: rgb(0 0 0 / 0.55);
 }
 
-.manager-extension-top-menu-group {
+.control-panel-top-menu-group {
   display: contents;
 }
 
-.cme-panel {
+.cp-panel {
   width: min(760px, calc(100vw - 32px));
   max-height: min(760px, calc(100vh - 32px));
   overflow: auto;
@@ -24,11 +24,11 @@
   font: 14px/1.45 system-ui, sans-serif;
 }
 
-.cme-modal {
+.cp-modal {
   width: min(520px, calc(100vw - 32px));
 }
 
-.cme-header {
+.cp-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -36,34 +36,34 @@
   margin-bottom: 16px;
 }
 
-.cme-title {
+.cp-title {
   margin: 0;
   font-size: 20px;
   font-weight: 700;
 }
 
-.cme-grid {
+.cp-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
 
-.cme-field {
+.cp-field {
   display: grid;
   gap: 6px;
 }
 
-.cme-field-wide {
+.cp-field-wide {
   grid-column: 1 / -1;
 }
 
-.cme-field label {
+.cp-field label {
   color: #c9ced8;
   font-size: 12px;
   font-weight: 600;
 }
 
-.cme-field input {
+.cp-field input {
   width: 100%;
   box-sizing: border-box;
   padding: 10px 12px;
@@ -73,21 +73,21 @@
   color: #f1f3f7;
 }
 
-.cme-actions {
+.cp-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin: 16px 0;
 }
 
-.cme-modal-actions {
+.cp-modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
   margin-top: 16px;
 }
 
-.cme-restart-notice {
+.cp-restart-notice {
   margin: 0 0 12px;
   padding: 10px 12px;
   border: 1px solid rgb(251 191 36 / 0.38);
@@ -97,7 +97,7 @@
   font-weight: 650;
 }
 
-.cme-button {
+.cp-button {
   min-height: 42px;
   padding: 9px 12px;
   border: 1px solid rgb(255 255 255 / 0.14);
@@ -109,19 +109,19 @@
   cursor: pointer;
 }
 
-.cme-button:hover {
+.cp-button:hover {
   background: #394245;
 }
 
-.cme-danger {
+.cp-danger {
   background: #6b1610;
 }
 
-.cme-danger:hover {
+.cp-danger:hover {
   background: #842116;
 }
 
-.cme-close {
+.cp-close {
   width: 34px;
   height: 34px;
   border-radius: 50%;
@@ -130,7 +130,7 @@
   line-height: 1;
 }
 
-.cme-log {
+.cp-log {
   min-height: 180px;
   max-height: 300px;
   overflow: auto;
@@ -145,8 +145,8 @@
 }
 
 @media (max-width: 640px) {
-  .cme-grid,
-  .cme-actions {
+  .cp-grid,
+  .cp-actions {
     grid-template-columns: 1fr;
   }
 }

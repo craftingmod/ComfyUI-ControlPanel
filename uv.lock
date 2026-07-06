@@ -84,7 +84,7 @@ wheels = [
 ]
 
 [[package]]
-name = "comfyui-manager-extension"
+name = "comfyui-control-panel"
 version = "1.0.0"
 source = { virtual = "." }
 

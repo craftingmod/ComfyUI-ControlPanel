@@ -12,8 +12,8 @@ describe("debug helpers", () => {
   })
 
   it("uses stable ComfyUI setting ids", () => {
-    expect(SETTINGS_IDS.VERSION).toBe("Manager_Extension.Version")
-    expect(SETTINGS_IDS.DEBUG_LOGGING).toBe("Manager_Extension.Debug_Logging")
+    expect(SETTINGS_IDS.VERSION).toBe("ControlPanel.Version")
+    expect(SETTINGS_IDS.DEBUG_LOGGING).toBe("ControlPanel.Debug_Logging")
   })
 
   it("reads the debug logging setting from the provided reader", () => {

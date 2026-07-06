@@ -37,7 +37,7 @@ def resolve_custom_nodes_dir(comfyui_root: Path) -> Path:
 
 COMFYUI_ROOT = resolve_comfyui_root()
 CUSTOM_NODES_DIR = resolve_custom_nodes_dir(COMFYUI_ROOT)
-API_PREFIX = "/manager-extension"
+API_PREFIX = "/control-panel"
 _ROUTES_REGISTERED = False
 _OPERATION_LOCK = asyncio.Lock()
 _JOB_LOCK = asyncio.Lock()
