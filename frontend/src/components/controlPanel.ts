@@ -11,6 +11,10 @@ type ControlPanelOptions = {
   readBooleanSetting: (id: string) => boolean
 }
 
+type OperationOptions = {
+  toastOnSuccess?: boolean
+}
+
 export type ControlPanelController = {
   open: () => void
   close: () => void
@@ -40,6 +44,47 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     })
   }
 
+  function asRecord(value: unknown): JsonObject | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined
+    }
+    return value as JsonObject
+  }
+
+  function formatGitInstallResult(data: JsonObject): string | undefined {
+    const install = asRecord(data.install)
+    const destination = typeof install?.destination === "string" ? install.destination : undefined
+    const result = asRecord(install?.result)
+    const stdout = typeof result?.stdout === "string" ? result.stdout.trim() : ""
+    const stderr = typeof result?.stderr === "string" ? result.stderr.trim() : ""
+
+    if (!destination && !stdout && !stderr) {
+      return undefined
+    }
+
+    const lines = ["Install via Git URL completed."]
+    if (destination) {
+      const pathParts = destination.split(/[\\/]/).filter(Boolean)
+      const folderName = pathParts[pathParts.length - 1] ?? destination
+      lines.push(`Installed: ${folderName}`)
+      lines.push(`Path: ${destination}`)
+    }
+    if (stdout) {
+      lines.push("", stdout)
+    }
+    if (stderr) {
+      lines.push("", stderr)
+    }
+    return lines.join("\n")
+  }
+
+  function formatOperationResult(label: string, route: string, data: JsonObject): string | undefined {
+    if (route === API_ROUTES.INSTALL_GIT_URL) {
+      return formatGitInstallResult(data)
+    }
+    return `${label} completed.\n${JSON.stringify(data, null, 2)}`
+  }
+
   function writeLog(message: string, payload?: unknown): void {
     if (!logEl) {
       return
@@ -65,14 +110,17 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     }
   }
 
-  async function runOperation(label: string, route: string, body?: JsonObject): Promise<void> {
+  async function runOperation(label: string, route: string, body?: JsonObject, operationOptions: OperationOptions = {}): Promise<void> {
+    const { toastOnSuccess = true } = operationOptions
     writeLog(`${label} started.`)
     debugLog(readBooleanSetting, `${label} request`, { route, body })
 
     try {
       const data = await api.fetchJson(route, body)
-      writeLog(`${label} completed.`, data)
-      toast("success", "ComfyUI-ControlPanel", `${label} completed.`)
+      writeLog(formatOperationResult(label, route, data) ?? `${label} completed.`, undefined)
+      if (toastOnSuccess) {
+        toast("success", "ComfyUI-ControlPanel", `${label} completed.`)
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       writeLog(`${label} failed: ${message}`)
@@ -142,6 +190,16 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     }
   }
 
+  async function confirmRestart(): Promise<void> {
+    const confirmed = await app.extensionManager.dialog.confirm({
+      title: "Restart ComfyUI",
+      message: "Restart ComfyUI now?",
+    })
+    if (confirmed) {
+      await runOperation("Restart", API_ROUTES.RESTART, { confirm: true })
+    }
+  }
+
   function createPanel(): HTMLElement {
     ensureStyles()
 
@@ -187,9 +245,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
         void startUpdateJob("Update ComfyUI", API_ROUTES.UPDATE_COMFYUI)
       }),
       createButton("Restart", () => {
-        if (window.confirm("Restart ComfyUI now?")) {
-          void runOperation("Restart", API_ROUTES.RESTART, { confirm: true })
-        }
+        void confirmRestart()
       }, "cp-button cp-danger"),
     )
 
@@ -215,7 +271,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     if (!panelEl.isConnected) {
       document.body.append(panelEl)
     }
-    void runOperation("Status", API_ROUTES.STATUS)
+    void runOperation("Status", API_ROUTES.STATUS, undefined, { toastOnSuccess: false })
   }
 
   function close(): void {

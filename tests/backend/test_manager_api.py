@@ -1,4 +1,5 @@
 import asyncio
+import io
 import sys
 from types import SimpleNamespace
 
@@ -65,12 +66,23 @@ def test_restart_comfyui_falls_back_when_manager_route_fails(monkeypatch):
 
     monkeypatch.setattr(manager_api, "request_manager_reboot", fake_request_manager_reboot)
     monkeypatch.setattr(manager_api, "schedule_restart", fake_schedule_restart)
+    monkeypatch.setattr(manager_api, "clear_terminal_for_restart", lambda: calls.append("cleared"))
 
     result = asyncio.run(manager_api.restart_comfyui(SimpleNamespace()))
 
-    assert calls == ["scheduled"]
+    assert calls == ["cleared", "scheduled"]
     assert result["provider"] == "execv-fallback"
     assert result["manager_error"] == "manager route unavailable"
+
+
+def test_clear_terminal_for_restart_writes_csi(monkeypatch):
+    stdout = io.StringIO()
+
+    monkeypatch.setattr(manager_api.sys, "stdout", stdout)
+
+    manager_api.clear_terminal_for_restart()
+
+    assert stdout.getvalue() == manager_api._CLEAR_TERMINAL_CSI
 
 
 def test_request_manager_update_comfyui_uses_v2_queue_route(monkeypatch):

@@ -46,6 +46,7 @@ _JOBS: dict[str, "ManagerJob"] = {}
 _LATEST_JOB_ID: str | None = None
 _JOB_LIMIT = 10
 _TORCH_PACKAGES = {"torch", "torchvision", "torchaudio"}
+_CLEAR_TERMINAL_CSI = "\033[2J\033[H"
 LOGGER = logging.getLogger(__name__)
 
 
@@ -492,7 +493,16 @@ async def request_manager_reboot(request) -> dict[str, Any]:
     }
 
 
+def clear_terminal_for_restart() -> None:
+    try:
+        sys.stdout.write(_CLEAR_TERMINAL_CSI)
+        sys.stdout.flush()
+    except Exception:  # noqa: BLE001 - terminal cleanup must not block restart.
+        LOGGER.debug("[ControlPanel] Failed to clear terminal before restart.", exc_info=True)
+
+
 async def restart_comfyui(request) -> dict[str, Any]:
+    clear_terminal_for_restart()
     try:
         return await request_manager_reboot(request)
     except ManagerApiError as error:
