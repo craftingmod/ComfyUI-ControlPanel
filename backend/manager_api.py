@@ -89,14 +89,22 @@ _MANAGER_CACHE_FILES = (
 _DEFAULT_MANAGER_CHANNEL_URL = "https://raw.githubusercontent.com/Comfy-Org/ComfyUI-Manager/main"
 _OVERRIDE_MANAGER_CHANNEL_URL = "https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main"
 _JSDELIVR_MANAGER_CHANNEL_URL = "https://cdn.jsdelivr.net/gh/Comfy-Org/ComfyUI-Manager@main"
+_MANAGER_REPOSITORY_DATA_CHANNEL_GITHUB = "github"
+_MANAGER_REPOSITORY_DATA_CHANNEL_JSDELIVR = "jsdelivr"
+_DEFAULT_MANAGER_REPOSITORY_DATA_CHANNEL = _MANAGER_REPOSITORY_DATA_CHANNEL_JSDELIVR
+_MANAGER_REPOSITORY_DATA_CHANNEL_URLS = {
+    _MANAGER_REPOSITORY_DATA_CHANNEL_GITHUB: _DEFAULT_MANAGER_CHANNEL_URL,
+    _MANAGER_REPOSITORY_DATA_CHANNEL_JSDELIVR: _JSDELIVR_MANAGER_CHANNEL_URL,
+}
 _COMFY_REGISTRY_NODES_URL = "https://api.comfy.org/nodes"
 _COMFY_REGISTRY_NODES_CACHE_FILENAME = "registry-node-list.json"
 _COMFY_REGISTRY_NODES_PAGE_LIMIT = 30
 _COMFY_REGISTRY_CACHE_METADATA_KEY = "cache_metadata"
-_COMFY_REGISTRY_CACHE_INVALIDATION_KEYS = ("comfyui_version", "form_factor")
+_COMFY_REGISTRY_CACHE_INVALIDATION_KEYS = ("comfyui_version", "form_factor", "channel")
 _CACHE_MAX_AGE_SECONDS = 86400
 _CONTROLPANEL_CONFIG_FILENAME = "config.json"
 _SETTING_MANAGER_REPOSITORY_OVERRIDE = "manager_repository_data_override_enabled"
+_SETTING_MANAGER_REPOSITORY_DATA_CHANNEL = "manager_repository_data_channel"
 _SETTING_PREVIOUS_MANAGER_NETWORK_MODE = "manager_network_mode_before_override"
 _SETTING_MANAGER_CONFIG_WAS_MISSING = "manager_config_was_missing_before_override"
 LOGGER = logging.getLogger(__name__)
@@ -327,6 +335,10 @@ def controlpanel_manager_cache_dir(user_dir: Path | None = None) -> Path:
     return (user_dir or COMFYUI_USER_DIR) / "__controlpanel" / "manager-cache"
 
 
+def controlpanel_manager_cache_source_dir(user_dir: Path | None = None, channel: str | None = None) -> Path:
+    return controlpanel_manager_cache_dir(user_dir) / "sources" / normalize_manager_repository_data_channel(channel)
+
+
 def controlpanel_config_path(user_dir: Path | None = None) -> Path:
     return (user_dir or COMFYUI_USER_DIR) / "__controlpanel" / _CONTROLPANEL_CONFIG_FILENAME
 
@@ -354,6 +366,43 @@ def write_controlpanel_settings(settings: dict[str, Any], user_dir: Path | None 
 
 def is_manager_repository_override_enabled(user_dir: Path | None = None) -> bool:
     return bool(read_controlpanel_settings(user_dir).get(_SETTING_MANAGER_REPOSITORY_OVERRIDE))
+
+
+def normalize_manager_repository_data_channel(channel: Any) -> str:
+    if isinstance(channel, str):
+        normalized = channel.strip().lower()
+        if normalized in _MANAGER_REPOSITORY_DATA_CHANNEL_URLS:
+            return normalized
+    return _DEFAULT_MANAGER_REPOSITORY_DATA_CHANNEL
+
+
+def read_manager_repository_data_channel(user_dir: Path | None = None) -> str:
+    settings = read_controlpanel_settings(user_dir)
+    return normalize_manager_repository_data_channel(settings.get(_SETTING_MANAGER_REPOSITORY_DATA_CHANNEL))
+
+
+def set_manager_repository_data_channel(channel: Any, user_dir: Path | None = None) -> dict[str, Any]:
+    resolved_user_dir = user_dir or COMFYUI_USER_DIR
+    normalized = normalize_manager_repository_data_channel(channel)
+    settings = read_controlpanel_settings(resolved_user_dir)
+    settings[_SETTING_MANAGER_REPOSITORY_DATA_CHANNEL] = normalized
+    write_controlpanel_settings(settings, resolved_user_dir)
+
+    deployment: dict[str, Any] = {"skipped": "Manager repository data override is disabled."}
+    if is_manager_repository_override_enabled(resolved_user_dir):
+        manager_dir = manager_user_dir(resolved_user_dir)
+        write_manager_config_values(manager_dir, {"channel_url": manager_repository_data_channel_url(normalized)})
+        deployment = deploy_controlpanel_manager_cache_to_manager(resolved_user_dir)
+
+    return {
+        "channel": normalized,
+        "channel_url": manager_repository_data_channel_url(normalized),
+        "deployment": deployment,
+    }
+
+
+def manager_repository_data_channel_url(channel: str | None = None) -> str:
+    return _MANAGER_REPOSITORY_DATA_CHANNEL_URLS[normalize_manager_repository_data_channel(channel)]
 
 
 def read_manager_config(manager_dir: Path) -> configparser.ConfigParser:
@@ -502,11 +551,14 @@ def _current_comfyui_version() -> str | None:
     return None
 
 
-def _current_registry_cache_metadata() -> dict[str, str | None]:
+def _current_registry_cache_metadata(channel: str | None = None) -> dict[str, str | None]:
     return {
         "comfyui_version": _current_comfyui_version(),
         "platform": platform.system().lower(),
         "form_factor": _current_registry_form_factor(),
+        "channel": normalize_manager_repository_data_channel(channel)
+        if channel is not None
+        else read_manager_repository_data_channel(),
     }
 
 
@@ -716,7 +768,8 @@ def deploy_controlpanel_manager_cache_to_manager(
             "manager_dir": str(manager_dir),
         }
 
-    source_dir = controlpanel_manager_cache_dir(resolved_user_dir) / "sources"
+    channel = read_manager_repository_data_channel(resolved_user_dir)
+    source_dir = controlpanel_manager_cache_source_dir(resolved_user_dir, channel)
     if not source_dir.exists():
         on_line and on_line(f"ControlPanel Manager cache source directory was not found: {source_dir}")
         return {
@@ -758,6 +811,7 @@ def deploy_controlpanel_manager_cache_to_manager(
         "source_dir": str(source_dir),
         "manager_cache_dir": str(manager_cache_dir),
         "channel_url": channel_url,
+        "repository_data_channel": channel,
         "results": results,
         "registry_nodes": registry_nodes,
     }
@@ -783,7 +837,9 @@ def set_manager_repository_override(enabled: bool, user_dir: Path | None = None)
             manager_dir,
             {
                 "network_mode": "offline",
-                "channel_url": _OVERRIDE_MANAGER_CHANNEL_URL,
+                "channel_url": manager_repository_data_channel_url(
+                    read_manager_repository_data_channel(resolved_user_dir)
+                ),
             },
         )
         deployment = deploy_controlpanel_manager_cache_to_manager(resolved_user_dir)
@@ -819,7 +875,7 @@ def apply_startup_manager_repository_override(user_dir: Path | None = None) -> d
         manager_dir,
         {
             "network_mode": "offline",
-            "channel_url": _OVERRIDE_MANAGER_CHANNEL_URL,
+            "channel_url": manager_repository_data_channel_url(read_manager_repository_data_channel(resolved_user_dir)),
         },
     )
     deployment = deploy_controlpanel_manager_cache_to_manager(resolved_user_dir)
@@ -921,11 +977,12 @@ async def refresh_comfy_registry_nodes_cache(
     session: ClientSession,
     source_dir: Path,
     on_line: Callable[[str], None] | None = None,
+    channel: str | None = None,
 ) -> dict[str, Any]:
     cache_path = source_dir / _COMFY_REGISTRY_NODES_CACHE_FILENAME
     cache_data: dict[str, Any] | None = None
     timestamp: str | None = None
-    metadata = _current_registry_cache_metadata()
+    metadata = _current_registry_cache_metadata(channel) if channel is not None else _current_registry_cache_metadata()
     previous_metadata: dict[str, Any] | None = None
     action = "updated"
 
@@ -974,11 +1031,12 @@ async def refresh_manager_cache_from_cdn(
     max_age_seconds: int = _CACHE_MAX_AGE_SECONDS,
 ) -> dict[str, Any]:
     resolved_user_dir = user_dir or COMFYUI_USER_DIR
+    channel = read_manager_repository_data_channel(resolved_user_dir)
     if not _MANAGER_CACHE_REFRESH_LOCK.acquire(blocking=False):
         message = "Manager cache refresh is already running."
         on_line and on_line(message)
         return {
-            "provider": "jsdelivr",
+            "provider": channel,
             "restart_required": False,
             "skipped": message,
             "user_dir": str(resolved_user_dir),
@@ -1006,13 +1064,15 @@ async def _refresh_manager_cache_from_cdn_unlocked(
     if not manager_dir.exists():
         on_line and on_line(f"ComfyUI Manager user directory was not found: {manager_dir}")
         return {
-            "provider": "jsdelivr",
+            "provider": read_manager_repository_data_channel(resolved_user_dir),
             "skipped": "ComfyUI Manager user directory was not found.",
             "manager_dir": str(manager_dir),
         }
 
+    channel = read_manager_repository_data_channel(resolved_user_dir)
+    repository_data_url = manager_repository_data_channel_url(channel)
     channel_url = read_manager_channel_url(manager_dir)
-    source_dir = controlpanel_manager_cache_dir(resolved_user_dir) / "sources"
+    source_dir = controlpanel_manager_cache_source_dir(resolved_user_dir, channel)
     manager_cache_dir = manager_dir / "cache"
     manager_cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1020,7 +1080,7 @@ async def _refresh_manager_cache_from_cdn_unlocked(
     for filename in _MANAGER_CACHE_FILES:
         source_path = source_dir / filename
         manager_path = manager_cache_dir / manager_cache_filename(channel_url, filename)
-        source_url = f"{_JSDELIVR_MANAGER_CHANNEL_URL}/{filename}"
+        source_url = f"{repository_data_url}/{filename}"
         cache_key_url = f"{channel_url.rstrip('/')}/{filename}"
 
         if is_cache_file_fresh(source_path, max_age_seconds=max_age_seconds):
@@ -1061,17 +1121,20 @@ async def _refresh_manager_cache_from_cdn_unlocked(
         )
 
     async with ClientSession() as session:
-        registry_result = await refresh_comfy_registry_nodes_cache(session, source_dir, on_line)
+        registry_result = await refresh_comfy_registry_nodes_cache(session, source_dir, on_line, channel)
     registry_manager_cache = deploy_registry_nodes_cache_to_manager(source_dir, manager_cache_dir, on_line)
 
     return {
-        "provider": "jsdelivr",
+        "provider": channel,
         "restart_required": False,
         "user_dir": str(resolved_user_dir),
         "manager_dir": str(manager_dir),
         "controlpanel_cache_dir": str(controlpanel_manager_cache_dir(resolved_user_dir)),
+        "source_dir": str(source_dir),
         "manager_cache_dir": str(manager_cache_dir),
         "channel_url": channel_url,
+        "repository_data_channel": channel,
+        "repository_data_url": repository_data_url,
         "max_age_seconds": max_age_seconds,
         "results": results,
         "registry_nodes": registry_result,
@@ -1430,6 +1493,7 @@ def register_routes() -> bool:
                 "repositories": repos,
                 "settings": {
                     "manager_repository_data_override": is_manager_repository_override_enabled(),
+                    "manager_repository_data_channel": read_manager_repository_data_channel(),
                     "manager_network_mode": read_manager_network_mode(manager_user_dir()),
                     "manager_channel_url": read_manager_channel_url(manager_user_dir()),
                 },
@@ -1443,6 +1507,7 @@ def register_routes() -> bool:
             {
                 "ok": True,
                 "manager_repository_data_override": is_manager_repository_override_enabled(),
+                "manager_repository_data_channel": read_manager_repository_data_channel(),
                 "manager_network_mode": read_manager_network_mode(manager_dir),
                 "manager_channel_url": read_manager_channel_url(manager_dir),
             }
@@ -1453,6 +1518,15 @@ def register_routes() -> bool:
         data = await _read_json(request)
         try:
             result = set_manager_repository_override(data.get("enabled") is True)
+            return _json_response({"ok": True, **result})
+        except Exception as error:  # noqa: BLE001 - settings errors should surface to the UI.
+            return _error_response(str(error), status=500)
+
+    @routes.post(f"{API_PREFIX}/settings/manager-repository-data-channel")
+    async def set_manager_repository_data_channel_route(request):
+        data = await _read_json(request)
+        try:
+            result = set_manager_repository_data_channel(data.get("channel"))
             return _json_response({"ok": True, **result})
         except Exception as error:  # noqa: BLE001 - settings errors should surface to the UI.
             return _error_response(str(error), status=500)

@@ -15,6 +15,7 @@ const ACTION_BAR_BUTTON_TOOLTIP = "Open ComfyUI-ControlPanel"
 
 type ControlPanelSettingsResponse = {
   manager_repository_data_override?: boolean
+  manager_repository_data_channel?: string
 }
 
 function getSetting<T>(id: string): T | undefined {
@@ -50,10 +51,28 @@ async function syncManagerRepositoryDataOverrideSetting(): Promise<void> {
     settingId(SETTINGS_IDS.MANAGER_REPOSITORY_DATA_OVERRIDE),
     data.manager_repository_data_override === true,
   )
+  app.extensionManager.setting.set(
+    settingId(SETTINGS_IDS.MANAGER_REPOSITORY_DATA_CHANNEL),
+    data.manager_repository_data_channel === "github" ? "github" : "jsdelivr",
+  )
 }
 
 function updateManagerRepositoryDataOverrideSetting(enabled: boolean): void {
   void fetchJson(API_ROUTES.MANAGER_REPOSITORY_DATA_OVERRIDE, { enabled })
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error)
+      app.extensionManager.toast.add({
+        severity: "error",
+        summary: "ComfyUI-ControlPanel",
+        detail: message,
+        life: 5000,
+      })
+    })
+}
+
+function updateManagerRepositoryDataChannelSetting(channel: unknown): void {
+  const normalizedChannel = channel === "github" ? "github" : "jsdelivr"
+  void fetchJson(API_ROUTES.MANAGER_REPOSITORY_DATA_CHANNEL, { channel: normalizedChannel })
     .catch((error) => {
       const message = error instanceof Error ? error.message : String(error)
       app.extensionManager.toast.add({
@@ -115,6 +134,18 @@ function createExtensionObject(): ManagerExtension {
         onChange: (value) => {
           updateManagerRepositoryDataOverrideSetting(value === true)
         },
+      },
+      {
+        id: settingId(SETTINGS_IDS.MANAGER_REPOSITORY_DATA_CHANNEL),
+        name: "Manager Repository Data Source",
+        type: "combo",
+        options: [
+          { value: "jsdelivr", text: "jsDelivr" },
+          { value: "github", text: "GitHub Raw" },
+        ],
+        tooltip: "Choose where ControlPanel fetches ComfyUI Manager repository data",
+        defaultValue: "jsdelivr",
+        onChange: updateManagerRepositoryDataChannelSetting,
       },
     ],
     async setup() {

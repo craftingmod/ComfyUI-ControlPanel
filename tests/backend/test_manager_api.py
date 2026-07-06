@@ -214,10 +214,32 @@ def test_read_manager_channel_url_reads_config(tmp_path):
     assert manager_api.read_manager_channel_url(manager_dir) == "https://cdn.jsdelivr.net/gh/Comfy-Org/ComfyUI-Manager@main"
 
 
+def test_manager_repository_data_channel_defaults_to_jsdelivr(tmp_path):
+    assert manager_api.read_manager_repository_data_channel(tmp_path) == "jsdelivr"
+    assert manager_api.manager_repository_data_channel_url("github") == manager_api._DEFAULT_MANAGER_CHANNEL_URL
+    assert manager_api.manager_repository_data_channel_url("jsdelivr") == manager_api._JSDELIVR_MANAGER_CHANNEL_URL
+
+
+def test_set_manager_repository_data_channel_updates_override_channel_url(tmp_path):
+    user_dir = tmp_path / "user"
+    manager_dir = user_dir / "__manager"
+    source_dir = user_dir / "__controlpanel" / "manager-cache" / "sources" / "github"
+    manager_dir.mkdir(parents=True)
+    source_dir.mkdir(parents=True)
+    (source_dir / "custom-node-list.json").write_text(json.dumps({"custom_nodes": []}), encoding="utf-8")
+    manager_api.write_controlpanel_settings({"manager_repository_data_override_enabled": True}, user_dir)
+
+    result = manager_api.set_manager_repository_data_channel("github", user_dir=user_dir)
+
+    assert result["channel"] == "github"
+    assert manager_api.read_manager_repository_data_channel(user_dir) == "github"
+    assert manager_api.read_manager_channel_url(manager_dir) == manager_api._DEFAULT_MANAGER_CHANNEL_URL
+
+
 def test_set_manager_repository_override_forces_offline_and_records_internal_setting(tmp_path, monkeypatch):
     user_dir = tmp_path / "user"
     manager_dir = user_dir / "__manager"
-    source_dir = user_dir / "__controlpanel" / "manager-cache" / "sources"
+    source_dir = user_dir / "__controlpanel" / "manager-cache" / "sources" / "jsdelivr"
     manager_dir.mkdir(parents=True)
     source_dir.mkdir(parents=True)
     (manager_dir / "config.ini").write_text(
@@ -230,14 +252,14 @@ def test_set_manager_repository_override_forces_offline_and_records_internal_set
 
     settings = manager_api.read_controlpanel_settings(user_dir)
     manager_path = manager_dir / "cache" / manager_api.manager_cache_filename(
-        manager_api._OVERRIDE_MANAGER_CHANNEL_URL,
+        manager_api._JSDELIVR_MANAGER_CHANNEL_URL,
         "custom-node-list.json",
     )
 
     assert settings["manager_repository_data_override_enabled"] is True
     assert settings["manager_network_mode_before_override"] == "public"
     assert manager_api.read_manager_network_mode(manager_dir) == "offline"
-    assert manager_api.read_manager_channel_url(manager_dir) == manager_api._OVERRIDE_MANAGER_CHANNEL_URL
+    assert manager_api.read_manager_channel_url(manager_dir) == manager_api._JSDELIVR_MANAGER_CHANNEL_URL
     assert (manager_dir / "config_org.ini").exists()
     assert manager_path.exists()
     assert result["enabled"] is True
@@ -300,7 +322,7 @@ def test_manager_repository_override_removes_generated_config_when_original_was_
 def test_apply_startup_manager_repository_override_deploys_cached_sources(tmp_path, monkeypatch):
     user_dir = tmp_path / "user"
     manager_dir = user_dir / "__manager"
-    source_dir = user_dir / "__controlpanel" / "manager-cache" / "sources"
+    source_dir = user_dir / "__controlpanel" / "manager-cache" / "sources" / "jsdelivr"
     manager_dir.mkdir(parents=True)
     source_dir.mkdir(parents=True)
     manager_api.write_controlpanel_settings({"manager_repository_data_override_enabled": True}, user_dir)
@@ -314,7 +336,7 @@ def test_apply_startup_manager_repository_override_deploys_cached_sources(tmp_pa
     result = manager_api.apply_startup_manager_repository_override(user_dir=user_dir)
 
     manager_path = manager_dir / "cache" / manager_api.manager_cache_filename(
-        manager_api._OVERRIDE_MANAGER_CHANNEL_URL,
+        manager_api._JSDELIVR_MANAGER_CHANNEL_URL,
         "custom-node-list.json",
     )
     registry_manager_path = manager_dir / "cache" / manager_api.manager_url_cache_filename(
@@ -322,7 +344,7 @@ def test_apply_startup_manager_repository_override_deploys_cached_sources(tmp_pa
     )
     assert result["enabled"] is True
     assert manager_api.read_manager_network_mode(manager_dir) == "offline"
-    assert manager_api.read_manager_channel_url(manager_dir) == manager_api._OVERRIDE_MANAGER_CHANNEL_URL
+    assert manager_api.read_manager_channel_url(manager_dir) == manager_api._JSDELIVR_MANAGER_CHANNEL_URL
     assert json.loads(manager_path.read_text(encoding="utf-8")) == {"custom_nodes": [{"title": "Cached"}]}
     assert json.loads(registry_manager_path.read_text(encoding="utf-8")) == {
         "nodes": [{"id": "registry-node", "latest_version": {"version": "1.0.0"}}],
@@ -434,7 +456,7 @@ def test_refresh_manager_cache_fetches_jsdelivr_and_writes_manager_cache(monkeyp
     monkeypatch.setattr(manager_api, "_MANAGER_CACHE_FILES", ("custom-node-list.json",))
     monkeypatch.setattr(manager_api, "ClientSession", FakeSession)
 
-    async def fake_refresh_registry(session, source_dir, on_line=None):
+    async def fake_refresh_registry(session, source_dir, on_line=None, channel=None):
         (source_dir / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME).write_text(
             json.dumps({"nodes": [{"id": "registry-node", "latest_version": {"version": "1.0.0"}}]}),
             encoding="utf-8",
@@ -445,7 +467,7 @@ def test_refresh_manager_cache_fetches_jsdelivr_and_writes_manager_cache(monkeyp
 
     result = asyncio.run(manager_api.refresh_manager_cache_from_cdn(user_dir=user_dir))
 
-    source_path = user_dir / "__controlpanel" / "manager-cache" / "sources" / "custom-node-list.json"
+    source_path = user_dir / "__controlpanel" / "manager-cache" / "sources" / "jsdelivr" / "custom-node-list.json"
     manager_path = manager_dir / "cache" / manager_api.manager_cache_filename(
         "https://raw.githubusercontent.com/Comfy-Org/ComfyUI-Manager/main",
         "custom-node-list.json",
@@ -470,10 +492,63 @@ def test_refresh_manager_cache_fetches_jsdelivr_and_writes_manager_cache(monkeyp
     assert result["results"][0]["action"] == "updated"
 
 
+def test_refresh_manager_cache_fetches_github_raw_when_channel_selected(monkeypatch, tmp_path):
+    requested_urls = []
+
+    class FakeResponse:
+        status = 200
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def text(self):
+            return json.dumps({"custom_nodes": []})
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        def get(self, url):
+            requested_urls.append(url)
+            return FakeResponse()
+
+    user_dir = tmp_path / "user"
+    manager_dir = user_dir / "__manager"
+    manager_dir.mkdir(parents=True)
+    manager_api.write_controlpanel_settings({"manager_repository_data_channel": "github"}, user_dir)
+
+    monkeypatch.setattr(manager_api, "_MANAGER_CACHE_FILES", ("custom-node-list.json",))
+    monkeypatch.setattr(manager_api, "ClientSession", FakeSession)
+
+    async def fake_refresh_registry(session, source_dir, on_line=None, channel=None):
+        (source_dir / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME).write_text(
+            json.dumps({"nodes": []}),
+            encoding="utf-8",
+        )
+        return {"file": "registry-node-list.json", "action": "skipped"}
+
+    monkeypatch.setattr(manager_api, "refresh_comfy_registry_nodes_cache", fake_refresh_registry)
+
+    result = asyncio.run(manager_api.refresh_manager_cache_from_cdn(user_dir=user_dir))
+
+    assert requested_urls == [
+        "https://raw.githubusercontent.com/Comfy-Org/ComfyUI-Manager/main/custom-node-list.json"
+    ]
+    assert result["provider"] == "github"
+    assert result["repository_data_channel"] == "github"
+    assert (user_dir / "__controlpanel" / "manager-cache" / "sources" / "github" / "custom-node-list.json").exists()
+
+
 def test_refresh_manager_cache_uses_fresh_source_without_fetching(monkeypatch, tmp_path):
     user_dir = tmp_path / "user"
     manager_dir = user_dir / "__manager"
-    source_dir = user_dir / "__controlpanel" / "manager-cache" / "sources"
+    source_dir = user_dir / "__controlpanel" / "manager-cache" / "sources" / "jsdelivr"
     manager_dir.mkdir(parents=True)
     source_dir.mkdir(parents=True)
     (source_dir / "custom-node-list.json").write_text(json.dumps({"custom_nodes": []}), encoding="utf-8")
@@ -491,7 +566,7 @@ def test_refresh_manager_cache_uses_fresh_source_without_fetching(monkeypatch, t
     monkeypatch.setattr(manager_api, "_MANAGER_CACHE_FILES", ("custom-node-list.json",))
     monkeypatch.setattr(manager_api, "ClientSession", FailSession)
 
-    async def fake_refresh_registry(session, source_dir, on_line=None):
+    async def fake_refresh_registry(session, source_dir, on_line=None, channel=None):
         (source_dir / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME).write_text(
             json.dumps({"nodes": []}),
             encoding="utf-8",
@@ -575,6 +650,7 @@ def test_refresh_registry_nodes_cache_full_fetches_all_pages(monkeypatch, tmp_pa
         "comfyui_version": "0.3.50",
         "platform": "windows",
         "form_factor": "git-windows",
+        "channel": "jsdelivr",
     }
     responses = [
         {"nodes": [{"id": "a", "updated_at": "2026-07-01T00:00:00Z"}], "totalPages": 2},
@@ -629,11 +705,13 @@ def test_refresh_registry_nodes_cache_incremental_merges_timestamped_updates(mon
         "comfyui_version": None,
         "platform": "freebsd",
         "form_factor": "git-linux",
+        "channel": "github",
     }
     cached_metadata = {
         "comfyui_version": None,
         "platform": "linux",
         "form_factor": "git-linux",
+        "channel": "github",
         "created_at": "2026-07-01T00:00:00Z",
         "updated_at": "2026-07-01T01:00:00Z",
     }
@@ -699,6 +777,7 @@ def test_refresh_registry_nodes_cache_invalidates_when_metadata_changes(monkeypa
         "comfyui_version": "0.3.51",
         "platform": "windows",
         "form_factor": "git-windows",
+        "channel": "jsdelivr",
     }
     cache_path.write_text(
         json.dumps(
@@ -707,6 +786,7 @@ def test_refresh_registry_nodes_cache_invalidates_when_metadata_changes(monkeypa
                     "comfyui_version": "0.3.50",
                     "platform": "windows",
                     "form_factor": "git-windows",
+                    "channel": "jsdelivr",
                     "created_at": "2026-07-01T00:00:00Z",
                     "updated_at": "2026-07-01T01:00:00Z",
                 },
@@ -754,6 +834,59 @@ def test_refresh_registry_nodes_cache_invalidates_when_metadata_changes(monkeypa
     assert requested_urls == [
         "https://api.comfy.org/nodes?limit=30&form_factor=git-windows&comfyui_version=0.3.51&page=1"
     ]
+
+
+def test_refresh_registry_nodes_cache_invalidates_when_channel_changes(monkeypatch, tmp_path):
+    cache_path = tmp_path / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME
+    current_metadata = {
+        "comfyui_version": None,
+        "platform": "windows",
+        "form_factor": "git-windows",
+        "channel": "github",
+    }
+    cache_path.write_text(
+        json.dumps(
+            {
+                "cache_metadata": {
+                    "comfyui_version": None,
+                    "platform": "windows",
+                    "form_factor": "git-windows",
+                    "channel": "jsdelivr",
+                    "created_at": "2026-07-01T00:00:00Z",
+                    "updated_at": "2026-07-01T01:00:00Z",
+                },
+                "nodes": [{"id": "old", "updated_at": "2026-07-01T00:00:00Z"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeSession:
+        def get(self, _url):
+            class FakeResponse:
+                status = 200
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *_args):
+                    return None
+
+                async def text(self):
+                    return json.dumps({"nodes": [{"id": "new"}], "totalPages": 1})
+
+            return FakeResponse()
+
+    monkeypatch.setattr(manager_api, "_current_registry_cache_metadata", lambda: current_metadata)
+    monkeypatch.setattr(manager_api.time, "time", lambda: 4000.0)
+
+    result = asyncio.run(manager_api.refresh_comfy_registry_nodes_cache(FakeSession(), tmp_path))
+
+    data = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert result["action"] == "invalidated"
+    assert result["timestamp"] is None
+    assert data["cache_metadata"]["channel"] == "github"
+    assert data["nodes"] == [{"id": "new"}]
 
 
 def test_fetch_registry_nodes_pages_logs_every_tenth_page_and_completion(monkeypatch):
