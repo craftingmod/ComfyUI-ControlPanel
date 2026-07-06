@@ -168,22 +168,44 @@ def test_install_git_url_uses_git_clone_without_shell(monkeypatch, tmp_path):
     assert result["destination"] == str(tmp_path / "comfyui-test")
 
 
-def test_update_git_repository_skips_dirty_repositories(monkeypatch, tmp_path):
+def test_update_git_repository_attempts_fast_forward_with_local_changes(monkeypatch, tmp_path):
     calls = []
     repo = tmp_path / "ComfyUI-Test"
     repo.mkdir()
 
     async def fake_run_command(args, cwd, timeout=600):
         calls.append((args, cwd, timeout))
-        return {"returncode": 0, "stdout": " M file.py"}
+        return {"returncode": 0, "stdout": "Already up to date."}
 
     monkeypatch.setattr(manager_api, "_find_executable", lambda command: f"/bin/{command}")
     monkeypatch.setattr(manager_api, "run_command", fake_run_command)
 
     result = asyncio.run(manager_api.update_git_repository(repo))
 
-    assert calls == [(["/bin/git", "status", "--porcelain"], repo, 600)]
-    assert result["skipped"] == "Repository has local changes; fast-forward update was skipped."
+    assert calls == [(["/bin/git", "pull", "--ff-only"], repo, 1200)]
+    assert result["result"]["stdout"] == "Already up to date."
+
+
+def test_update_git_repository_skips_when_local_changes_would_be_overwritten(monkeypatch, tmp_path):
+    repo = tmp_path / "ComfyUI-Test"
+    repo.mkdir()
+
+    async def fake_run_command(_args, _cwd, timeout=600):
+        raise manager_api.ManagerApiError(
+            "Command failed: git pull --ff-only\n"
+            "error: Your local changes to the following files would be overwritten by merge:\n"
+            "  config.json\n"
+            "Please commit your changes or stash them before you merge."
+        )
+
+    monkeypatch.setattr(manager_api, "_find_executable", lambda command: f"/bin/{command}")
+    monkeypatch.setattr(manager_api, "run_command", fake_run_command)
+
+    result = asyncio.run(manager_api.update_git_repository(repo))
+
+    assert result["name"] == "ComfyUI-Test"
+    assert result["skipped"] == "Git stopped because local changes would be overwritten."
+    assert "config.json" in result["detail"]
 
 
 def test_update_git_repository_uses_fast_forward_only(monkeypatch, tmp_path):
@@ -193,8 +215,6 @@ def test_update_git_repository_uses_fast_forward_only(monkeypatch, tmp_path):
 
     async def fake_run_command(args, cwd, timeout=600):
         calls.append((args, cwd, timeout))
-        if args == ["/bin/git", "status", "--porcelain"]:
-            return {"returncode": 0, "stdout": ""}
         return {"returncode": 0, "stdout": "Already up to date."}
 
     monkeypatch.setattr(manager_api, "_find_executable", lambda command: f"/bin/{command}")
@@ -203,7 +223,6 @@ def test_update_git_repository_uses_fast_forward_only(monkeypatch, tmp_path):
     result = asyncio.run(manager_api.update_git_repository(repo))
 
     assert calls == [
-        (["/bin/git", "status", "--porcelain"], repo, 600),
         (["/bin/git", "pull", "--ff-only"], repo, 1200),
     ]
     assert result["name"] == "ComfyUI-Test"

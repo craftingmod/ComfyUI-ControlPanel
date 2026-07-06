@@ -271,16 +271,31 @@ async def install_git_url(url: str, name: str | None = None) -> dict[str, Any]:
     return {"destination": str(destination), "result": result}
 
 
-async def update_git_repository(repo: Path) -> dict[str, Any]:
-    status = await run_command(_command_args("git", "status", "--porcelain"), repo)
-    if status["stdout"]:
-        return {
-            "name": repo.name,
-            "path": str(repo),
-            "skipped": "Repository has local changes; fast-forward update was skipped.",
-        }
+def _is_local_changes_pull_failure(message: str) -> bool:
+    normalized = message.lower()
+    return any(
+        phrase in normalized
+        for phrase in (
+            "your local changes to the following files would be overwritten",
+            "the following untracked working tree files would be overwritten",
+            "would be overwritten by merge",
+            "please commit your changes or stash them before you merge",
+        )
+    )
 
-    result = await run_command(_command_args("git", "pull", "--ff-only"), repo, timeout=1200)
+
+async def update_git_repository(repo: Path) -> dict[str, Any]:
+    try:
+        result = await run_command(_command_args("git", "pull", "--ff-only"), repo, timeout=1200)
+    except ManagerApiError as error:
+        if _is_local_changes_pull_failure(str(error)):
+            return {
+                "name": repo.name,
+                "path": str(repo),
+                "skipped": "Git stopped because local changes would be overwritten.",
+                "detail": str(error),
+            }
+        raise
     return {"name": repo.name, "path": str(repo), "result": result}
 
 
@@ -318,7 +333,7 @@ async def update_git_nodes_with_git(on_line: Callable[[str], None] | None = None
         "restart_required": True,
         "notes": [
             "Only custom nodes installed as Git repositories are updated.",
-            "Repositories with local changes are skipped.",
+            "Repositories with local changes are updated when Git can fast-forward without overwriting them.",
             "Updates use git pull --ff-only and never reset local work.",
         ],
         "results": results,
