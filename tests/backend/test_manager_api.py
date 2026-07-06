@@ -56,6 +56,29 @@ def test_control_request_allows_remote_clients_when_configured(monkeypatch):
     assert manager_api.is_control_request_allowed(SimpleNamespace(remote="192.168.0.10")) is True
 
 
+def test_warn_if_remote_control_enabled_logs_security_warning(monkeypatch, caplog):
+    monkeypatch.setattr(manager_api, "read_controlpanel_settings", lambda user_dir=None: {"allow_remote_control": True})
+
+    with caplog.at_level("WARNING", logger=manager_api.LOGGER.name):
+        result = manager_api.warn_if_remote_control_enabled()
+
+    assert result["enabled"] is True
+    assert "allow_remote_control is enabled" in caplog.text
+    assert "[ControlPanel][SECURITY WARNING]" in caplog.text
+
+
+def test_control_request_denied_response_logs_blocked_remote(monkeypatch, caplog):
+    monkeypatch.setattr(manager_api, "read_controlpanel_settings", lambda user_dir=None: {})
+
+    with caplog.at_level("WARNING", logger=manager_api.LOGGER.name):
+        response = manager_api.control_request_denied_response(
+            SimpleNamespace(remote="192.168.0.10", path="/control-panel/status")
+        )
+
+    assert response.status == 403
+    assert "Blocked remote control request from 192.168.0.10" in caplog.text
+
+
 def test_open_path_in_file_manager_uses_windows_startfile(monkeypatch, tmp_path):
     calls = []
 

@@ -200,6 +200,18 @@ def is_remote_control_allowed(user_dir: Path | None = None) -> bool:
     return bool(read_controlpanel_settings(user_dir).get(_SETTING_ALLOW_REMOTE_CONTROL))
 
 
+def warn_if_remote_control_enabled(user_dir: Path | None = None) -> dict[str, Any]:
+    resolved_user_dir = user_dir or COMFYUI_USER_DIR
+    if not is_remote_control_allowed(resolved_user_dir):
+        return {"enabled": False}
+    LOGGER.warning(
+        "[ControlPanel][SECURITY WARNING] allow_remote_control is enabled. "
+        "ControlPanel routes can be used from non-local clients. "
+        "Do not expose this ComfyUI instance to untrusted networks."
+    )
+    return {"enabled": True, "user_dir": str(resolved_user_dir)}
+
+
 def _request_remote_host(request) -> str | None:
     remote = getattr(request, "remote", None)
     if isinstance(remote, str) and remote:
@@ -239,6 +251,9 @@ def is_control_request_allowed(request) -> bool:
 def control_request_denied_response(request):
     if is_control_request_allowed(request):
         return None
+    host = _request_remote_host(request) or "unknown"
+    path = getattr(request, "path", None) or getattr(request, "rel_url", "")
+    LOGGER.warning("[ControlPanel][SECURITY WARNING] Blocked remote control request from %s: %s", host, path)
     return _error_response(
         "ComfyUI-ControlPanel is available only from localhost by default. "
         "Set allow_remote_control=true in the ControlPanel config only for trusted private deployments.",
