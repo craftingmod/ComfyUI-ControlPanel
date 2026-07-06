@@ -9,6 +9,8 @@ The extension is packaged as a single ComfyUI custom node pack. Backend routes
 live in `backend/`, the frontend extension lives in `frontend/`, and ComfyUI
 loads the built frontend from `dist/index.js` through `WEB_DIRECTORY = "./dist"`.
 
+This custom nodes is built to personal use replacement of [ComfyUI-Manager#3048](https://github.com/Comfy-Org/ComfyUI-Manager/pull/3048).
+
 ## Features
 
 - Install a custom node directly from a Git URL.
