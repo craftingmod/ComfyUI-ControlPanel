@@ -1053,6 +1053,41 @@ async def refresh_manager_cache_from_cdn(
         _MANAGER_CACHE_REFRESH_LOCK.release()
 
 
+async def rebuild_manager_cache_from_cdn(
+    on_line: Callable[[str], None] | None = None,
+    *,
+    user_dir: Path | None = None,
+) -> dict[str, Any]:
+    resolved_user_dir = user_dir or COMFYUI_USER_DIR
+    channel = read_manager_repository_data_channel(resolved_user_dir)
+    if not _MANAGER_CACHE_REFRESH_LOCK.acquire(blocking=False):
+        message = "Manager cache refresh is already running."
+        on_line and on_line(message)
+        return {
+            "provider": channel,
+            "restart_required": False,
+            "skipped": message,
+            "user_dir": str(resolved_user_dir),
+            "manager_dir": str(manager_user_dir(resolved_user_dir)),
+        }
+
+    source_dir = controlpanel_manager_cache_source_dir(resolved_user_dir, channel)
+    try:
+        if source_dir.exists():
+            on_line and on_line(f"Removing ControlPanel Manager cache source: {source_dir}")
+            shutil.rmtree(source_dir)
+        on_line and on_line("Rebuilding Manager cache from repository data sources.")
+        result = await _refresh_manager_cache_from_cdn_unlocked(
+            on_line,
+            user_dir=resolved_user_dir,
+            max_age_seconds=0,
+        )
+        result["rebuilt"] = True
+        return result
+    finally:
+        _MANAGER_CACHE_REFRESH_LOCK.release()
+
+
 async def _refresh_manager_cache_from_cdn_unlocked(
     on_line: Callable[[str], None] | None = None,
     *,
@@ -1557,6 +1592,10 @@ def register_routes() -> bool:
     async def refresh_manager_cache(_request):
         return await _start_job_response("manager-cache", "Update Manager Cache", _job_refresh_manager_cache)
 
+    @routes.post(f"{API_PREFIX}/manager-cache/rebuild")
+    async def rebuild_manager_cache(_request):
+        return await _start_job_response("manager-cache", "Rebuild Manager Cache", _job_rebuild_manager_cache)
+
     @routes.post(f"{API_PREFIX}/update-comfyui")
     async def update_core(_request):
         return await _start_job_response("comfyui", "Update ComfyUI", _job_update_comfyui)
@@ -1610,6 +1649,10 @@ async def _job_sync_dependencies(job: ManagerJob) -> dict[str, Any]:
 
 async def _job_refresh_manager_cache(job: ManagerJob) -> dict[str, Any]:
     return await refresh_manager_cache_from_cdn(job.append_log)
+
+
+async def _job_rebuild_manager_cache(job: ManagerJob) -> dict[str, Any]:
+    return await rebuild_manager_cache_from_cdn(job.append_log)
 
 
 async def _job_update_comfyui(job: ManagerJob) -> dict[str, Any]:

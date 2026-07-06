@@ -16,6 +16,7 @@ export const API_ROUTES = {
   INSTALL_GIT_URL: `${API_PREFIX}/install-git-url`,
   UPDATE_CUSTOM_NODES: `${API_PREFIX}/update/custom-nodes`,
   REFRESH_MANAGER_CACHE: `${API_PREFIX}/manager-cache/refresh`,
+  REBUILD_MANAGER_CACHE: `${API_PREFIX}/manager-cache/rebuild`,
   SYNC_DEPENDENCIES: `${API_PREFIX}/deps/uv-sync`,
   UPDATE_COMFYUI: `${API_PREFIX}/update/comfyui`,
   UPDATE_STATUS: `${API_PREFIX}/update/status`,

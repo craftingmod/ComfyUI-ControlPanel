@@ -240,7 +240,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     const title = document.createElement("h2")
     title.id = "cp-title"
     title.className = "cp-title"
-    title.textContent = "ComfyUI-ControlPanel"
+    title.textContent = "⚙️ ComfyUI-ControlPanel"
 
     const closeButton = createButton("×", close, "cp-button cp-close")
     closeButton.setAttribute("aria-label", "Close")
@@ -269,6 +269,9 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     actions.append(
       createButton("Update Manager Cache", () => {
         void startUpdateJob("Update Manager Cache", API_ROUTES.REFRESH_MANAGER_CACHE)
+      }),
+      createButton("Rebuild Manager Cache", () => {
+        void startUpdateJob("Rebuild Manager Cache", API_ROUTES.REBUILD_MANAGER_CACHE)
       }),
       createButton("Restart", () => {
         void confirmRestart()

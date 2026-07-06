@@ -13,7 +13,14 @@ export function createControlPanelApi(app: ComfyApp): ControlPanelApi {
         headers: body ? { "Content-Type": "application/json" } : undefined,
         body: body ? JSON.stringify(body) : undefined,
       })
-      const data = (await response.json()) as JsonObject
+      const text = await response.text()
+      let data: JsonObject
+      try {
+        data = (text ? JSON.parse(text) : {}) as JsonObject
+      } catch {
+        const detail = text.trim() || response.statusText
+        throw new Error(`HTTP ${response.status} for ${route}: ${detail}`)
+      }
       if (!response.ok || data.ok === false) {
         throw new Error(String(data.error ?? response.statusText))
       }

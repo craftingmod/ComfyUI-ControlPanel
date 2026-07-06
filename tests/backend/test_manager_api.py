@@ -585,6 +585,65 @@ def test_refresh_manager_cache_uses_fresh_source_without_fetching(monkeypatch, t
     assert manager_path.exists()
 
 
+def test_rebuild_manager_cache_removes_existing_source_and_refetches(monkeypatch, tmp_path):
+    requested_urls = []
+
+    class FakeResponse:
+        status = 200
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def text(self):
+            return json.dumps({"custom_nodes": [{"name": "fresh"}]})
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        def get(self, url):
+            requested_urls.append(url)
+            return FakeResponse()
+
+    user_dir = tmp_path / "user"
+    manager_dir = user_dir / "__manager"
+    source_dir = user_dir / "__controlpanel" / "manager-cache" / "sources" / "jsdelivr"
+    manager_dir.mkdir(parents=True)
+    source_dir.mkdir(parents=True)
+    (source_dir / "custom-node-list.json").write_text(json.dumps({"custom_nodes": [{"name": "old"}]}), encoding="utf-8")
+    (source_dir / "stale-extra.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(manager_api, "_MANAGER_CACHE_FILES", ("custom-node-list.json",))
+    monkeypatch.setattr(manager_api, "ClientSession", FakeSession)
+
+    async def fake_refresh_registry(session, source_dir, on_line=None, channel=None):
+        (source_dir / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME).write_text(
+            json.dumps({"nodes": []}),
+            encoding="utf-8",
+        )
+        return {"file": "registry-node-list.json", "action": "rebuilt"}
+
+    monkeypatch.setattr(manager_api, "refresh_comfy_registry_nodes_cache", fake_refresh_registry)
+
+    result = asyncio.run(manager_api.rebuild_manager_cache_from_cdn(user_dir=user_dir))
+
+    assert requested_urls == [
+        "https://cdn.jsdelivr.net/gh/Comfy-Org/ComfyUI-Manager@main/custom-node-list.json"
+    ]
+    assert result["rebuilt"] is True
+    assert result["max_age_seconds"] == 0
+    assert not (source_dir / "stale-extra.json").exists()
+    assert json.loads((source_dir / "custom-node-list.json").read_text(encoding="utf-8")) == {
+        "custom_nodes": [{"name": "fresh"}]
+    }
+
+
 def test_registry_nodes_incremental_timestamp_uses_latest_node_date():
     timestamp = manager_api.registry_nodes_incremental_timestamp(
         {
