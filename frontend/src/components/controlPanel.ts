@@ -29,6 +29,17 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     app.extensionManager.toast.add({ severity, summary, detail, life: 5000 })
   }
 
+  function scrollLogToBottom(): void {
+    const currentLogEl = logEl
+    if (!currentLogEl) {
+      return
+    }
+
+    window.requestAnimationFrame(() => {
+      currentLogEl.scrollTop = currentLogEl.scrollHeight
+    })
+  }
+
   function writeLog(message: string, payload?: unknown): void {
     if (!logEl) {
       return
@@ -36,7 +47,8 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
 
     const timestamp = new Date().toLocaleTimeString()
     const body = payload === undefined ? "" : `\n${JSON.stringify(payload, null, 2)}`
-    logEl.textContent = `[${timestamp}] ${message}${body}\n\n${logEl.textContent ?? ""}`
+    logEl.textContent = `${logEl.textContent ?? ""}[${timestamp}] ${message}${body}\n\n`
+    scrollLogToBottom()
   }
 
   function renderJob(job: UpdateJob): void {
@@ -47,6 +59,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     const logs = job.logs.length > 0 ? job.logs.join("\n") : `${job.label} is ${job.status}.`
     const error = job.error ? `\n\nError:\n${job.error}` : ""
     logEl.textContent = `${job.label} (${job.status})\n\n${logs}${error}\n`
+    scrollLogToBottom()
     if (restartNoticeEl) {
       restartNoticeEl.hidden = !job.restart_required || job.status !== "succeeded"
     }
@@ -164,8 +177,8 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       createButton("Install via Git URL", () => {
         gitInstallModal.open()
       }),
-      createButton("Update Custom Nodes", () => {
-        void startUpdateJob("Update Custom Nodes", API_ROUTES.UPDATE_CUSTOM_NODES)
+      createButton("Update Git Nodes", () => {
+        void startUpdateJob("Update Git Nodes", API_ROUTES.UPDATE_CUSTOM_NODES)
       }),
       createButton("Sync Dependencies", () => {
         void startUpdateJob("Sync Dependencies", API_ROUTES.SYNC_DEPENDENCIES)
@@ -188,6 +201,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     logEl = document.createElement("pre")
     logEl.className = "cp-log"
     logEl.textContent = "Ready.\n"
+    scrollLogToBottom()
 
     panel.append(header, actions, restartNoticeEl, logEl)
     backdrop.append(panel)

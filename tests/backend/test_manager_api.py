@@ -37,6 +37,17 @@ def test_same_server_url_uses_current_request_host():
     assert manager_api._same_server_url(request, "/manager/reboot") == "http://127.0.0.1:8188/manager/reboot"
 
 
+def test_manager_job_append_log_writes_python_log_without_job_label(caplog):
+    job = manager_api.ManagerJob(id="job", kind="git-nodes", label="Update Git Nodes")
+
+    with caplog.at_level("INFO", logger=manager_api.LOGGER.name):
+        job.append_log("Updated ComfyUI-Test")
+
+    assert job.logs == ["Updated ComfyUI-Test"]
+    assert "[ControlPanel] Updated ComfyUI-Test" in caplog.text
+    assert "Update Git Nodes: Updated ComfyUI-Test" not in caplog.text
+
+
 def test_same_server_url_respects_forwarded_proto():
     request = SimpleNamespace(headers={"Host": "example.test", "X-Forwarded-Proto": "https"}, scheme="http")
 
@@ -77,6 +88,30 @@ def test_request_manager_update_comfyui_uses_v2_queue_route(monkeypatch):
     assert calls == [("http://127.0.0.1:8188/v2/manager/queue/update_comfyui", "manager-rest")]
     assert result["restart_required"] is True
     assert result["message"] == "ComfyUI update was queued through ComfyUI Manager."
+
+
+def test_job_update_comfyui_uses_builtin_git_updater(monkeypatch):
+    calls = []
+    job = manager_api.ManagerJob(id="job", kind="comfyui", label="Update ComfyUI")
+
+    async def fake_update_comfyui_with_git(on_line=None):
+        calls.append("git")
+        if on_line:
+            on_line("git updater ran")
+        return {"provider": "git", "restart_required": True}
+
+    async def fail_request_manager_update_comfyui(*_args, **_kwargs):
+        raise AssertionError("ComfyUI Manager update route should not be used")
+
+    monkeypatch.setattr(manager_api, "update_comfyui_with_git", fake_update_comfyui_with_git)
+    monkeypatch.setattr(manager_api, "request_manager_update_comfyui", fail_request_manager_update_comfyui)
+
+    result = asyncio.run(manager_api._job_update_comfyui(job))
+
+    assert calls == ["git"]
+    assert result["provider"] == "git"
+    assert "Using built-in ComfyUI updater" in job.logs[0]
+    assert "git updater ran" in job.logs[1]
 
 
 def test_repo_name_from_git_url_handles_common_url_shapes():
@@ -121,30 +156,46 @@ def test_install_git_url_uses_git_clone_without_shell(monkeypatch, tmp_path):
     assert result["destination"] == str(tmp_path / "comfyui-test")
 
 
-def test_comfy_cli_update_uses_workspace_and_uv_compile(monkeypatch, tmp_path):
+def test_update_git_repository_skips_dirty_repositories(monkeypatch, tmp_path):
     calls = []
+    repo = tmp_path / "ComfyUI-Test"
+    repo.mkdir()
 
-    async def fake_run_command_stream(args, cwd, timeout=1800, on_line=None):
+    async def fake_run_command(args, cwd, timeout=600):
         calls.append((args, cwd, timeout))
-        if on_line:
-            on_line("updated")
-        return {"returncode": 0, "stdout": "updated", "stderr": ""}
+        return {"returncode": 0, "stdout": " M file.py"}
 
-    monkeypatch.setattr(manager_api, "COMFYUI_ROOT", tmp_path)
     monkeypatch.setattr(manager_api, "_find_executable", lambda command: f"/bin/{command}")
-    monkeypatch.setattr(manager_api, "run_command_stream", fake_run_command_stream)
+    monkeypatch.setattr(manager_api, "run_command", fake_run_command)
 
-    result = asyncio.run(manager_api.update_custom_nodes_with_comfy_cli())
+    result = asyncio.run(manager_api.update_git_repository(repo))
+
+    assert calls == [(["/bin/git", "status", "--porcelain"], repo, 600)]
+    assert result["skipped"] == "Repository has local changes; fast-forward update was skipped."
+
+
+def test_update_git_repository_uses_fast_forward_only(monkeypatch, tmp_path):
+    calls = []
+    repo = tmp_path / "ComfyUI-Test"
+    repo.mkdir()
+
+    async def fake_run_command(args, cwd, timeout=600):
+        calls.append((args, cwd, timeout))
+        if args == ["/bin/git", "status", "--porcelain"]:
+            return {"returncode": 0, "stdout": ""}
+        return {"returncode": 0, "stdout": "Already up to date."}
+
+    monkeypatch.setattr(manager_api, "_find_executable", lambda command: f"/bin/{command}")
+    monkeypatch.setattr(manager_api, "run_command", fake_run_command)
+
+    result = asyncio.run(manager_api.update_git_repository(repo))
 
     assert calls == [
-        (
-            ["/bin/comfy", "--workspace", str(tmp_path), "node", "update", "all", "--uv-compile"],
-            tmp_path,
-            3600,
-        )
+        (["/bin/git", "status", "--porcelain"], repo, 600),
+        (["/bin/git", "pull", "--ff-only"], repo, 1200),
     ]
-    assert result["provider"] == "comfy-cli"
-    assert result["restart_required"] is True
+    assert result["name"] == "ComfyUI-Test"
+    assert result["result"]["stdout"] == "Already up to date."
 
 
 def test_dependency_sync_uses_comfy_cli_uv_sync(monkeypatch, tmp_path):
@@ -170,7 +221,11 @@ def test_dependency_sync_uses_comfy_cli_uv_sync(monkeypatch, tmp_path):
     assert result["protected_packages"] == ["torch", "torchaudio", "torchvision"]
 
 
-def test_update_comfyui_git_provider_pulls_and_syncs_requirements(monkeypatch, tmp_path):
+def test_latest_version_tag_prefers_highest_semver_tag():
+    assert manager_api._latest_version_tag("latest\nv0.3.9\nv0.3.77\nv0.27.0\nrelease/v0.99\n") == "v0.27.0"
+
+
+def test_update_comfyui_git_provider_checks_out_latest_tag_and_syncs_requirements(monkeypatch, tmp_path):
     calls = []
     (tmp_path / "requirements.txt").write_text("comfyui-frontend-package\n", encoding="utf-8")
 
@@ -179,6 +234,8 @@ def test_update_comfyui_git_provider_pulls_and_syncs_requirements(monkeypatch, t
 
     async def fake_run_command_stream(args, cwd, timeout=1800, on_line=None):
         calls.append((args, cwd, timeout))
+        if args == ["/bin/git", "tag", "--list"]:
+            return {"returncode": 0, "stdout": "latest\nv0.26.2\nv0.27.0\n", "command": args}
         return {"returncode": 0, "command": args}
 
     monkeypatch.setattr(manager_api, "COMFYUI_ROOT", tmp_path)
@@ -190,10 +247,13 @@ def test_update_comfyui_git_provider_pulls_and_syncs_requirements(monkeypatch, t
     result = asyncio.run(manager_api.update_comfyui_with_git())
 
     assert calls == [
-        (["/bin/git", "pull", "--ff-only"], tmp_path, 1200),
+        (["/bin/git", "fetch", "--tags", "--force"], tmp_path, 1200),
+        (["/bin/git", "tag", "--list"], tmp_path, 60),
+        (["/bin/git", "-c", "advice.detachedHead=false", "checkout", "v0.27.0"], tmp_path, 1200),
         (["/bin/uv", "pip", "install", "--python", "/venv/python", "-r", str(tmp_path / "requirements.txt")], tmp_path, 1800),
     ]
     assert result["provider"] == "git"
+    assert result["version_tag"] == "v0.27.0"
     assert result["restart_required"] is True
 
 

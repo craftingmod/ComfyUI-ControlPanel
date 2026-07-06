@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -45,6 +46,7 @@ _JOBS: dict[str, "ManagerJob"] = {}
 _LATEST_JOB_ID: str | None = None
 _JOB_LIMIT = 10
 _TORCH_PACKAGES = {"torch", "torchvision", "torchaudio"}
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -62,7 +64,10 @@ class ManagerJob:
     restart_required: bool = False
 
     def append_log(self, message: str) -> None:
-        self.logs.append(message.rstrip())
+        line = message.rstrip()
+        self.logs.append(line)
+        if line:
+            LOGGER.info("[ControlPanel] %s", line)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -266,11 +271,19 @@ async def install_git_url(url: str, name: str | None = None) -> dict[str, Any]:
 
 
 async def update_git_repository(repo: Path) -> dict[str, Any]:
-    result = await run_command(["git", "pull", "--ff-only"], repo)
+    status = await run_command(_command_args("git", "status", "--porcelain"), repo)
+    if status["stdout"]:
+        return {
+            "name": repo.name,
+            "path": str(repo),
+            "skipped": "Repository has local changes; fast-forward update was skipped.",
+        }
+
+    result = await run_command(_command_args("git", "pull", "--ff-only"), repo, timeout=1200)
     return {"name": repo.name, "path": str(repo), "result": result}
 
 
-async def update_all_custom_nodes() -> list[dict[str, Any]]:
+async def update_all_git_nodes() -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for repo in discover_git_repositories():
         try:
@@ -284,17 +297,30 @@ def comfy_cli_command(*args: str) -> list[str]:
     return _command_args("comfy", "--workspace", str(COMFYUI_ROOT), *args)
 
 
-async def update_custom_nodes_with_comfy_cli(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
-    command = comfy_cli_command("node", "update", "all", "--uv-compile")
-    result = await run_command_stream(command, COMFYUI_ROOT, timeout=3600, on_line=on_line)
+async def update_git_nodes_with_git(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
+    results: list[dict[str, Any]] = []
+    for repo in discover_git_repositories():
+        on_line and on_line(f"Updating git node: {repo.name}")
+        try:
+            result = await update_git_repository(repo)
+        except Exception as error:  # noqa: BLE001 - report per-repository failures.
+            result = {"name": repo.name, "path": str(repo), "error": str(error)}
+        if result.get("skipped"):
+            on_line and on_line(f"Skipped {repo.name}: {result['skipped']}")
+        elif result.get("error"):
+            on_line and on_line(f"Failed {repo.name}: {result['error']}")
+        else:
+            on_line and on_line(f"Updated {repo.name}")
+        results.append(result)
     return {
-        "provider": "comfy-cli",
+        "provider": "git",
         "restart_required": True,
         "notes": [
-            "Registry-managed nodes are updated through Comfy CLI.",
-            "Manually cloned or registry-unmanaged nodes may require separate Git updates.",
+            "Only custom nodes installed as Git repositories are updated.",
+            "Repositories with local changes are skipped.",
+            "Updates use git pull --ff-only and never reset local work.",
         ],
-        "result": result,
+        "results": results,
     }
 
 
@@ -340,9 +366,34 @@ async def update_comfyui() -> list[dict[str, Any]]:
     return results
 
 
+_COMFYUI_VERSION_TAG_PATTERN = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
+
+
+def _latest_version_tag(tag_output: str) -> str:
+    versions: list[tuple[tuple[int, int, int], str]] = []
+    for tag in (line.strip() for line in tag_output.splitlines()):
+        match = _COMFYUI_VERSION_TAG_PATTERN.match(tag)
+        if match:
+            versions.append(((int(match.group(1)), int(match.group(2)), int(match.group(3))), tag))
+
+    if not versions:
+        raise ManagerApiError("No ComfyUI version tags were found in the repository.")
+
+    return max(versions, key=lambda item: item[0])[1]
+
+
 async def update_comfyui_with_git(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
     before_torch = await inspect_torch_runtime()
-    git_result = await run_command_stream(_command_args("git", "pull", "--ff-only"), COMFYUI_ROOT, timeout=1200, on_line=on_line)
+    fetch_result = await run_command_stream(_command_args("git", "fetch", "--tags", "--force"), COMFYUI_ROOT, timeout=1200, on_line=on_line)
+    tag_result = await run_command_stream(_command_args("git", "tag", "--list"), COMFYUI_ROOT, timeout=60)
+    latest_tag = _latest_version_tag(str(tag_result.get("stdout", "")))
+    on_line and on_line(f"Checking out latest tagged ComfyUI release: {latest_tag}")
+    checkout_result = await run_command_stream(
+        _command_args("git", "-c", "advice.detachedHead=false", "checkout", latest_tag),
+        COMFYUI_ROOT,
+        timeout=1200,
+        on_line=on_line,
+    )
     dependency_result: dict[str, Any]
     requirements_path = COMFYUI_ROOT / "requirements.txt"
     if requirements_path.exists() and _command_available("uv"):
@@ -361,8 +412,14 @@ async def update_comfyui_with_git(on_line: Callable[[str], None] | None = None) 
         "provider": "git",
         "restart_required": True,
         "warning": "Dependency sync uses the active Python runtime; verify torch/CUDA packages after restart if your install uses custom GPU wheels.",
+        "version_tag": latest_tag,
         "torch": {"before": before_torch, "after": after_torch},
-        "results": [{"name": "ComfyUI git", "result": git_result}, {"name": "ComfyUI requirements", "result": dependency_result}],
+        "results": [
+            {"name": "ComfyUI fetch tags", "result": fetch_result},
+            {"name": "ComfyUI latest tag", "result": tag_result, "selected": latest_tag},
+            {"name": "ComfyUI checkout", "result": checkout_result},
+            {"name": "ComfyUI requirements", "result": dependency_result},
+        ],
     }
 
 
@@ -560,23 +617,23 @@ def register_routes() -> bool:
 
     @routes.post(f"{API_PREFIX}/update-all")
     async def update_all(_request):
-        return await _start_job_response("custom-nodes", "Update All Custom Nodes", _job_update_custom_nodes)
+        return await _start_job_response("git-nodes", "Update Git Nodes", _job_update_git_nodes)
 
     @routes.post(f"{API_PREFIX}/update/custom-nodes")
     async def update_custom_nodes(_request):
-        return await _start_job_response("custom-nodes", "Update All Custom Nodes", _job_update_custom_nodes)
+        return await _start_job_response("git-nodes", "Update Git Nodes", _job_update_git_nodes)
 
     @routes.post(f"{API_PREFIX}/deps/uv-sync")
     async def sync_dependencies(_request):
         return await _start_job_response("deps", "Sync Dependencies", _job_sync_dependencies)
 
     @routes.post(f"{API_PREFIX}/update-comfyui")
-    async def update_core(request):
-        return await _start_job_response("comfyui", "Update ComfyUI", lambda job: _job_update_comfyui(job, request))
+    async def update_core(_request):
+        return await _start_job_response("comfyui", "Update ComfyUI", _job_update_comfyui)
 
     @routes.post(f"{API_PREFIX}/update/comfyui")
-    async def update_comfyui_route(request):
-        return await _start_job_response("comfyui", "Update ComfyUI", lambda job: _job_update_comfyui(job, request))
+    async def update_comfyui_route(_request):
+        return await _start_job_response("comfyui", "Update ComfyUI", _job_update_comfyui)
 
     @routes.get(f"{API_PREFIX}/update/status")
     async def update_status(_request):
@@ -613,26 +670,21 @@ async def _start_job_response(kind: str, label: str, operation: Callable[[Manage
         return _error_response(str(error), status=409)
 
 
-async def _job_update_custom_nodes(job: ManagerJob) -> dict[str, Any]:
-    return await update_custom_nodes_with_comfy_cli(job.append_log)
+async def _job_update_git_nodes(job: ManagerJob) -> dict[str, Any]:
+    return await update_git_nodes_with_git(job.append_log)
 
 
 async def _job_sync_dependencies(job: ManagerJob) -> dict[str, Any]:
     return await sync_dependencies_with_comfy_cli(job.append_log)
 
 
-async def _job_update_comfyui(job: ManagerJob, request) -> dict[str, Any]:
-    try:
-        result = await request_manager_update_comfyui(request)
-        job.append_log(result["message"])
-        return result
-    except ManagerApiError as error:
-        job.append_log(f"ComfyUI Manager update route failed; falling back to git provider: {error}")
-        return await update_comfyui_with_git(job.append_log)
+async def _job_update_comfyui(job: ManagerJob) -> dict[str, Any]:
+    job.append_log("Using built-in ComfyUI updater; ComfyUI Manager update route is disabled.")
+    return await update_comfyui_with_git(job.append_log)
 
 
 async def _operation_update_all() -> dict[str, Any]:
-    return {"results": await update_all_custom_nodes()}
+    return {"results": await update_all_git_nodes()}
 
 
 async def _operation_update_comfyui() -> dict[str, Any]:
