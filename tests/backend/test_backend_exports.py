@@ -19,5 +19,6 @@ def test_backend_package_exports_control_panel_mappings():
     assert module.__all__ == [
         "NODE_CLASS_MAPPINGS",
         "NODE_DISPLAY_NAME_MAPPINGS",
+        "apply_startup_manager_repository_override",
         "register_routes",
     ]

@@ -37,6 +37,7 @@ def test_control_panel_entrypoint_exports_expected_symbols_via_package_loader():
     assert module.__all__ == [
         "NODE_CLASS_MAPPINGS",
         "NODE_DISPLAY_NAME_MAPPINGS",
+        "apply_startup_manager_repository_override",
         "register_routes",
         "WEB_DIRECTORY",
     ]
@@ -87,7 +88,7 @@ def test_root_gitignore_and_workspace_surface_match_harness_expectations():
     assert "playwright-report/" in gitignore
     assert PNPM_WORKSPACE_PATH.exists()
     assert "packages:\n  - ." in pnpm_workspace
-    assert "allowBuilds:\n  esbuild: true" in pnpm_workspace
+    assert 'verifyDepsBeforeRun: "warn"' in pnpm_workspace
 
 
 def test_e2e_harness_files_exist():
