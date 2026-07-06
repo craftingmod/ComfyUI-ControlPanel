@@ -84,8 +84,13 @@ _MANAGER_CACHE_FILES = (
     "github-stats.json",
 )
 _DEFAULT_MANAGER_CHANNEL_URL = "https://raw.githubusercontent.com/Comfy-Org/ComfyUI-Manager/main"
+_OVERRIDE_MANAGER_CHANNEL_URL = "https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main"
 _JSDELIVR_MANAGER_CHANNEL_URL = "https://cdn.jsdelivr.net/gh/Comfy-Org/ComfyUI-Manager@main"
 _CACHE_MAX_AGE_SECONDS = 86400
+_CONTROLPANEL_CONFIG_FILENAME = "config.json"
+_SETTING_MANAGER_REPOSITORY_OVERRIDE = "manager_repository_data_override_enabled"
+_SETTING_PREVIOUS_MANAGER_NETWORK_MODE = "manager_network_mode_before_override"
+_SETTING_MANAGER_CONFIG_WAS_MISSING = "manager_config_was_missing_before_override"
 LOGGER = logging.getLogger(__name__)
 
 
@@ -314,17 +319,130 @@ def controlpanel_manager_cache_dir(user_dir: Path | None = None) -> Path:
     return (user_dir or COMFYUI_USER_DIR) / "__controlpanel" / "manager-cache"
 
 
+def controlpanel_config_path(user_dir: Path | None = None) -> Path:
+    return (user_dir or COMFYUI_USER_DIR) / "__controlpanel" / _CONTROLPANEL_CONFIG_FILENAME
+
+
 def manager_user_dir(user_dir: Path | None = None) -> Path:
     return (user_dir or COMFYUI_USER_DIR) / "__manager"
 
 
-def read_manager_channel_url(manager_dir: Path) -> str:
+def read_controlpanel_settings(user_dir: Path | None = None) -> dict[str, Any]:
+    config_path = controlpanel_config_path(user_dir)
+    if not config_path.exists():
+        return {}
+
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        LOGGER.warning("[ControlPanel] Ignoring invalid internal config: %s", config_path)
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def write_controlpanel_settings(settings: dict[str, Any], user_dir: Path | None = None) -> str:
+    return write_json_atomic(controlpanel_config_path(user_dir), settings)
+
+
+def is_manager_repository_override_enabled(user_dir: Path | None = None) -> bool:
+    return bool(read_controlpanel_settings(user_dir).get(_SETTING_MANAGER_REPOSITORY_OVERRIDE))
+
+
+def read_manager_config(manager_dir: Path) -> configparser.ConfigParser:
+    parser = configparser.ConfigParser()
     config_path = manager_dir / "config.ini"
+    if config_path.exists():
+        parser.read(config_path, encoding="utf-8")
+    if not parser.has_section("default"):
+        parser.add_section("default")
+    return parser
+
+
+def manager_config_path(manager_dir: Path) -> Path:
+    return manager_dir / "config.ini"
+
+
+def manager_config_backup_path(manager_dir: Path) -> Path:
+    return manager_dir / "config_org.ini"
+
+
+def backup_manager_config_once(manager_dir: Path) -> bool:
+    backup_path = manager_config_backup_path(manager_dir)
+    if backup_path.exists():
+        return False
+
+    config_path = manager_config_path(manager_dir)
+    manager_dir.mkdir(parents=True, exist_ok=True)
+    if config_path.exists():
+        shutil.copy2(config_path, backup_path)
+    return True
+
+
+def restore_manager_config_backup(manager_dir: Path) -> bool:
+    backup_path = manager_config_backup_path(manager_dir)
+    if not backup_path.exists():
+        return False
+
+    config_path = manager_config_path(manager_dir)
+    manager_dir.mkdir(parents=True, exist_ok=True)
+    os.replace(backup_path, config_path)
+    return True
+
+
+def write_manager_config(manager_dir: Path, parser: configparser.ConfigParser) -> None:
+    manager_dir.mkdir(parents=True, exist_ok=True)
+    config_path = manager_config_path(manager_dir)
+    temp_path = config_path.with_name(f".{config_path.name}.{uuid.uuid4().hex}.tmp")
+    with temp_path.open("w", encoding="utf-8") as file:
+        parser.write(file)
+    os.replace(temp_path, config_path)
+
+
+def read_manager_network_mode(manager_dir: Path) -> str | None:
+    config_path = manager_dir / "config.ini"
+    if not config_path.exists():
+        return None
+
+    parser = read_manager_config(manager_dir)
+    value = parser.get("default", "network_mode", fallback="").strip()
+    return value or None
+
+
+def write_manager_network_mode(manager_dir: Path, network_mode: str | None) -> None:
+    parser = read_manager_config(manager_dir)
+    if network_mode is None:
+        parser.remove_option("default", "network_mode")
+    else:
+        parser.set("default", "network_mode", network_mode)
+    write_manager_config(manager_dir, parser)
+
+
+def read_manager_config_value(manager_dir: Path, option: str) -> str | None:
+    config_path = manager_config_path(manager_dir)
+    if not config_path.exists():
+        return None
+
+    parser = read_manager_config(manager_dir)
+    value = parser.get("default", option, fallback="").strip()
+    return value or None
+
+
+def write_manager_config_values(manager_dir: Path, values: dict[str, str | None]) -> None:
+    parser = read_manager_config(manager_dir)
+    for option, value in values.items():
+        if value is None:
+            parser.remove_option("default", option)
+        else:
+            parser.set("default", option, value)
+    write_manager_config(manager_dir, parser)
+
+
+def read_manager_channel_url(manager_dir: Path) -> str:
+    config_path = manager_config_path(manager_dir)
     if not config_path.exists():
         return _DEFAULT_MANAGER_CHANNEL_URL
 
-    parser = configparser.ConfigParser()
-    parser.read(config_path, encoding="utf-8")
+    parser = read_manager_config(manager_dir)
     channel_url = parser.get("default", "channel_url", fallback=_DEFAULT_MANAGER_CHANNEL_URL).strip()
     return channel_url.rstrip("/") or _DEFAULT_MANAGER_CHANNEL_URL
 
@@ -348,6 +466,131 @@ def write_json_atomic(path: Path, data: Any) -> str:
     temp_path.write_text(payload, encoding="utf-8")
     os.replace(temp_path, path)
     return digest
+
+
+def deploy_controlpanel_manager_cache_to_manager(
+    user_dir: Path | None = None,
+    on_line: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    resolved_user_dir = user_dir or COMFYUI_USER_DIR
+    manager_dir = manager_user_dir(resolved_user_dir)
+    if not manager_dir.exists():
+        on_line and on_line(f"ComfyUI Manager user directory was not found: {manager_dir}")
+        return {
+            "skipped": "ComfyUI Manager user directory was not found.",
+            "manager_dir": str(manager_dir),
+        }
+
+    source_dir = controlpanel_manager_cache_dir(resolved_user_dir) / "sources"
+    if not source_dir.exists():
+        on_line and on_line(f"ControlPanel Manager cache source directory was not found: {source_dir}")
+        return {
+            "skipped": "ControlPanel Manager cache source directory was not found.",
+            "source_dir": str(source_dir),
+            "manager_dir": str(manager_dir),
+        }
+
+    channel_url = read_manager_channel_url(manager_dir)
+    manager_cache_dir = manager_dir / "cache"
+    manager_cache_dir.mkdir(parents=True, exist_ok=True)
+
+    results: list[dict[str, Any]] = []
+    for filename in _MANAGER_CACHE_FILES:
+        source_path = source_dir / filename
+        manager_path = manager_cache_dir / manager_cache_filename(channel_url, filename)
+        if not source_path.exists():
+            on_line and on_line(f"Manager cache source missing: {filename}")
+            results.append({"file": filename, "action": "missing", "source_path": str(source_path)})
+            continue
+
+        data = json.loads(source_path.read_text(encoding="utf-8"))
+        digest = write_json_atomic(manager_path, data)
+        on_line and on_line(f"Manager repository data deployed: {filename}")
+        results.append(
+            {
+                "file": filename,
+                "action": "deployed",
+                "source_path": str(source_path),
+                "manager_cache_path": str(manager_path),
+                "sha256": digest,
+            }
+        )
+
+    return {
+        "manager_dir": str(manager_dir),
+        "source_dir": str(source_dir),
+        "manager_cache_dir": str(manager_cache_dir),
+        "channel_url": channel_url,
+        "results": results,
+    }
+
+
+def set_manager_repository_override(enabled: bool, user_dir: Path | None = None) -> dict[str, Any]:
+    resolved_user_dir = user_dir or COMFYUI_USER_DIR
+    settings = read_controlpanel_settings(resolved_user_dir)
+    manager_dir = manager_user_dir(resolved_user_dir)
+    previous_network_mode = settings.get(_SETTING_PREVIOUS_MANAGER_NETWORK_MODE)
+    was_enabled = bool(settings.get(_SETTING_MANAGER_REPOSITORY_OVERRIDE))
+
+    if enabled:
+        if not was_enabled:
+            config_path = manager_config_path(manager_dir)
+            settings[_SETTING_MANAGER_CONFIG_WAS_MISSING] = not config_path.exists()
+            backup_manager_config_once(manager_dir)
+        current_network_mode = read_manager_network_mode(manager_dir)
+        if _SETTING_PREVIOUS_MANAGER_NETWORK_MODE not in settings:
+            settings[_SETTING_PREVIOUS_MANAGER_NETWORK_MODE] = current_network_mode
+        settings[_SETTING_MANAGER_REPOSITORY_OVERRIDE] = True
+        write_manager_config_values(
+            manager_dir,
+            {
+                "network_mode": "offline",
+                "channel_url": _OVERRIDE_MANAGER_CHANNEL_URL,
+            },
+        )
+        deployment = deploy_controlpanel_manager_cache_to_manager(resolved_user_dir)
+    else:
+        config_was_missing = settings.get(_SETTING_MANAGER_CONFIG_WAS_MISSING) is True
+        restored = restore_manager_config_backup(manager_dir)
+        if not restored and config_was_missing:
+            with contextlib.suppress(FileNotFoundError):
+                manager_config_path(manager_dir).unlink()
+        elif not restored and (previous_network_mode is None or isinstance(previous_network_mode, str)):
+            write_manager_network_mode(manager_dir, previous_network_mode)
+        settings[_SETTING_MANAGER_REPOSITORY_OVERRIDE] = False
+        settings.pop(_SETTING_PREVIOUS_MANAGER_NETWORK_MODE, None)
+        settings.pop(_SETTING_MANAGER_CONFIG_WAS_MISSING, None)
+        deployment = {"skipped": "Manager repository data override is disabled."}
+
+    write_controlpanel_settings(settings, resolved_user_dir)
+    return {
+        "enabled": bool(settings.get(_SETTING_MANAGER_REPOSITORY_OVERRIDE)),
+        "manager_dir": str(manager_dir),
+        "network_mode": read_manager_network_mode(manager_dir),
+        "deployment": deployment,
+    }
+
+
+def apply_startup_manager_repository_override(user_dir: Path | None = None) -> dict[str, Any]:
+    resolved_user_dir = user_dir or COMFYUI_USER_DIR
+    if not is_manager_repository_override_enabled(resolved_user_dir):
+        return {"enabled": False, "skipped": "Manager repository data override is disabled."}
+
+    manager_dir = manager_user_dir(resolved_user_dir)
+    write_manager_config_values(
+        manager_dir,
+        {
+            "network_mode": "offline",
+            "channel_url": _OVERRIDE_MANAGER_CHANNEL_URL,
+        },
+    )
+    deployment = deploy_controlpanel_manager_cache_to_manager(resolved_user_dir)
+    return {
+        "enabled": True,
+        "manager_dir": str(manager_dir),
+        "network_mode": read_manager_network_mode(manager_dir),
+        "deployment": deployment,
+    }
 
 
 async def fetch_json(session: ClientSession, url: str) -> Any:
@@ -788,8 +1031,34 @@ def register_routes() -> bool:
                 "tools": {"git": _command_available("git"), "uv": _command_available("uv")},
                 "latest_job": latest_job().to_dict() if latest_job() else None,
                 "repositories": repos,
+                "settings": {
+                    "manager_repository_data_override": is_manager_repository_override_enabled(),
+                    "manager_network_mode": read_manager_network_mode(manager_user_dir()),
+                    "manager_channel_url": read_manager_channel_url(manager_user_dir()),
+                },
             }
         )
+
+    @routes.get(f"{API_PREFIX}/settings")
+    async def get_settings(_request):
+        manager_dir = manager_user_dir()
+        return _json_response(
+            {
+                "ok": True,
+                "manager_repository_data_override": is_manager_repository_override_enabled(),
+                "manager_network_mode": read_manager_network_mode(manager_dir),
+                "manager_channel_url": read_manager_channel_url(manager_dir),
+            }
+        )
+
+    @routes.post(f"{API_PREFIX}/settings/manager-repository-data-override")
+    async def set_manager_repository_data_override(request):
+        data = await _read_json(request)
+        try:
+            result = set_manager_repository_override(data.get("enabled") is True)
+            return _json_response({"ok": True, **result})
+        except Exception as error:  # noqa: BLE001 - settings errors should surface to the UI.
+            return _error_response(str(error), status=500)
 
     @routes.post(f"{API_PREFIX}/install-git-url")
     async def install(request):

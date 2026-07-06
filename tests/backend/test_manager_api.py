@@ -168,11 +168,19 @@ def test_install_git_url_uses_git_clone_without_shell(monkeypatch, tmp_path):
     assert result["destination"] == str(tmp_path / "comfyui-test")
 
 
-def test_manager_cache_filename_uses_channel_url_hash():
+def test_manager_cache_filename_uses_channel_url_hash(monkeypatch):
+    calls = []
     filename = "custom-node-list.json"
     channel_url = "https://raw.githubusercontent.com/Comfy-Org/ComfyUI-Manager/main"
 
-    assert manager_api.manager_cache_filename(channel_url, filename) == "3351870820_custom-node-list.json"
+    def fake_hash(value):
+        calls.append(value)
+        return 42
+
+    monkeypatch.setattr(manager_api, "manager_cache_key_hash", fake_hash)
+
+    assert manager_api.manager_cache_filename(channel_url, filename) == "42_custom-node-list.json"
+    assert calls == ["https://raw.githubusercontent.com/Comfy-Org/ComfyUI-Manager/main/custom-node-list.json"]
 
 
 def test_read_manager_channel_url_falls_back_to_default(tmp_path):
@@ -191,6 +199,111 @@ def test_read_manager_channel_url_reads_config(tmp_path):
     )
 
     assert manager_api.read_manager_channel_url(manager_dir) == "https://cdn.jsdelivr.net/gh/Comfy-Org/ComfyUI-Manager@main"
+
+
+def test_set_manager_repository_override_forces_offline_and_records_internal_setting(tmp_path, monkeypatch):
+    user_dir = tmp_path / "user"
+    manager_dir = user_dir / "__manager"
+    source_dir = user_dir / "__controlpanel" / "manager-cache" / "sources"
+    manager_dir.mkdir(parents=True)
+    source_dir.mkdir(parents=True)
+    (manager_dir / "config.ini").write_text(
+        "[default]\nchannel_url = https://raw.githubusercontent.com/Comfy-Org/ComfyUI-Manager/main\nnetwork_mode = public\n",
+        encoding="utf-8",
+    )
+    (source_dir / "custom-node-list.json").write_text(json.dumps({"custom_nodes": []}), encoding="utf-8")
+    monkeypatch.setattr(manager_api, "_MANAGER_CACHE_FILES", ("custom-node-list.json",))
+    result = manager_api.set_manager_repository_override(True, user_dir=user_dir)
+
+    settings = manager_api.read_controlpanel_settings(user_dir)
+    manager_path = manager_dir / "cache" / manager_api.manager_cache_filename(
+        manager_api._OVERRIDE_MANAGER_CHANNEL_URL,
+        "custom-node-list.json",
+    )
+
+    assert settings["manager_repository_data_override_enabled"] is True
+    assert settings["manager_network_mode_before_override"] == "public"
+    assert manager_api.read_manager_network_mode(manager_dir) == "offline"
+    assert manager_api.read_manager_channel_url(manager_dir) == manager_api._OVERRIDE_MANAGER_CHANNEL_URL
+    assert (manager_dir / "config_org.ini").exists()
+    assert manager_path.exists()
+    assert result["enabled"] is True
+
+
+def test_set_manager_repository_override_disable_restores_original_manager_config(tmp_path):
+    user_dir = tmp_path / "user"
+    manager_dir = user_dir / "__manager"
+    manager_dir.mkdir(parents=True)
+    original_config = (
+        "[default]\n"
+        "channel_url = https://example.test/original-manager\n"
+        "network_mode = public\n"
+        "other_setting = keep-me\n"
+    )
+    (manager_dir / "config.ini").write_text(original_config, encoding="utf-8")
+
+    manager_api.set_manager_repository_override(True, user_dir=user_dir)
+
+    result = manager_api.set_manager_repository_override(False, user_dir=user_dir)
+
+    settings = manager_api.read_controlpanel_settings(user_dir)
+    assert settings["manager_repository_data_override_enabled"] is False
+    assert "manager_network_mode_before_override" not in settings
+    assert "manager_config_was_missing_before_override" not in settings
+    assert manager_api.read_manager_network_mode(manager_dir) == "public"
+    assert manager_api.read_manager_channel_url(manager_dir) == "https://example.test/original-manager"
+    assert "other_setting = keep-me" in (manager_dir / "config.ini").read_text(encoding="utf-8")
+    assert not (manager_dir / "config_org.ini").exists()
+    assert result["enabled"] is False
+
+
+def test_manager_repository_override_preserves_preexisting_offline_mode(tmp_path):
+    user_dir = tmp_path / "user"
+    manager_dir = user_dir / "__manager"
+    manager_dir.mkdir(parents=True)
+    manager_api.write_manager_network_mode(manager_dir, "offline")
+
+    result = manager_api.set_manager_repository_override(True, user_dir=user_dir)
+    disabled = manager_api.set_manager_repository_override(False, user_dir=user_dir)
+
+    assert result["enabled"] is True
+    assert disabled["enabled"] is False
+    assert manager_api.read_manager_network_mode(manager_dir) == "offline"
+
+
+def test_manager_repository_override_removes_generated_config_when_original_was_missing(tmp_path):
+    user_dir = tmp_path / "user"
+    manager_dir = user_dir / "__manager"
+    manager_dir.mkdir(parents=True)
+
+    manager_api.set_manager_repository_override(True, user_dir=user_dir)
+    assert (manager_dir / "config.ini").exists()
+
+    manager_api.set_manager_repository_override(False, user_dir=user_dir)
+
+    assert not (manager_dir / "config.ini").exists()
+
+
+def test_apply_startup_manager_repository_override_deploys_cached_sources(tmp_path, monkeypatch):
+    user_dir = tmp_path / "user"
+    manager_dir = user_dir / "__manager"
+    source_dir = user_dir / "__controlpanel" / "manager-cache" / "sources"
+    manager_dir.mkdir(parents=True)
+    source_dir.mkdir(parents=True)
+    manager_api.write_controlpanel_settings({"manager_repository_data_override_enabled": True}, user_dir)
+    (source_dir / "custom-node-list.json").write_text(json.dumps({"custom_nodes": [{"title": "Cached"}]}), encoding="utf-8")
+    monkeypatch.setattr(manager_api, "_MANAGER_CACHE_FILES", ("custom-node-list.json",))
+
+    result = manager_api.apply_startup_manager_repository_override(user_dir=user_dir)
+
+    manager_path = manager_dir / "cache" / manager_api.manager_cache_filename(
+        manager_api._OVERRIDE_MANAGER_CHANNEL_URL,
+        "custom-node-list.json",
+    )
+    assert result["enabled"] is True
+    assert manager_api.read_manager_network_mode(manager_dir) == "offline"
+    assert manager_api.read_manager_channel_url(manager_dir) == manager_api._OVERRIDE_MANAGER_CHANNEL_URL
+    assert json.loads(manager_path.read_text(encoding="utf-8")) == {"custom_nodes": [{"title": "Cached"}]}
 
 
 def test_is_cache_file_fresh_uses_mtime(tmp_path):
@@ -252,7 +365,10 @@ def test_refresh_manager_cache_fetches_jsdelivr_and_writes_manager_cache(monkeyp
     result = asyncio.run(manager_api.refresh_manager_cache_from_cdn(user_dir=user_dir))
 
     source_path = user_dir / "__controlpanel" / "manager-cache" / "sources" / "custom-node-list.json"
-    manager_path = manager_dir / "cache" / "3351870820_custom-node-list.json"
+    manager_path = manager_dir / "cache" / manager_api.manager_cache_filename(
+        "https://raw.githubusercontent.com/Comfy-Org/ComfyUI-Manager/main",
+        "custom-node-list.json",
+    )
 
     assert requested_urls == [
         "https://cdn.jsdelivr.net/gh/Comfy-Org/ComfyUI-Manager@main/custom-node-list.json"
@@ -281,7 +397,11 @@ def test_refresh_manager_cache_uses_fresh_source_without_fetching(monkeypatch, t
     result = asyncio.run(manager_api.refresh_manager_cache_from_cdn(user_dir=user_dir))
 
     assert result["results"][0]["action"] == "deployed"
-    assert (manager_dir / "cache" / "3351870820_custom-node-list.json").exists()
+    manager_path = manager_dir / "cache" / manager_api.manager_cache_filename(
+        manager_api._DEFAULT_MANAGER_CHANNEL_URL,
+        "custom-node-list.json",
+    )
+    assert manager_path.exists()
 
 
 def test_update_git_repository_attempts_fast_forward_with_local_changes(monkeypatch, tmp_path):
