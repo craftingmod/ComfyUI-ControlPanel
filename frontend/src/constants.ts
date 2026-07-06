@@ -4,7 +4,7 @@ export const LOGGING_PREFIX = `[${SETTINGS_PREFIX}]`
 export const SETTINGS_IDS = {
   VERSION: `${SETTINGS_PREFIX}.Version`,
   DEBUG_LOGGING: `${SETTINGS_PREFIX}.Debug_Logging`,
-}
+} as const
 export const API_PREFIX = "/control-panel"
 export const API_ROUTES = {
   STATUS: `${API_PREFIX}/status`,
@@ -14,4 +14,4 @@ export const API_ROUTES = {
   UPDATE_COMFYUI: `${API_PREFIX}/update/comfyui`,
   UPDATE_STATUS: `${API_PREFIX}/update/status`,
   RESTART: `${API_PREFIX}/restart`,
-}
+} as const

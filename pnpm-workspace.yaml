@@ -6,3 +6,5 @@ allowBuilds:
 
 onlyBuiltDependencies:
   - esbuild
+
+verifyDepsBeforeRun: "warn"

@@ -11,6 +11,10 @@ Single publishable ComfyUI custom node pack.
 For testing details, see `docs/TESTING.md`.
 For ComfyUI API changes, verify current official docs before changing architecture or advanced frontend hooks.
 
+## pnpm warning
+Use system pnpm, NOT codex built-in pnpm!
+It causes 
+
 ## About CSS
 ComfyUI supports tailwindcss so tailwindcss style is preferred.
 
