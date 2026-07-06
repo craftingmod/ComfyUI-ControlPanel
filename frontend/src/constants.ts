@@ -16,6 +16,7 @@ export const API_ROUTES = {
   INSTALL_GIT_URL: `${API_PREFIX}/install-git-url`,
   OPEN_CUSTOM_NODES: `${API_PREFIX}/open/custom-nodes`,
   OPEN_SNAPSHOTS: `${API_PREFIX}/open/snapshots`,
+  SHOW_ENVIRONMENT: `${API_PREFIX}/environment`,
   SNAPSHOT_LIST: `${API_PREFIX}/snapshot/list`,
   SNAPSHOT_SAVE: `${API_PREFIX}/snapshot/save`,
   SNAPSHOT_RESTORE: `${API_PREFIX}/snapshot/restore`,

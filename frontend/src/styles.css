@@ -13,7 +13,7 @@
 
 .cp-panel {
   width: min(760px, calc(100vw - 32px));
-  max-height: min(760px, calc(100vh - 32px));
+  max-height: min(870px, calc(100vh - 24px));
   overflow: auto;
   padding: 20px;
   border: 1px solid rgb(255 255 255 / 0.16);
@@ -26,6 +26,10 @@
 
 .cp-modal {
   width: min(520px, calc(100vw - 32px));
+}
+
+.cp-environment-modal {
+  width: min(900px, calc(100vw - 32px));
 }
 
 .cp-header {
@@ -189,8 +193,8 @@
 }
 
 .cp-log {
-  min-height: 180px;
-  max-height: 300px;
+  min-height: 140px;
+  max-height: 240px;
   overflow: auto;
   margin: 0;
   padding: 38px 12px 12px;
@@ -200,6 +204,68 @@
   color: #d6dae2;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.cp-environment-output {
+  max-height: min(620px, calc(100vh - 160px));
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 6px;
+  background: #101115;
+  color: #d6dae2;
+  font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+.cp-environment-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.cp-environment-table th,
+.cp-environment-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.cp-environment-table thead th {
+  border: 1px solid rgb(255 255 255 / 0.34);
+  color: #d98dff;
+  font-weight: 700;
+}
+
+.cp-environment-table tbody th {
+  width: 42%;
+  color: #66d9ef;
+  font-weight: 650;
+}
+
+.cp-environment-table tbody td {
+  color: #edf1f7;
+}
+
+.cp-environment-section-row th {
+  padding-top: 14px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.16);
+  color: #b9c0ca;
+  font: 700 11px/1.2 system-ui, sans-serif;
+  text-transform: uppercase;
+}
+
+.cp-environment-fallback {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cp-environment-stderr {
+  margin-top: 12px;
+  color: #ff9b9b;
 }
 
 @media (max-width: 640px) {

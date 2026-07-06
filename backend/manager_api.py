@@ -1262,6 +1262,29 @@ async def sync_dependencies_with_comfy_cli(on_line: Callable[[str], None] | None
     }
 
 
+async def show_environment_with_comfy_cli() -> dict[str, Any]:
+    command = comfy_cli_command("--json", "env")
+    result = await run_command_stream(command, COMFYUI_ROOT, timeout=120)
+    try:
+        envelope = json.loads(str(result.get("stdout", "")))
+    except json.JSONDecodeError as error:
+        raise ManagerApiError(f"comfy --json env returned invalid JSON: {error}") from error
+    if not isinstance(envelope, dict):
+        raise ManagerApiError("comfy --json env returned an unexpected payload.")
+    if envelope.get("ok") is not True:
+        raise ManagerApiError(str(envelope.get("error") or "comfy env failed."))
+    return {
+        "provider": "comfy-cli",
+        "cli": {
+            "command": envelope.get("command"),
+            "version": envelope.get("version"),
+            "where": envelope.get("where"),
+        },
+        "environment": envelope.get("data") if isinstance(envelope.get("data"), dict) else {},
+        "result": result,
+    }
+
+
 def validate_snapshot_name(name: str) -> str:
     normalized = name.strip()
     if not normalized:
@@ -1679,6 +1702,10 @@ def register_routes() -> bool:
     async def open_snapshots(_request):
         return await _with_operation_lock(_operation_open_snapshots)
 
+    @routes.post(f"{API_PREFIX}/environment")
+    async def environment(_request):
+        return await _with_operation_lock(_operation_show_environment)
+
     @routes.get(f"{API_PREFIX}/snapshot/list")
     async def list_snapshots(_request):
         return _json_response({"ok": True, **list_manager_snapshots()})
@@ -1810,3 +1837,7 @@ async def _operation_open_snapshots() -> dict[str, Any]:
     snapshot_dir = manager_snapshot_dir()
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     return open_path_in_file_manager(snapshot_dir)
+
+
+async def _operation_show_environment() -> dict[str, Any]:
+    return await show_environment_with_comfy_cli()

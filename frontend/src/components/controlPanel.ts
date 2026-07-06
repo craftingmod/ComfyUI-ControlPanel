@@ -31,6 +31,8 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
   let managerCacheButtons: HTMLButtonElement[] = []
   let snapshotRestoreModalEl: HTMLElement | undefined
   let snapshotSelectEl: HTMLSelectElement | undefined
+  let environmentModalEl: HTMLElement | undefined
+  let environmentOutputEl: HTMLElement | undefined
   let statusPollTimer: number | undefined
 
   function toast(severity: ToastSeverity, summary: string, detail: string): void {
@@ -242,6 +244,10 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     snapshotRestoreModalEl?.remove()
   }
 
+  function closeEnvironmentModal(): void {
+    environmentModalEl?.remove()
+  }
+
   function snapshotNamesFromResponse(data: JsonObject): string[] {
     const snapshots = Array.isArray(data.snapshots) ? data.snapshots : []
     return snapshots
@@ -304,6 +310,165 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     })
     if (confirmed) {
       await startUpdateJob("Rebuild Manager Cache", API_ROUTES.REBUILD_MANAGER_CACHE)
+    }
+  }
+
+  type EnvironmentSection = {
+    title: string
+    rows: Array<[string, unknown]>
+  }
+
+  function environmentSections(data: JsonObject): EnvironmentSection[] | undefined {
+    const environment = asRecord(data.environment)
+    if (!environment) {
+      return undefined
+    }
+
+    const cli = asRecord(data.cli)
+    const python = asRecord(environment.python)
+    const config = asRecord(environment.config)
+    const server = asRecord(environment.server)
+    const workspace = asRecord(environment.workspace)
+    return [
+      {
+        title: "Comfy CLI",
+        rows: [
+          ["Version", cli?.version],
+          ["Command", cli?.command],
+        ],
+      },
+      {
+        title: "Python",
+        rows: [
+          ["Python Version", python?.version],
+          ["Python Executable", python?.executable],
+          ["Virtualenv Path", python?.virtualenv],
+          ["Conda Env", python?.conda_env],
+        ],
+      },
+      {
+        title: "Workspace",
+        rows: [
+          ["Current selected workspace", workspace?.path],
+          ["Workspace Type", workspace?.type],
+          ["Manager", workspace?.manager_mode],
+          ["UV Compile Default", workspace?.uv_compile_default],
+        ],
+      },
+      {
+        title: "Server",
+        rows: [
+          ["Comfy Server Running", server?.running],
+          ["Server URL", server?.url],
+        ],
+      },
+      {
+        title: "Config",
+        rows: [
+          ["Config Path", config?.path],
+          ["Default ComfyUI workspace", config?.default_workspace],
+          ["Default ComfyUI launch extra options", config?.default_launch_extras],
+          ["Recent ComfyUI workspace", config?.recent_workspace],
+          ["Tracking Analytics", config?.tracking_enabled],
+          ["Background ComfyUI", config?.background],
+        ],
+      },
+    ]
+  }
+
+  function environmentValueText(value: unknown): string {
+    if (value === null || value === undefined || value === "") {
+      return "Not set"
+    }
+    if (typeof value === "boolean") {
+      return value ? "Yes" : "No"
+    }
+    return String(value)
+  }
+
+  function renderEnvironmentOutput(data: JsonObject): void {
+    if (!environmentOutputEl) {
+      return
+    }
+    environmentOutputEl.replaceChildren()
+    const sections = environmentSections(data)
+    if (!sections) {
+      const fallback = document.createElement("pre")
+      fallback.className = "cp-environment-fallback"
+      fallback.textContent = JSON.stringify(data, null, 2)
+      environmentOutputEl.append(fallback)
+      return
+    }
+
+    const table = document.createElement("table")
+    table.className = "cp-environment-table"
+
+    const thead = document.createElement("thead")
+    const headerRow = document.createElement("tr")
+    for (const label of ["Environment", "Value"]) {
+      const cell = document.createElement("th")
+      cell.scope = "col"
+      cell.textContent = label
+      headerRow.append(cell)
+    }
+    thead.append(headerRow)
+    table.append(thead)
+
+    const tbody = document.createElement("tbody")
+    for (const section of sections) {
+      const sectionRow = document.createElement("tr")
+      sectionRow.className = "cp-environment-section-row"
+      const sectionCell = document.createElement("th")
+      sectionCell.scope = "rowgroup"
+      sectionCell.colSpan = 2
+      sectionCell.textContent = section.title
+      sectionRow.append(sectionCell)
+      tbody.append(sectionRow)
+
+      for (const [label, value] of section.rows) {
+        const row = document.createElement("tr")
+        const keyCell = document.createElement("th")
+        keyCell.scope = "row"
+        keyCell.textContent = label
+        const valueCell = document.createElement("td")
+        valueCell.textContent = environmentValueText(value)
+        row.append(keyCell, valueCell)
+        tbody.append(row)
+      }
+    }
+    table.append(tbody)
+    environmentOutputEl.append(table)
+
+    const result = asRecord(data.result)
+    const stderr = typeof result?.stderr === "string" ? result.stderr.trim() : ""
+    if (stderr) {
+      const error = document.createElement("pre")
+      error.className = "cp-environment-fallback cp-environment-stderr"
+      error.textContent = `stderr\n${stderr}`
+      environmentOutputEl.append(error)
+    }
+  }
+
+  async function showEnvironment(): Promise<void> {
+    environmentModalEl?.remove()
+    environmentModalEl = createEnvironmentModal()
+    document.body.append(environmentModalEl)
+    if (environmentOutputEl) {
+      environmentOutputEl.textContent = "Loading comfy env..."
+    }
+    writeLog("Show Environment started.")
+
+    try {
+      const data = await api.fetchJson(API_ROUTES.SHOW_ENVIRONMENT, {})
+      renderEnvironmentOutput(data)
+      writeLog("Show Environment completed.")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (environmentOutputEl) {
+        environmentOutputEl.textContent = message
+      }
+      writeLog(`Show Environment failed: ${message}`)
+      toast("error", "ComfyUI-ControlPanel", message)
     }
   }
 
@@ -382,6 +547,44 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     return backdrop
   }
 
+  function createEnvironmentModal(): HTMLElement {
+    ensureStyles()
+
+    const backdrop = document.createElement("div")
+    backdrop.className = "cp-backdrop"
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) {
+        closeEnvironmentModal()
+      }
+    })
+
+    const panel = document.createElement("section")
+    panel.className = "cp-panel cp-modal cp-environment-modal"
+    panel.setAttribute("role", "dialog")
+    panel.setAttribute("aria-modal", "true")
+    panel.setAttribute("aria-labelledby", "cp-environment-title")
+
+    const header = document.createElement("div")
+    header.className = "cp-header"
+
+    const title = document.createElement("h2")
+    title.id = "cp-environment-title"
+    title.className = "cp-title"
+    title.textContent = "Comfy CLI Environment"
+
+    const closeButton = createButton("×", closeEnvironmentModal, "cp-button cp-close")
+    closeButton.setAttribute("aria-label", "Close")
+    header.append(title, closeButton)
+
+    environmentOutputEl = document.createElement("div")
+    environmentOutputEl.className = "cp-environment-output"
+    environmentOutputEl.textContent = "Loading comfy env..."
+
+    panel.append(header, environmentOutputEl)
+    backdrop.append(panel)
+    return backdrop
+  }
+
   function createPanel(): HTMLElement {
     ensureStyles()
 
@@ -453,13 +656,16 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       createButton("Open Snapshots Folder", () => {
         void runOperation("Open Snapshots Folder", API_ROUTES.OPEN_SNAPSHOTS, {})
       }),
+      createButton("Open custom_nodes Folder", () => {
+        void runOperation("Open custom_nodes Folder", API_ROUTES.OPEN_CUSTOM_NODES, {})
+      }),
     )
 
     const actions = document.createElement("div")
     actions.className = "cp-actions"
     actions.append(
-      createButton("Open custom_nodes Folder", () => {
-        void runOperation("Open custom_nodes Folder", API_ROUTES.OPEN_CUSTOM_NODES, {})
+      createButton("Show Environment", () => {
+        void showEnvironment()
       }),
       createButton("Restart", () => {
         void confirmRestart()
@@ -502,6 +708,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     stopPolling()
     gitInstallModal.close()
     closeSnapshotRestoreModal()
+    closeEnvironmentModal()
     panelEl?.remove()
   }
 

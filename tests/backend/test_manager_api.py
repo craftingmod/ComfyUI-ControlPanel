@@ -109,6 +109,39 @@ def test_save_snapshot_with_comfy_cli_uses_comfy_command(monkeypatch):
     assert result["restart_required"] is False
 
 
+def test_show_environment_with_comfy_cli_uses_comfy_env(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(manager_api, "comfy_cli_command", lambda *args: ["comfy", *args])
+
+    async def fake_run_command_stream(command, cwd, timeout=1800, on_line=None):
+        calls.append((command, cwd, timeout))
+        return {
+            "stdout": json.dumps(
+                {
+                    "schema": "envelope/1",
+                    "type": "envelope",
+                    "ok": True,
+                    "command": "env",
+                    "version": "1.11.1",
+                    "where": None,
+                    "data": {"python": {"version": "3.13.12"}},
+                    "error": None,
+                }
+            ),
+            "stderr": "",
+        }
+
+    monkeypatch.setattr(manager_api, "run_command_stream", fake_run_command_stream)
+
+    result = asyncio.run(manager_api.show_environment_with_comfy_cli())
+
+    assert calls == [(["comfy", "--json", "env"], manager_api.COMFYUI_ROOT, 120)]
+    assert result["provider"] == "comfy-cli"
+    assert result["cli"]["version"] == "1.11.1"
+    assert result["environment"] == {"python": {"version": "3.13.12"}}
+
+
 def test_restore_snapshot_with_comfy_cli_uses_comfy_command(monkeypatch, tmp_path):
     calls = []
     snapshot_dir = tmp_path / "__manager" / "snapshots"
