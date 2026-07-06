@@ -80,6 +80,17 @@
   margin: 16px 0;
 }
 
+.cp-action-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0 10px;
+  padding: 12px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.04);
+}
+
 .cp-modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -146,6 +157,7 @@
 
 @media (max-width: 640px) {
   .cp-grid,
+  .cp-action-group,
   .cp-actions {
     grid-template-columns: 1fr;
   }

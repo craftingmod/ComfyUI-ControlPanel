@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import configparser
+import hashlib
+import json
 import logging
 import time
 import uuid
@@ -14,6 +17,8 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlparse, urlunparse
 from aiohttp import ClientError, ClientSession
+
+from .hash import manager_cache_key_hash
 
 
 EXTENSION_ROOT = Path(__file__).resolve().parents[1]
@@ -36,8 +41,32 @@ def resolve_custom_nodes_dir(comfyui_root: Path) -> Path:
     return (comfyui_root / "custom_nodes").resolve()
 
 
+def resolve_comfyui_user_dir() -> Path:
+    try:
+        import folder_paths
+
+        get_user_directory = getattr(folder_paths, "get_user_directory", None)
+        if callable(get_user_directory):
+            return Path(get_user_directory()).resolve()
+
+        get_system_user_directory = getattr(folder_paths, "get_system_user_directory", None)
+        if callable(get_system_user_directory):
+            manager_dir = Path(get_system_user_directory("manager")).resolve()
+            return manager_dir.parent
+    except Exception:
+        pass
+
+    if "--user-directory" in sys.argv:
+        index = sys.argv.index("--user-directory")
+        if index + 1 < len(sys.argv):
+            return Path(sys.argv[index + 1]).expanduser().resolve()
+
+    return (COMFYUI_ROOT / "user").resolve()
+
+
 COMFYUI_ROOT = resolve_comfyui_root()
 CUSTOM_NODES_DIR = resolve_custom_nodes_dir(COMFYUI_ROOT)
+COMFYUI_USER_DIR = resolve_comfyui_user_dir()
 API_PREFIX = "/control-panel"
 _ROUTES_REGISTERED = False
 _OPERATION_LOCK = asyncio.Lock()
@@ -47,6 +76,16 @@ _LATEST_JOB_ID: str | None = None
 _JOB_LIMIT = 10
 _TORCH_PACKAGES = {"torch", "torchvision", "torchaudio"}
 _CLEAR_TERMINAL_CSI = "\033[2J\033[H"
+_MANAGER_CACHE_FILES = (
+    "custom-node-list.json",
+    "extension-node-map.json",
+    "model-list.json",
+    "alter-list.json",
+    "github-stats.json",
+)
+_DEFAULT_MANAGER_CHANNEL_URL = "https://raw.githubusercontent.com/Comfy-Org/ComfyUI-Manager/main"
+_JSDELIVR_MANAGER_CHANNEL_URL = "https://cdn.jsdelivr.net/gh/Comfy-Org/ComfyUI-Manager@main"
+_CACHE_MAX_AGE_SECONDS = 86400
 LOGGER = logging.getLogger(__name__)
 
 
@@ -269,6 +308,135 @@ async def install_git_url(url: str, name: str | None = None) -> dict[str, Any]:
 
     result = await run_command(["git", "clone", git_url, str(destination)], CUSTOM_NODES_DIR)
     return {"destination": str(destination), "result": result}
+
+
+def controlpanel_manager_cache_dir(user_dir: Path | None = None) -> Path:
+    return (user_dir or COMFYUI_USER_DIR) / "__controlpanel" / "manager-cache"
+
+
+def manager_user_dir(user_dir: Path | None = None) -> Path:
+    return (user_dir or COMFYUI_USER_DIR) / "__manager"
+
+
+def read_manager_channel_url(manager_dir: Path) -> str:
+    config_path = manager_dir / "config.ini"
+    if not config_path.exists():
+        return _DEFAULT_MANAGER_CHANNEL_URL
+
+    parser = configparser.ConfigParser()
+    parser.read(config_path, encoding="utf-8")
+    channel_url = parser.get("default", "channel_url", fallback=_DEFAULT_MANAGER_CHANNEL_URL).strip()
+    return channel_url.rstrip("/") or _DEFAULT_MANAGER_CHANNEL_URL
+
+
+def manager_cache_filename(channel_url: str, filename: str) -> str:
+    cache_key_url = f"{channel_url.rstrip('/')}/{filename}"
+    return f"{manager_cache_key_hash(cache_key_url)}_{filename}"
+
+
+def is_cache_file_fresh(path: Path, max_age_seconds: int = _CACHE_MAX_AGE_SECONDS) -> bool:
+    if not path.exists():
+        return False
+    return time.time() - path.stat().st_mtime < max_age_seconds
+
+
+def write_json_atomic(path: Path, data: Any) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    temp_path.write_text(payload, encoding="utf-8")
+    os.replace(temp_path, path)
+    return digest
+
+
+async def fetch_json(session: ClientSession, url: str) -> Any:
+    async with session.get(url) as response:
+        text = await response.text()
+        if response.status >= 400:
+            raise ManagerApiError(f"Failed to fetch {url}: HTTP {response.status}: {text[:500]}")
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as error:
+            raise ManagerApiError(f"Fetched data was not valid JSON: {url}") from error
+
+
+async def refresh_manager_cache_from_cdn(
+    on_line: Callable[[str], None] | None = None,
+    *,
+    user_dir: Path | None = None,
+    max_age_seconds: int = _CACHE_MAX_AGE_SECONDS,
+) -> dict[str, Any]:
+    resolved_user_dir = user_dir or COMFYUI_USER_DIR
+    manager_dir = manager_user_dir(resolved_user_dir)
+    if not manager_dir.exists():
+        on_line and on_line(f"ComfyUI Manager user directory was not found: {manager_dir}")
+        return {
+            "provider": "jsdelivr",
+            "skipped": "ComfyUI Manager user directory was not found.",
+            "manager_dir": str(manager_dir),
+        }
+
+    channel_url = read_manager_channel_url(manager_dir)
+    source_dir = controlpanel_manager_cache_dir(resolved_user_dir) / "sources"
+    manager_cache_dir = manager_dir / "cache"
+    manager_cache_dir.mkdir(parents=True, exist_ok=True)
+
+    results: list[dict[str, Any]] = []
+    for filename in _MANAGER_CACHE_FILES:
+        source_path = source_dir / filename
+        manager_path = manager_cache_dir / manager_cache_filename(channel_url, filename)
+        source_url = f"{_JSDELIVR_MANAGER_CHANNEL_URL}/{filename}"
+        cache_key_url = f"{channel_url.rstrip('/')}/{filename}"
+
+        if is_cache_file_fresh(source_path, max_age_seconds=max_age_seconds):
+            on_line and on_line(f"Manager cache fresh: {filename}")
+            if not manager_path.exists():
+                data = json.loads(source_path.read_text(encoding="utf-8"))
+                digest = write_json_atomic(manager_path, data)
+                action = "deployed"
+            else:
+                digest = hashlib.sha256(source_path.read_bytes()).hexdigest()
+                action = "fresh"
+            results.append(
+                {
+                    "file": filename,
+                    "action": action,
+                    "source_path": str(source_path),
+                    "manager_cache_path": str(manager_path),
+                    "sha256": digest,
+                }
+            )
+            continue
+
+        on_line and on_line(f"Fetching Manager cache: {filename}")
+        async with ClientSession() as session:
+            data = await fetch_json(session, source_url)
+        digest = write_json_atomic(source_path, data)
+        write_json_atomic(manager_path, data)
+        results.append(
+            {
+                "file": filename,
+                "action": "updated",
+                "source_url": source_url,
+                "cache_key_url": cache_key_url,
+                "source_path": str(source_path),
+                "manager_cache_path": str(manager_path),
+                "sha256": digest,
+            }
+        )
+
+    return {
+        "provider": "jsdelivr",
+        "restart_required": False,
+        "user_dir": str(resolved_user_dir),
+        "manager_dir": str(manager_dir),
+        "controlpanel_cache_dir": str(controlpanel_manager_cache_dir(resolved_user_dir)),
+        "manager_cache_dir": str(manager_cache_dir),
+        "channel_url": channel_url,
+        "max_age_seconds": max_age_seconds,
+        "results": results,
+    }
 
 
 def _is_local_changes_pull_failure(message: str) -> bool:
@@ -615,6 +783,7 @@ def register_routes() -> bool:
                     "extension": str(EXTENSION_ROOT),
                     "custom_nodes": str(CUSTOM_NODES_DIR),
                     "comfyui": str(COMFYUI_ROOT),
+                    "user": str(COMFYUI_USER_DIR),
                 },
                 "tools": {"git": _command_available("git"), "uv": _command_available("uv")},
                 "latest_job": latest_job().to_dict() if latest_job() else None,
@@ -643,6 +812,10 @@ def register_routes() -> bool:
     @routes.post(f"{API_PREFIX}/deps/uv-sync")
     async def sync_dependencies(_request):
         return await _start_job_response("deps", "Sync Dependencies", _job_sync_dependencies)
+
+    @routes.post(f"{API_PREFIX}/manager-cache/refresh")
+    async def refresh_manager_cache(_request):
+        return await _start_job_response("manager-cache", "Update Manager Cache", _job_refresh_manager_cache)
 
     @routes.post(f"{API_PREFIX}/update-comfyui")
     async def update_core(_request):
@@ -693,6 +866,10 @@ async def _job_update_git_nodes(job: ManagerJob) -> dict[str, Any]:
 
 async def _job_sync_dependencies(job: ManagerJob) -> dict[str, Any]:
     return await sync_dependencies_with_comfy_cli(job.append_log)
+
+
+async def _job_refresh_manager_cache(job: ManagerJob) -> dict[str, Any]:
+    return await refresh_manager_cache_from_cdn(job.append_log)
 
 
 async def _job_update_comfyui(job: ManagerJob) -> dict[str, Any]:

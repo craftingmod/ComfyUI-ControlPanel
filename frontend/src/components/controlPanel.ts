@@ -229,20 +229,29 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     closeButton.setAttribute("aria-label", "Close")
     header.append(title, closeButton)
 
-    const actions = document.createElement("div")
-    actions.className = "cp-actions"
-    actions.append(
+    const maintenanceActions = document.createElement("div")
+    maintenanceActions.className = "cp-action-group"
+    maintenanceActions.setAttribute("aria-label", "Maintenance actions")
+    maintenanceActions.append(
       createButton("Install via Git URL", () => {
         gitInstallModal.open()
       }),
       createButton("Update Git Nodes", () => {
         void startUpdateJob("Update Git Nodes", API_ROUTES.UPDATE_CUSTOM_NODES)
       }),
+      createButton("Update ComfyUI", () => {
+        void startUpdateJob("Update ComfyUI", API_ROUTES.UPDATE_COMFYUI)
+      }),
       createButton("Sync Dependencies", () => {
         void startUpdateJob("Sync Dependencies", API_ROUTES.SYNC_DEPENDENCIES)
       }),
-      createButton("Update ComfyUI", () => {
-        void startUpdateJob("Update ComfyUI", API_ROUTES.UPDATE_COMFYUI)
+    )
+
+    const actions = document.createElement("div")
+    actions.className = "cp-actions"
+    actions.append(
+      createButton("Update Manager Cache", () => {
+        void startUpdateJob("Update Manager Cache", API_ROUTES.REFRESH_MANAGER_CACHE)
       }),
       createButton("Restart", () => {
         void confirmRestart()
@@ -259,7 +268,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     logEl.textContent = "Ready.\n"
     scrollLogToBottom()
 
-    panel.append(header, actions, restartNoticeEl, logEl)
+    panel.append(header, maintenanceActions, actions, restartNoticeEl, logEl)
     backdrop.append(panel)
     return backdrop
   }

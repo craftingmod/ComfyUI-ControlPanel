@@ -1,6 +1,9 @@
 import asyncio
 import io
+import json
+import os
 import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -163,6 +166,122 @@ def test_install_git_url_uses_git_clone_without_shell(monkeypatch, tmp_path):
         )
     ]
     assert result["destination"] == str(tmp_path / "comfyui-test")
+
+
+def test_manager_cache_filename_uses_channel_url_hash():
+    filename = "custom-node-list.json"
+    channel_url = "https://raw.githubusercontent.com/Comfy-Org/ComfyUI-Manager/main"
+
+    assert manager_api.manager_cache_filename(channel_url, filename) == "3351870820_custom-node-list.json"
+
+
+def test_read_manager_channel_url_falls_back_to_default(tmp_path):
+    manager_dir = tmp_path / "__manager"
+    manager_dir.mkdir()
+
+    assert manager_api.read_manager_channel_url(manager_dir) == manager_api._DEFAULT_MANAGER_CHANNEL_URL
+
+
+def test_read_manager_channel_url_reads_config(tmp_path):
+    manager_dir = tmp_path / "__manager"
+    manager_dir.mkdir()
+    (manager_dir / "config.ini").write_text(
+        "[default]\nchannel_url = https://cdn.jsdelivr.net/gh/Comfy-Org/ComfyUI-Manager@main\n",
+        encoding="utf-8",
+    )
+
+    assert manager_api.read_manager_channel_url(manager_dir) == "https://cdn.jsdelivr.net/gh/Comfy-Org/ComfyUI-Manager@main"
+
+
+def test_is_cache_file_fresh_uses_mtime(tmp_path):
+    cache_file = tmp_path / "custom-node-list.json"
+    cache_file.write_text("{}", encoding="utf-8")
+
+    assert manager_api.is_cache_file_fresh(cache_file, max_age_seconds=86400)
+
+    old_time = time.time() - 90000
+    os.utime(cache_file, (old_time, old_time))
+
+    assert not manager_api.is_cache_file_fresh(cache_file, max_age_seconds=86400)
+
+
+def test_refresh_manager_cache_skips_when_manager_dir_is_missing(tmp_path):
+    result = asyncio.run(manager_api.refresh_manager_cache_from_cdn(user_dir=tmp_path))
+
+    assert result["skipped"] == "ComfyUI Manager user directory was not found."
+    assert result["manager_dir"] == str(tmp_path / "__manager")
+
+
+def test_refresh_manager_cache_fetches_jsdelivr_and_writes_manager_cache(monkeypatch, tmp_path):
+    requested_urls = []
+
+    class FakeResponse:
+        status = 200
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def text(self):
+            return json.dumps({"custom_nodes": []})
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        def get(self, url):
+            requested_urls.append(url)
+            return FakeResponse()
+
+    user_dir = tmp_path / "user"
+    manager_dir = user_dir / "__manager"
+    manager_dir.mkdir(parents=True)
+    (manager_dir / "config.ini").write_text(
+        "[default]\nchannel_url = https://raw.githubusercontent.com/Comfy-Org/ComfyUI-Manager/main\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(manager_api, "_MANAGER_CACHE_FILES", ("custom-node-list.json",))
+    monkeypatch.setattr(manager_api, "ClientSession", FakeSession)
+
+    result = asyncio.run(manager_api.refresh_manager_cache_from_cdn(user_dir=user_dir))
+
+    source_path = user_dir / "__controlpanel" / "manager-cache" / "sources" / "custom-node-list.json"
+    manager_path = manager_dir / "cache" / "3351870820_custom-node-list.json"
+
+    assert requested_urls == [
+        "https://cdn.jsdelivr.net/gh/Comfy-Org/ComfyUI-Manager@main/custom-node-list.json"
+    ]
+    assert source_path.exists()
+    assert manager_path.exists()
+    assert json.loads(manager_path.read_text(encoding="utf-8")) == {"custom_nodes": []}
+    assert result["results"][0]["action"] == "updated"
+
+
+def test_refresh_manager_cache_uses_fresh_source_without_fetching(monkeypatch, tmp_path):
+    user_dir = tmp_path / "user"
+    manager_dir = user_dir / "__manager"
+    source_dir = user_dir / "__controlpanel" / "manager-cache" / "sources"
+    manager_dir.mkdir(parents=True)
+    source_dir.mkdir(parents=True)
+    (source_dir / "custom-node-list.json").write_text(json.dumps({"custom_nodes": []}), encoding="utf-8")
+
+    class FailSession:
+        async def __aenter__(self):
+            raise AssertionError("fresh cache should not fetch")
+
+    monkeypatch.setattr(manager_api, "_MANAGER_CACHE_FILES", ("custom-node-list.json",))
+    monkeypatch.setattr(manager_api, "ClientSession", FailSession)
+
+    result = asyncio.run(manager_api.refresh_manager_cache_from_cdn(user_dir=user_dir))
+
+    assert result["results"][0]["action"] == "deployed"
+    assert (manager_dir / "cache" / "3351870820_custom-node-list.json").exists()
 
 
 def test_update_git_repository_attempts_fast_forward_with_local_changes(monkeypatch, tmp_path):
