@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-controlpanel"
 description = "A ComfyUI custom node for restoring control panel workflows."
-version = "1.1.0"
+version = "1.1.1"
 requires-python = ">=3.12"
 readme = "README.md"
 license = { file = "LICENSE" }
