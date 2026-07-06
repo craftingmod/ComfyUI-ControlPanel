@@ -6,6 +6,7 @@ import configparser
 import hashlib
 import json
 import logging
+import platform
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -15,7 +16,7 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Any, Awaitable, Callable
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlencode, urlparse, urlunparse
 from aiohttp import ClientError, ClientSession
 
 from .hash import manager_cache_key_hash
@@ -86,6 +87,11 @@ _MANAGER_CACHE_FILES = (
 _DEFAULT_MANAGER_CHANNEL_URL = "https://raw.githubusercontent.com/Comfy-Org/ComfyUI-Manager/main"
 _OVERRIDE_MANAGER_CHANNEL_URL = "https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main"
 _JSDELIVR_MANAGER_CHANNEL_URL = "https://cdn.jsdelivr.net/gh/Comfy-Org/ComfyUI-Manager@main"
+_COMFY_REGISTRY_NODES_URL = "https://api.comfy.org/nodes"
+_COMFY_REGISTRY_NODES_CACHE_FILENAME = "registry-node-list.json"
+_COMFY_REGISTRY_NODES_PAGE_LIMIT = 30
+_COMFY_REGISTRY_CACHE_METADATA_KEY = "cache_metadata"
+_COMFY_REGISTRY_CACHE_INVALIDATION_KEYS = ("comfyui_version", "form_factor")
 _CACHE_MAX_AGE_SECONDS = 86400
 _CONTROLPANEL_CONFIG_FILENAME = "config.json"
 _SETTING_MANAGER_REPOSITORY_OVERRIDE = "manager_repository_data_override_enabled"
@@ -452,6 +458,14 @@ def manager_cache_filename(channel_url: str, filename: str) -> str:
     return f"{manager_cache_key_hash(cache_key_url)}_{filename}"
 
 
+def manager_url_cache_filename(url: str) -> str:
+    parsed = urlparse(url)
+    filename = Path(parsed.path.rstrip("/")).name or "cache"
+    if not Path(filename).suffix:
+        filename = f"{filename}.json"
+    return f"{manager_cache_key_hash(url)}_{filename}"
+
+
 def is_cache_file_fresh(path: Path, max_age_seconds: int = _CACHE_MAX_AGE_SECONDS) -> bool:
     if not path.exists():
         return False
@@ -466,6 +480,193 @@ def write_json_atomic(path: Path, data: Any) -> str:
     temp_path.write_text(payload, encoding="utf-8")
     os.replace(temp_path, path)
     return digest
+
+
+def _current_registry_form_factor() -> str:
+    return f"git-{platform.system().lower()}"
+
+
+def _current_comfyui_version() -> str | None:
+    candidates = (
+        ("comfyui_version", "__version__"),
+        ("comfy.version", "__version__"),
+    )
+    for module_name, attribute in candidates:
+        with contextlib.suppress(Exception):
+            module = __import__(module_name, fromlist=[attribute])
+            value = getattr(module, attribute, None)
+            if value:
+                return str(value)
+    return None
+
+
+def _current_registry_cache_metadata() -> dict[str, str | None]:
+    return {
+        "comfyui_version": _current_comfyui_version(),
+        "platform": platform.system().lower(),
+        "form_factor": _current_registry_form_factor(),
+    }
+
+
+def _registry_nodes_request_params(
+    timestamp: str | None = None,
+    metadata: dict[str, str | None] | None = None,
+) -> dict[str, str | int | bool]:
+    resolved_metadata = metadata or _current_registry_cache_metadata()
+    params: dict[str, str | int | bool] = {
+        "limit": _COMFY_REGISTRY_NODES_PAGE_LIMIT,
+        "form_factor": resolved_metadata["form_factor"] or _current_registry_form_factor(),
+        # Keep supported_os out of the request so nodes with missing OS metadata stay in the cache.
+        # "supported_os": "...",
+        # "latest": True,
+    }
+    comfyui_version = resolved_metadata["comfyui_version"]
+    if comfyui_version:
+        params["comfyui_version"] = comfyui_version
+    if timestamp:
+        params["timestamp"] = timestamp
+    return params
+
+
+def _registry_cache_metadata_matches(cache_data: dict[str, Any], metadata: dict[str, str | None]) -> bool:
+    cached_metadata = cache_data.get(_COMFY_REGISTRY_CACHE_METADATA_KEY)
+    if not isinstance(cached_metadata, dict):
+        return False
+    return all(cached_metadata.get(key) == metadata.get(key) for key in _COMFY_REGISTRY_CACHE_INVALIDATION_KEYS)
+
+
+def _with_registry_cache_metadata(
+    data: dict[str, Any],
+    metadata: dict[str, str | None],
+    previous_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    now = _format_iso_timestamp(time.time())
+    created_at = previous_metadata.get("created_at") if isinstance(previous_metadata, dict) else None
+    result = dict(data)
+    result[_COMFY_REGISTRY_CACHE_METADATA_KEY] = {
+        **metadata,
+        "created_at": created_at if isinstance(created_at, str) and created_at else now,
+        "updated_at": now,
+    }
+    return result
+
+
+def _registry_nodes_url(params: dict[str, str | int | bool]) -> str:
+    encoded_params = {key: str(value).lower() if isinstance(value, bool) else value for key, value in params.items()}
+    return f"{_COMFY_REGISTRY_NODES_URL}?{urlencode(encoded_params)}"
+
+
+def _parse_iso_datetime(value: Any) -> float | None:
+    if not isinstance(value, str) or not value:
+        return None
+    normalized = value.replace("Z", "+00:00")
+    with contextlib.suppress(ValueError):
+        return datetime_fromisoformat(normalized)
+    return None
+
+
+def datetime_fromisoformat(value: str) -> float:
+    from datetime import datetime
+
+    return datetime.fromisoformat(value).timestamp()
+
+
+def _format_iso_timestamp(timestamp: float) -> str:
+    from datetime import UTC, datetime
+
+    return datetime.fromtimestamp(timestamp, tz=UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _node_updated_timestamp(node: dict[str, Any]) -> float | None:
+    candidates = (
+        node.get("updated_at"),
+        node.get("updatedAt"),
+        node.get("updated"),
+        node.get("created_at"),
+        node.get("createdAt"),
+    )
+    latest_version = node.get("latest_version")
+    if isinstance(latest_version, dict):
+        candidates += (
+            latest_version.get("updated_at"),
+            latest_version.get("updatedAt"),
+            latest_version.get("createdAt"),
+            latest_version.get("created_at"),
+        )
+
+    parsed = [_parse_iso_datetime(value) for value in candidates]
+    timestamps = [value for value in parsed if value is not None]
+    return max(timestamps) if timestamps else None
+
+
+def registry_nodes_incremental_timestamp(cache_data: dict[str, Any]) -> str | None:
+    nodes = cache_data.get("nodes")
+    if not isinstance(nodes, list):
+        return None
+
+    timestamps = [_node_updated_timestamp(node) for node in nodes if isinstance(node, dict)]
+    latest_timestamp = max((value for value in timestamps if value is not None), default=None)
+    if latest_timestamp is None:
+        return None
+    return _format_iso_timestamp(latest_timestamp - 10)
+
+
+def merge_registry_nodes_cache(cache_data: dict[str, Any], update_data: dict[str, Any]) -> dict[str, Any]:
+    cached_nodes = cache_data.get("nodes")
+    update_nodes = update_data.get("nodes")
+    if not isinstance(cached_nodes, list) or not isinstance(update_nodes, list):
+        return update_data
+
+    merged: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for node in cached_nodes + update_nodes:
+        if not isinstance(node, dict):
+            continue
+        key = str(node.get("id") or node.get("node_id") or node.get("name") or "")
+        if not key:
+            continue
+        if key not in merged:
+            order.append(key)
+        merged[key] = node
+
+    nodes = [merged[key] for key in order]
+    result = dict(update_data)
+    result["nodes"] = nodes
+    result["page"] = 1
+    result["limit"] = _COMFY_REGISTRY_NODES_PAGE_LIMIT
+    result["total"] = len(nodes)
+    result["totalPages"] = 1
+    return result
+
+
+def deploy_registry_nodes_cache_to_manager(
+    source_dir: Path,
+    manager_cache_dir: Path,
+    on_line: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    source_path = source_dir / _COMFY_REGISTRY_NODES_CACHE_FILENAME
+    manager_path = manager_cache_dir / manager_url_cache_filename(_COMFY_REGISTRY_NODES_URL)
+    if not source_path.exists():
+        on_line and on_line(f"Comfy Registry nodes cache source missing: {_COMFY_REGISTRY_NODES_CACHE_FILENAME}")
+        return {
+            "file": _COMFY_REGISTRY_NODES_CACHE_FILENAME,
+            "action": "missing",
+            "source_url": _COMFY_REGISTRY_NODES_URL,
+            "source_path": str(source_path),
+            "manager_cache_path": str(manager_path),
+        }
+
+    data = json.loads(source_path.read_text(encoding="utf-8"))
+    digest = write_json_atomic(manager_path, data)
+    on_line and on_line("Comfy Registry nodes cache deployed for Manager")
+    return {
+        "file": _COMFY_REGISTRY_NODES_CACHE_FILENAME,
+        "action": "deployed",
+        "source_url": _COMFY_REGISTRY_NODES_URL,
+        "source_path": str(source_path),
+        "manager_cache_path": str(manager_path),
+        "sha256": digest,
+    }
 
 
 def deploy_controlpanel_manager_cache_to_manager(
@@ -516,12 +717,15 @@ def deploy_controlpanel_manager_cache_to_manager(
             }
         )
 
+    registry_nodes = deploy_registry_nodes_cache_to_manager(source_dir, manager_cache_dir, on_line)
+
     return {
         "manager_dir": str(manager_dir),
         "source_dir": str(source_dir),
         "manager_cache_dir": str(manager_cache_dir),
         "channel_url": channel_url,
         "results": results,
+        "registry_nodes": registry_nodes,
     }
 
 
@@ -604,6 +808,95 @@ async def fetch_json(session: ClientSession, url: str) -> Any:
             raise ManagerApiError(f"Fetched data was not valid JSON: {url}") from error
 
 
+async def fetch_registry_nodes_pages(
+    session: ClientSession,
+    *,
+    timestamp: str | None = None,
+    metadata: dict[str, str | None] | None = None,
+    on_line: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    nodes: list[dict[str, Any]] = []
+    page = 1
+    total_pages = 1
+    base_params = _registry_nodes_request_params(timestamp, metadata)
+
+    while page <= total_pages:
+        params = {**base_params, "page": page}
+        url = _registry_nodes_url(params)
+        data = await fetch_json(session, url)
+        if not isinstance(data, dict):
+            raise ManagerApiError("Comfy Registry nodes response was not an object.")
+
+        page_nodes = data.get("nodes")
+        if not isinstance(page_nodes, list):
+            raise ManagerApiError("Comfy Registry nodes response did not include a nodes list.")
+        nodes.extend(node for node in page_nodes if isinstance(node, dict))
+
+        total_pages_value = data.get("totalPages", 1)
+        total_pages = total_pages_value if isinstance(total_pages_value, int) and total_pages_value > 0 else 1
+        if on_line and (page % 10 == 0 or page >= total_pages):
+            on_line(f"Updating ComfyRegistry nodes ({page}/{total_pages})")
+        page += 1
+
+    return {
+        "limit": _COMFY_REGISTRY_NODES_PAGE_LIMIT,
+        "nodes": nodes,
+        "page": 1,
+        "total": len(nodes),
+        "totalPages": total_pages,
+    }
+
+
+async def refresh_comfy_registry_nodes_cache(
+    session: ClientSession,
+    source_dir: Path,
+    on_line: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    cache_path = source_dir / _COMFY_REGISTRY_NODES_CACHE_FILENAME
+    cache_data: dict[str, Any] | None = None
+    timestamp: str | None = None
+    metadata = _current_registry_cache_metadata()
+    previous_metadata: dict[str, Any] | None = None
+    action = "updated"
+
+    if cache_path.exists():
+        try:
+            loaded = json.loads(cache_path.read_text(encoding="utf-8"))
+            cache_data = loaded if isinstance(loaded, dict) else None
+        except json.JSONDecodeError:
+            cache_data = None
+        if cache_data is not None and isinstance(cache_data.get(_COMFY_REGISTRY_CACHE_METADATA_KEY), dict):
+            previous_metadata = cache_data[_COMFY_REGISTRY_CACHE_METADATA_KEY]
+        if cache_data is not None and _registry_cache_metadata_matches(cache_data, metadata):
+            timestamp = registry_nodes_incremental_timestamp(cache_data)
+            if timestamp:
+                action = "incremental"
+        elif cache_data is not None:
+            cache_data = None
+            previous_metadata = None
+            action = "invalidated"
+
+    if timestamp:
+        on_line and on_line(f"Updating Comfy Registry nodes since {timestamp}")
+    else:
+        on_line and on_line("Building Comfy Registry nodes cache")
+
+    fetched_data = await fetch_registry_nodes_pages(session, timestamp=timestamp, metadata=metadata, on_line=on_line)
+    data = merge_registry_nodes_cache(cache_data, fetched_data) if cache_data is not None else fetched_data
+    data = _with_registry_cache_metadata(data, metadata, previous_metadata)
+    digest = write_json_atomic(cache_path, data)
+    return {
+        "file": _COMFY_REGISTRY_NODES_CACHE_FILENAME,
+        "action": action,
+        "source_url": _COMFY_REGISTRY_NODES_URL,
+        "source_path": str(cache_path),
+        "timestamp": timestamp,
+        "cache_metadata": data[_COMFY_REGISTRY_CACHE_METADATA_KEY],
+        "total": len(data.get("nodes", [])) if isinstance(data.get("nodes"), list) else 0,
+        "sha256": digest,
+    }
+
+
 async def refresh_manager_cache_from_cdn(
     on_line: Callable[[str], None] | None = None,
     *,
@@ -669,6 +962,10 @@ async def refresh_manager_cache_from_cdn(
             }
         )
 
+    async with ClientSession() as session:
+        registry_result = await refresh_comfy_registry_nodes_cache(session, source_dir, on_line)
+    registry_manager_cache = deploy_registry_nodes_cache_to_manager(source_dir, manager_cache_dir, on_line)
+
     return {
         "provider": "jsdelivr",
         "restart_required": False,
@@ -679,6 +976,8 @@ async def refresh_manager_cache_from_cdn(
         "channel_url": channel_url,
         "max_age_seconds": max_age_seconds,
         "results": results,
+        "registry_nodes": registry_result,
+        "registry_manager_cache": registry_manager_cache,
     }
 
 

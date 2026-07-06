@@ -196,7 +196,24 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       message: "Restart ComfyUI now?",
     })
     if (confirmed) {
-      await runOperation("Restart", API_ROUTES.RESTART, { confirm: true })
+      await restartComfyUI()
+    }
+  }
+
+  async function restartComfyUI(): Promise<void> {
+    const label = "Restart"
+    const body = { confirm: true }
+    writeLog(`${label} started.`)
+    debugLog(readBooleanSetting, `${label} request`, { route: API_ROUTES.RESTART, body })
+
+    try {
+      const data = await api.fetchJson(API_ROUTES.RESTART, body)
+      writeLog(formatOperationResult(label, API_ROUTES.RESTART, data) ?? `${label} completed.`, undefined)
+      toast("info", "ComfyUI-ControlPanel", "Restarting")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      writeLog(`${label} failed: ${message}`)
+      toast("error", "ComfyUI-ControlPanel", message)
     }
   }
 
