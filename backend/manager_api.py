@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import platform
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -71,6 +72,7 @@ COMFYUI_USER_DIR = resolve_comfyui_user_dir()
 API_PREFIX = "/control-panel"
 _ROUTES_REGISTERED = False
 _OPERATION_LOCK = asyncio.Lock()
+_MANAGER_CACHE_REFRESH_LOCK = threading.Lock()
 _JOB_LOCK = asyncio.Lock()
 _JOBS: dict[str, "ManagerJob"] = {}
 _LATEST_JOB_ID: str | None = None
@@ -639,6 +641,28 @@ def merge_registry_nodes_cache(cache_data: dict[str, Any], update_data: dict[str
     return result
 
 
+def manager_compatible_registry_nodes_cache(data: dict[str, Any]) -> dict[str, Any]:
+    nodes = data.get("nodes")
+    if not isinstance(nodes, list):
+        return data
+
+    compatible_nodes = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        latest_version = node.get("latest_version")
+        if not isinstance(latest_version, dict) or not latest_version.get("version"):
+            continue
+        compatible_nodes.append(node)
+
+    result = dict(data)
+    result["nodes"] = compatible_nodes
+    result["total"] = len(compatible_nodes)
+    result["page"] = 1
+    result["totalPages"] = 1
+    return result
+
+
 def deploy_registry_nodes_cache_to_manager(
     source_dir: Path,
     manager_cache_dir: Path,
@@ -657,7 +681,16 @@ def deploy_registry_nodes_cache_to_manager(
         }
 
     data = json.loads(source_path.read_text(encoding="utf-8"))
-    digest = write_json_atomic(manager_path, data)
+    manager_data = manager_compatible_registry_nodes_cache(data) if isinstance(data, dict) else data
+    digest = write_json_atomic(manager_path, manager_data)
+    filtered = 0
+    if (
+        isinstance(data, dict)
+        and isinstance(manager_data, dict)
+        and isinstance(data.get("nodes"), list)
+        and isinstance(manager_data.get("nodes"), list)
+    ):
+        filtered = len(data["nodes"]) - len(manager_data["nodes"])
     on_line and on_line("Comfy Registry nodes cache deployed for Manager")
     return {
         "file": _COMFY_REGISTRY_NODES_CACHE_FILENAME,
@@ -665,6 +698,7 @@ def deploy_registry_nodes_cache_to_manager(
         "source_url": _COMFY_REGISTRY_NODES_URL,
         "source_path": str(source_path),
         "manager_cache_path": str(manager_path),
+        "filtered": filtered,
         "sha256": digest,
     }
 
@@ -797,6 +831,42 @@ def apply_startup_manager_repository_override(user_dir: Path | None = None) -> d
     }
 
 
+def schedule_startup_manager_cache_refresh(user_dir: Path | None = None) -> dict[str, Any]:
+    resolved_user_dir = user_dir or COMFYUI_USER_DIR
+    if not is_manager_repository_override_enabled(resolved_user_dir):
+        return {"scheduled": False, "skipped": "Manager repository data override is disabled."}
+
+    def on_line(message: str) -> None:
+        LOGGER.info("[ControlPanel] [Startup] %s", message)
+
+    async def refresh() -> None:
+        try:
+            result = await refresh_manager_cache_from_cdn(on_line, user_dir=resolved_user_dir)
+            LOGGER.info("[ControlPanel] [Startup] Updating cache completed: %s", result.get("provider"))
+        except Exception as err:
+            LOGGER.warning("[ControlPanel] [Startup] Updating cache failed: %s", err, exc_info=True)
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        thread = threading.Thread(
+            target=lambda: asyncio.run(refresh()),
+            name="ControlPanelManagerCacheRefresh",
+            daemon=True,
+        )
+        thread.start()
+        runner = "thread"
+    else:
+        loop.create_task(refresh())
+        runner = "event-loop"
+
+    return {
+        "scheduled": True,
+        "runner": runner,
+        "user_dir": str(resolved_user_dir),
+    }
+
+
 async def fetch_json(session: ClientSession, url: str) -> Any:
     async with session.get(url) as response:
         text = await response.text()
@@ -898,6 +968,34 @@ async def refresh_comfy_registry_nodes_cache(
 
 
 async def refresh_manager_cache_from_cdn(
+    on_line: Callable[[str], None] | None = None,
+    *,
+    user_dir: Path | None = None,
+    max_age_seconds: int = _CACHE_MAX_AGE_SECONDS,
+) -> dict[str, Any]:
+    resolved_user_dir = user_dir or COMFYUI_USER_DIR
+    if not _MANAGER_CACHE_REFRESH_LOCK.acquire(blocking=False):
+        message = "Manager cache refresh is already running."
+        on_line and on_line(message)
+        return {
+            "provider": "jsdelivr",
+            "restart_required": False,
+            "skipped": message,
+            "user_dir": str(resolved_user_dir),
+            "manager_dir": str(manager_user_dir(resolved_user_dir)),
+        }
+
+    try:
+        return await _refresh_manager_cache_from_cdn_unlocked(
+            on_line,
+            user_dir=resolved_user_dir,
+            max_age_seconds=max_age_seconds,
+        )
+    finally:
+        _MANAGER_CACHE_REFRESH_LOCK.release()
+
+
+async def _refresh_manager_cache_from_cdn_unlocked(
     on_line: Callable[[str], None] | None = None,
     *,
     user_dir: Path | None = None,

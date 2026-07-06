@@ -306,7 +306,7 @@ def test_apply_startup_manager_repository_override_deploys_cached_sources(tmp_pa
     manager_api.write_controlpanel_settings({"manager_repository_data_override_enabled": True}, user_dir)
     (source_dir / "custom-node-list.json").write_text(json.dumps({"custom_nodes": [{"title": "Cached"}]}), encoding="utf-8")
     (source_dir / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME).write_text(
-        json.dumps({"nodes": [{"id": "registry-node"}]}),
+        json.dumps({"nodes": [{"id": "registry-node", "latest_version": {"version": "1.0.0"}}]}),
         encoding="utf-8",
     )
     monkeypatch.setattr(manager_api, "_MANAGER_CACHE_FILES", ("custom-node-list.json",))
@@ -324,7 +324,44 @@ def test_apply_startup_manager_repository_override_deploys_cached_sources(tmp_pa
     assert manager_api.read_manager_network_mode(manager_dir) == "offline"
     assert manager_api.read_manager_channel_url(manager_dir) == manager_api._OVERRIDE_MANAGER_CHANNEL_URL
     assert json.loads(manager_path.read_text(encoding="utf-8")) == {"custom_nodes": [{"title": "Cached"}]}
-    assert json.loads(registry_manager_path.read_text(encoding="utf-8")) == {"nodes": [{"id": "registry-node"}]}
+    assert json.loads(registry_manager_path.read_text(encoding="utf-8")) == {
+        "nodes": [{"id": "registry-node", "latest_version": {"version": "1.0.0"}}],
+        "page": 1,
+        "total": 1,
+        "totalPages": 1,
+    }
+
+
+def test_schedule_startup_manager_cache_refresh_skips_when_override_disabled(tmp_path):
+    result = manager_api.schedule_startup_manager_cache_refresh(user_dir=tmp_path)
+
+    assert result["scheduled"] is False
+    assert result["skipped"] == "Manager repository data override is disabled."
+
+
+def test_schedule_startup_manager_cache_refresh_uses_running_event_loop(tmp_path, monkeypatch):
+    user_dir = tmp_path / "user"
+    manager_api.write_controlpanel_settings({"manager_repository_data_override_enabled": True}, user_dir)
+    calls = []
+
+    async def fake_refresh_manager_cache_from_cdn(on_line=None, *, user_dir=None, max_age_seconds=0):
+        calls.append(user_dir)
+        if on_line:
+            on_line("refresh ran")
+        return {"provider": "fake"}
+
+    monkeypatch.setattr(manager_api, "refresh_manager_cache_from_cdn", fake_refresh_manager_cache_from_cdn)
+
+    async def run_scenario():
+        result = manager_api.schedule_startup_manager_cache_refresh(user_dir=user_dir)
+        await asyncio.sleep(0)
+        return result
+
+    result = asyncio.run(run_scenario())
+
+    assert result["scheduled"] is True
+    assert result["runner"] == "event-loop"
+    assert calls == [user_dir]
 
 
 def test_is_cache_file_fresh_uses_mtime(tmp_path):
@@ -344,6 +381,20 @@ def test_refresh_manager_cache_skips_when_manager_dir_is_missing(tmp_path):
 
     assert result["skipped"] == "ComfyUI Manager user directory was not found."
     assert result["manager_dir"] == str(tmp_path / "__manager")
+
+
+def test_refresh_manager_cache_skips_when_refresh_is_already_running(tmp_path):
+    logs = []
+    acquired = manager_api._MANAGER_CACHE_REFRESH_LOCK.acquire(blocking=False)
+    assert acquired
+    try:
+        result = asyncio.run(manager_api.refresh_manager_cache_from_cdn(logs.append, user_dir=tmp_path))
+    finally:
+        manager_api._MANAGER_CACHE_REFRESH_LOCK.release()
+
+    assert result["skipped"] == "Manager cache refresh is already running."
+    assert result["manager_dir"] == str(tmp_path / "__manager")
+    assert logs == ["Manager cache refresh is already running."]
 
 
 def test_refresh_manager_cache_fetches_jsdelivr_and_writes_manager_cache(monkeypatch, tmp_path):
@@ -385,7 +436,7 @@ def test_refresh_manager_cache_fetches_jsdelivr_and_writes_manager_cache(monkeyp
 
     async def fake_refresh_registry(session, source_dir, on_line=None):
         (source_dir / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME).write_text(
-            json.dumps({"nodes": [{"id": "registry-node"}]}),
+            json.dumps({"nodes": [{"id": "registry-node", "latest_version": {"version": "1.0.0"}}]}),
             encoding="utf-8",
         )
         return {"file": "registry-node-list.json", "action": "skipped"}
@@ -408,7 +459,12 @@ def test_refresh_manager_cache_fetches_jsdelivr_and_writes_manager_cache(monkeyp
     registry_manager_path = manager_dir / "cache" / manager_api.manager_url_cache_filename(
         manager_api._COMFY_REGISTRY_NODES_URL
     )
-    assert json.loads(registry_manager_path.read_text(encoding="utf-8")) == {"nodes": [{"id": "registry-node"}]}
+    assert json.loads(registry_manager_path.read_text(encoding="utf-8")) == {
+        "nodes": [{"id": "registry-node", "latest_version": {"version": "1.0.0"}}],
+        "page": 1,
+        "total": 1,
+        "totalPages": 1,
+    }
     assert json.loads(manager_path.read_text(encoding="utf-8")) == {"custom_nodes": []}
     assert result["registry_manager_cache"]["action"] == "deployed"
     assert result["results"][0]["action"] == "updated"
@@ -486,7 +542,13 @@ def test_deploy_registry_nodes_cache_to_manager_writes_api_url_cache(tmp_path):
     manager_cache_dir = tmp_path / "manager-cache"
     source_dir.mkdir()
     manager_cache_dir.mkdir()
-    source_data = {"nodes": [{"id": "node"}]}
+    source_data = {
+        "nodes": [
+            {"id": "node", "latest_version": {"version": "1.0.0"}},
+            {"id": "missing-latest-version"},
+            {"id": "missing-version", "latest_version": {}},
+        ]
+    }
     (source_dir / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME).write_text(
         json.dumps(source_data),
         encoding="utf-8",
@@ -498,7 +560,13 @@ def test_deploy_registry_nodes_cache_to_manager_writes_api_url_cache(tmp_path):
     assert result["action"] == "deployed"
     assert result["source_url"] == "https://api.comfy.org/nodes"
     assert result["manager_cache_path"] == str(manager_path)
-    assert json.loads(manager_path.read_text(encoding="utf-8")) == source_data
+    assert result["filtered"] == 2
+    assert json.loads(manager_path.read_text(encoding="utf-8")) == {
+        "nodes": [{"id": "node", "latest_version": {"version": "1.0.0"}}],
+        "page": 1,
+        "total": 1,
+        "totalPages": 1,
+    }
 
 
 def test_refresh_registry_nodes_cache_full_fetches_all_pages(monkeypatch, tmp_path):
