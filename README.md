@@ -73,6 +73,9 @@ The release workflow:
 for tags do not contain `dist/index.js`. Use the attached release zip instead;
 it is created after `pnpm build` and includes the required `dist/index.js` file.
 
+The separate `CI` workflow is manual-only and can be run when an extra validation
+pass is useful before tagging.
+
 ## Docs
 
 - [Testing](docs/TESTING.md)
