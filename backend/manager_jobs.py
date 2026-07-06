@@ -95,3 +95,9 @@ def latest_job() -> ManagerJob | None:
     if LATEST_JOB_ID is None:
         return None
     return JOBS.get(LATEST_JOB_ID)
+
+
+def reset_jobs_for_tests() -> None:
+    global LATEST_JOB_ID
+    JOBS.clear()
+    LATEST_JOB_ID = None

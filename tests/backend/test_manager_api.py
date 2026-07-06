@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend import manager_api
+from backend import manager_jobs
 
 
 def test_resolve_comfyui_root_prefers_comfyui_path_env(monkeypatch, tmp_path):
@@ -1247,8 +1248,7 @@ def test_update_comfyui_git_provider_checks_out_latest_tag_and_syncs_requirement
 
 
 def test_start_job_rejects_concurrent_running_jobs(monkeypatch):
-    manager_api._JOBS.clear()
-    manager_api._LATEST_JOB_ID = None
+    manager_jobs.reset_jobs_for_tests()
 
     async def never_finishes(job):
         await asyncio.sleep(10)
@@ -1263,8 +1263,7 @@ def test_start_job_rejects_concurrent_running_jobs(monkeypatch):
     first_job = asyncio.run(start_two_jobs())
     assert first_job.status in {"queued", "running"}
 
-    manager_api._JOBS.clear()
-    manager_api._LATEST_JOB_ID = None
+    manager_jobs.reset_jobs_for_tests()
 
 
 def test_restart_current_process_execs_active_python_command(monkeypatch, capsys):

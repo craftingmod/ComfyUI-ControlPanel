@@ -27,7 +27,6 @@ from . import manager_runtime
 from . import manager_routes
 from . import manager_settings
 from .manager_jobs import JOBS as _JOBS
-from .manager_jobs import LATEST_JOB_ID as _LATEST_JOB_ID
 from .manager_jobs import ManagerJob, latest_job, start_job
 from . import manager_process
 from .manager_process import ManagerApiError
@@ -694,28 +693,14 @@ def _is_local_changes_pull_failure(message: str) -> bool:
 
 
 async def update_git_repository(repo: Path) -> dict[str, Any]:
-    try:
-        result = await run_command(_command_args("git", "pull", "--ff-only"), repo, timeout=1200)
-    except ManagerApiError as error:
-        if _is_local_changes_pull_failure(str(error)):
-            return {
-                "name": repo.name,
-                "path": str(repo),
-                "skipped": "Git stopped because local changes would be overwritten.",
-                "detail": str(error),
-            }
-        raise
-    return {"name": repo.name, "path": str(repo), "result": result}
+    return await manager_git.update_git_repository(repo, command_args=_command_args, run_command=run_command)
 
 
 async def update_all_git_nodes() -> list[dict[str, Any]]:
-    results: list[dict[str, Any]] = []
-    for repo in discover_git_repositories():
-        try:
-            results.append(await update_git_repository(repo))
-        except Exception as error:  # noqa: BLE001 - report per-repository failures.
-            results.append({"name": repo.name, "path": str(repo), "error": str(error)})
-    return results
+    return await manager_git.update_all_git_nodes(
+        repositories=discover_git_repositories,
+        update_repository=update_git_repository,
+    )
 
 
 def comfy_cli_command(*args: str) -> list[str]:
@@ -723,30 +708,11 @@ def comfy_cli_command(*args: str) -> list[str]:
 
 
 async def update_git_nodes_with_git(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
-    results: list[dict[str, Any]] = []
-    for repo in discover_git_repositories():
-        on_line and on_line(f"Updating git node: {repo.name}")
-        try:
-            result = await update_git_repository(repo)
-        except Exception as error:  # noqa: BLE001 - report per-repository failures.
-            result = {"name": repo.name, "path": str(repo), "error": str(error)}
-        if result.get("skipped"):
-            on_line and on_line(f"Skipped {repo.name}: {result['skipped']}")
-        elif result.get("error"):
-            on_line and on_line(f"Failed {repo.name}: {result['error']}")
-        else:
-            on_line and on_line(f"Updated {repo.name}")
-        results.append(result)
-    return {
-        "provider": "git",
-        "restart_required": True,
-        "notes": [
-            "Only custom nodes installed as Git repositories are updated.",
-            "Repositories with local changes are updated when Git can fast-forward without overwriting them.",
-            "Updates use git pull --ff-only and never reset local work.",
-        ],
-        "results": results,
-    }
+    return await manager_git.update_git_nodes_with_git(
+        repositories=discover_git_repositories,
+        update_repository=update_git_repository,
+        on_line=on_line,
+    )
 
 
 async def sync_dependencies_with_comfy_cli(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
@@ -803,21 +769,13 @@ async def inspect_torch_runtime() -> dict[str, Any]:
 
 
 async def update_comfyui() -> list[dict[str, Any]]:
-    results = [{"name": "ComfyUI git", "result": await run_command(_command_args("git", "pull", "--ff-only"), COMFYUI_ROOT)}]
-    if (COMFYUI_ROOT / "requirements.txt").exists() and _command_available("uv"):
-        results.append(
-            {
-                "name": "ComfyUI requirements",
-                "result": await run_command(
-                    _command_args("uv", "pip", "install", "--python", sys.executable, "-r", "requirements.txt"),
-                    COMFYUI_ROOT,
-                    timeout=1800,
-                ),
-            }
-        )
-    else:
-        results.append({"name": "ComfyUI dependencies", "skipped": "uv or dependency metadata was not found."})
-    return results
+    return await manager_git.update_comfyui(
+        workspace=COMFYUI_ROOT,
+        python_executable=sys.executable,
+        command_args=_command_args,
+        command_available=_command_available,
+        run_command=run_command,
+    )
 
 
 def _latest_version_tag(tag_output: str) -> str:
@@ -825,44 +783,15 @@ def _latest_version_tag(tag_output: str) -> str:
 
 
 async def update_comfyui_with_git(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
-    before_torch = await inspect_torch_runtime()
-    fetch_result = await run_command_stream(_command_args("git", "fetch", "--tags", "--force"), COMFYUI_ROOT, timeout=1200, on_line=on_line)
-    tag_result = await run_command_stream(_command_args("git", "tag", "--list"), COMFYUI_ROOT, timeout=60)
-    latest_tag = _latest_version_tag(str(tag_result.get("stdout", "")))
-    on_line and on_line(f"Checking out latest tagged ComfyUI release: {latest_tag}")
-    checkout_result = await run_command_stream(
-        _command_args("git", "-c", "advice.detachedHead=false", "checkout", latest_tag),
-        COMFYUI_ROOT,
-        timeout=1200,
+    return await manager_git.update_comfyui_with_git(
+        workspace=COMFYUI_ROOT,
+        python_executable=sys.executable,
+        command_args=_command_args,
+        command_available=_command_available,
+        run_command_stream=run_command_stream,
+        inspect_torch_runtime=inspect_torch_runtime,
         on_line=on_line,
     )
-    dependency_result: dict[str, Any]
-    requirements_path = COMFYUI_ROOT / "requirements.txt"
-    if requirements_path.exists() and _command_available("uv"):
-        on_line and on_line("Syncing ComfyUI requirements with the current Python runtime.")
-        dependency_result = await run_command_stream(
-            _command_args("uv", "pip", "install", "--python", sys.executable, "-r", str(requirements_path)),
-            COMFYUI_ROOT,
-            timeout=1800,
-            on_line=on_line,
-        )
-    else:
-        dependency_result = {"skipped": "uv or requirements.txt was not found."}
-        on_line and on_line("Dependency sync skipped because uv or requirements.txt was not found.")
-    after_torch = await inspect_torch_runtime()
-    return {
-        "provider": "git",
-        "restart_required": True,
-        "warning": "Dependency sync uses the active Python runtime; verify torch/CUDA packages after restart if your install uses custom GPU wheels.",
-        "version_tag": latest_tag,
-        "torch": {"before": before_torch, "after": after_torch},
-        "results": [
-            {"name": "ComfyUI fetch tags", "result": fetch_result},
-            {"name": "ComfyUI latest tag", "result": tag_result, "selected": latest_tag},
-            {"name": "ComfyUI checkout", "result": checkout_result},
-            {"name": "ComfyUI requirements", "result": dependency_result},
-        ],
-    }
 
 
 async def _read_json(request) -> dict[str, Any]:
