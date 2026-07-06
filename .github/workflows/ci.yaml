@@ -1,10 +1,13 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  # CI is temporarily manual-only until the GitHub CI/CD setup is ready.
+  # Restore the push/pull_request triggers below when re-enabling automatic CI.
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+  # pull_request:
+  #   branches: [main]
 
 jobs:
   validate:
