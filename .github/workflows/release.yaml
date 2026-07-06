@@ -66,6 +66,8 @@ jobs:
 
           mkdir -p "${package_root}"
           cp -R __init__.py backend dist assets pyproject.toml README.md LICENSE "${package_root}/"
+          find "${package_root}" -type d -name "__pycache__" -prune -exec rm -rf {} +
+          find "${package_root}" -type f -name "*.py[co]" -delete
 
           cd release
           zip -r "${release_name}.zip" "${release_name}"
