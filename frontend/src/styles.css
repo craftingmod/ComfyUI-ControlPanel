@@ -83,6 +83,16 @@
   margin-top: 16px;
 }
 
+.cme-restart-notice {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgb(251 191 36 / 0.38);
+  border-radius: 6px;
+  background: rgb(251 191 36 / 0.12);
+  color: #fde68a;
+  font-weight: 650;
+}
+
 .cme-button {
   min-height: 42px;
   padding: 9px 12px;

@@ -12,12 +12,23 @@ declare global {
 }
 
 type JsonObject = Record<string, unknown>
+type UpdateJob = {
+  id: string
+  label: string
+  status: "queued" | "running" | "succeeded" | "failed"
+  logs: string[]
+  error?: string | null
+  restart_required?: boolean
+  result?: JsonObject | null
+}
 
 let panelEl: HTMLElement | undefined
 let gitInstallModalEl: HTMLElement | undefined
 let logEl: HTMLPreElement | undefined
+let restartNoticeEl: HTMLElement | undefined
 let gitUrlInputEl: HTMLInputElement | undefined
 let gitNameInputEl: HTMLInputElement | undefined
+let statusPollTimer: number | undefined
 
 function getSetting<T>(id: string): T | undefined {
   return app.extensionManager.setting.get<T>(id)
@@ -41,6 +52,19 @@ function writeLog(message: string, payload?: unknown): void {
   logEl.textContent = `[${timestamp}] ${message}${body}\n\n${logEl.textContent ?? ""}`
 }
 
+function renderJob(job: UpdateJob): void {
+  if (!logEl) {
+    return
+  }
+
+  const logs = job.logs.length > 0 ? job.logs.join("\n") : `${job.label} is ${job.status}.`
+  const error = job.error ? `\n\nError:\n${job.error}` : ""
+  logEl.textContent = `${job.label} (${job.status})\n\n${logs}${error}\n`
+  if (restartNoticeEl) {
+    restartNoticeEl.hidden = !job.restart_required || job.status !== "succeeded"
+  }
+}
+
 async function fetchJson(route: string, body?: JsonObject): Promise<JsonObject> {
   const response = await app.api.fetchApi(route, {
     method: body ? "POST" : "GET",
@@ -54,6 +78,16 @@ async function fetchJson(route: string, body?: JsonObject): Promise<JsonObject> 
   return data
 }
 
+function isUpdateJob(value: unknown): value is UpdateJob {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && typeof (value as UpdateJob).id === "string"
+    && typeof (value as UpdateJob).label === "string"
+    && typeof (value as UpdateJob).status === "string",
+  )
+}
+
 async function runOperation(label: string, route: string, body?: JsonObject): Promise<void> {
   writeLog(`${label} started.`)
   debugLog(readBooleanSetting, `${label} request`, { route, body })
@@ -65,6 +99,61 @@ async function runOperation(label: string, route: string, body?: JsonObject): Pr
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     writeLog(`${label} failed: ${message}`)
+    toast("error", "Manager Extension", message)
+  }
+}
+
+function stopPolling(): void {
+  if (statusPollTimer !== undefined) {
+    window.clearInterval(statusPollTimer)
+    statusPollTimer = undefined
+  }
+}
+
+async function refreshUpdateStatus(): Promise<UpdateJob | undefined> {
+  const data = await fetchJson(API_ROUTES.UPDATE_STATUS)
+  const job = data.job
+  if (!isUpdateJob(job)) {
+    return undefined
+  }
+  renderJob(job)
+  return job
+}
+
+function pollUpdateStatus(): void {
+  stopPolling()
+  statusPollTimer = window.setInterval(() => {
+    void refreshUpdateStatus()
+      .then((job) => {
+        if (job && !["queued", "running"].includes(job.status)) {
+          stopPolling()
+          toast(job.status === "succeeded" ? "success" : "error", "Manager Extension", `${job.label} ${job.status}.`)
+        }
+      })
+      .catch((error) => {
+        stopPolling()
+        const message = error instanceof Error ? error.message : String(error)
+        writeLog(`Status polling failed: ${message}`)
+      })
+  }, 1500)
+}
+
+async function startUpdateJob(label: string, route: string): Promise<void> {
+  writeLog(`${label} queued.`)
+  debugLog(readBooleanSetting, `${label} request`, { route })
+
+  try {
+    const data = await fetchJson(route, {})
+    const job = data.job
+    if (!isUpdateJob(job)) {
+      throw new Error("Update job response was missing job details.")
+    }
+    renderJob(job)
+    toast("info", "Manager Extension", `${label} started.`)
+    pollUpdateStatus()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    writeLog(`${label} failed to start: ${message}`)
     toast("error", "Manager Extension", message)
   }
 }
@@ -124,11 +213,14 @@ function createPanel(): HTMLElement {
     createButton("Install via Git URL", () => {
       openGitInstallModal()
     }),
-    createButton("Update All", () => {
-      void runOperation("Update All", API_ROUTES.UPDATE_ALL)
+    createButton("Update Custom Nodes", () => {
+      void startUpdateJob("Update Custom Nodes", API_ROUTES.UPDATE_CUSTOM_NODES)
+    }),
+    createButton("Sync Dependencies", () => {
+      void startUpdateJob("Sync Dependencies", API_ROUTES.SYNC_DEPENDENCIES)
     }),
     createButton("Update ComfyUI", () => {
-      void runOperation("Update ComfyUI", API_ROUTES.UPDATE_COMFYUI)
+      void startUpdateJob("Update ComfyUI", API_ROUTES.UPDATE_COMFYUI)
     }),
     createButton("Restart", () => {
       if (window.confirm("Restart ComfyUI now?")) {
@@ -137,11 +229,16 @@ function createPanel(): HTMLElement {
     }, "cme-button cme-danger"),
   )
 
+  restartNoticeEl = document.createElement("div")
+  restartNoticeEl.className = "cme-restart-notice"
+  restartNoticeEl.hidden = true
+  restartNoticeEl.textContent = "Restart required to finish applying updates."
+
   logEl = document.createElement("pre")
   logEl.className = "cme-log"
   logEl.textContent = "Ready.\n"
 
-  panel.append(header, actions, logEl)
+  panel.append(header, actions, restartNoticeEl, logEl)
   backdrop.append(panel)
   return backdrop
 }
@@ -232,6 +329,7 @@ function openPanel(): void {
 }
 
 function closePanel(): void {
+  stopPolling()
   closeGitInstallModal()
   panelEl?.remove()
 }
