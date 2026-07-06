@@ -33,10 +33,10 @@ For normal use, install from the GitHub Release zip attached to a version tag,
 not from GitHub's automatic source archive. The release zip includes the built
 frontend file at `dist/index.js`, which ComfyUI needs at runtime.
 
-For example, for `v1.0.1`, download the attached release asset named like:
+For example, for `v1.1.0`, download the attached release asset named like:
 
 ```text
-ComfyUI-ControlPanel-v1.0.1.zip
+ComfyUI-ControlPanel-v1.1.0.zip
 ```
 
 Extract the `ComfyUI-ControlPanel/` folder from the zip into:
@@ -116,8 +116,8 @@ GitHub Release zip artifacts built from version tags.
 Create and push a version tag to publish an installable zip:
 
 ```bash
-git tag v1.0.1
-git push origin v1.0.1
+git tag v1.1.0
+git push origin v1.1.0
 ```
 
 The release workflow:
@@ -138,9 +138,9 @@ it is created after `pnpm build` and includes the required `dist/index.js` file.
 The separate `CI` workflow is manual-only and can be run when an extra validation
 pass is useful before tagging.
 
-### v1.0.1 notes
+### v1.1.0 notes
 
-`v1.0.1` is expected to be released from a tag-built GitHub Release artifact.
+`v1.1.0` is expected to be released from a tag-built GitHub Release artifact.
 Compared with the early `v1.0.0` shape, the control panel now includes Manager
 cache rebuild/update actions, snapshot save/restore, local folder open actions,
 Comfy CLI environment display, status JSON inspection, and a modularized backend

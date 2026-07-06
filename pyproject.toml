@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-controlpanel"
 description = "A ComfyUI custom node for restoring control panel workflows."
-version = "1.0.0"
+version = "1.1.0"
 requires-python = ">=3.12"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -26,7 +26,7 @@ requires-comfyui = ">=0.3.0"
 includes = ['dist']
 
 [tool.bumpversion]
-current_version = "1.0.0"
+current_version = "1.1.0"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 commit = false
