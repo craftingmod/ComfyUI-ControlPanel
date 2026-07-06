@@ -11,7 +11,7 @@ declare global {
   }
 }
 
-const ACTION_BAR_BUTTON_TOOLTIP = "Open ComfyUI-ControlPanel"
+const ACTION_BAR_BUTTON_TOOLTIP = "Open ControlPanel"
 
 type ControlPanelSettingsResponse = {
   manager_repository_data_override?: boolean
@@ -191,7 +191,7 @@ function createExtensionObject(): ManagerExtension {
     actionBarButtons: [
       {
         icon: "icon-[lucide--wrench]",
-        label: "Manager",
+        label: "Panel",
         tooltip: ACTION_BAR_BUTTON_TOOLTIP,
         onClick: controlPanel.open,
       },
