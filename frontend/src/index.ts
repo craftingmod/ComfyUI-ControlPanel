@@ -8,10 +8,34 @@ declare global {
 
   interface Window {
     app: ComfyApp
+    __COMFYUI_FRONTEND_VERSION__?: string
   }
 }
 
 type JsonObject = Record<string, unknown>
+type ManagerExtension = Parameters<ComfyApp["registerExtension"]>[0]
+type ComfyMenuButton = {
+  element: HTMLElement
+}
+type ComfyMenuButtonGroup = {
+  element: HTMLElement
+}
+type ComfyMenu = {
+  actionsGroup?: {
+    element?: HTMLElement
+  }
+  settingsGroup?: {
+    element?: HTMLElement
+  }
+}
+type ComfyButtonConstructor = new(options: {
+  icon: string
+  tooltip: string
+  app: ComfyApp
+  enabled: boolean
+  classList: string
+}) => ComfyMenuButton
+type ComfyButtonGroupConstructor = new(button: ComfyMenuButton) => ComfyMenuButtonGroup
 type UpdateJob = {
   id: string
   label: string
@@ -29,6 +53,11 @@ let restartNoticeEl: HTMLElement | undefined
 let gitUrlInputEl: HTMLInputElement | undefined
 let gitNameInputEl: HTMLInputElement | undefined
 let statusPollTimer: number | undefined
+
+const TOP_MENU_BUTTON_GROUP_CLASS = "manager-extension-top-menu-group"
+const TOP_MENU_BUTTON_TOOLTIP = "Open Manager Extension"
+const MAX_TOP_MENU_ATTACH_ATTEMPTS = 120
+const MIN_VERSION_FOR_ACTION_BAR = [1, 33, 9] as const
 
 function getSetting<T>(id: string): T | undefined {
   return app.extensionManager.setting.get<T>(id)
@@ -348,8 +377,101 @@ function closeGitInstallModal(): void {
   gitInstallModalEl?.remove()
 }
 
-app.registerExtension({
-  name: EXTENSION_NAME,
+async function createTopMenuButton(): Promise<ComfyMenuButton> {
+  const buttonModulePath = "../../scripts/ui/components/button.js"
+  const { ComfyButton } = await import(/* @vite-ignore */ buttonModulePath) as {
+    ComfyButton: ComfyButtonConstructor
+  }
+  const button = new ComfyButton({
+    icon: "icon-[lucide--wrench]",
+    tooltip: TOP_MENU_BUTTON_TOOLTIP,
+    app,
+    enabled: true,
+    classList: "comfyui-button comfyui-menu-mobile-collapse",
+  })
+  button.element.setAttribute("aria-label", TOP_MENU_BUTTON_TOOLTIP)
+  button.element.title = TOP_MENU_BUTTON_TOOLTIP
+  button.element.addEventListener("click", openPanel)
+  return button
+}
+
+async function attachTopMenuButton(attempt = 0): Promise<void> {
+  if (document.querySelector(`.${TOP_MENU_BUTTON_GROUP_CLASS}`)) {
+    return
+  }
+
+  const menu = (app as ComfyApp & { menu?: ComfyMenu }).menu
+  const anchorGroupEl = menu?.actionsGroup?.element ?? menu?.settingsGroup?.element
+  const parentEl = anchorGroupEl?.parentElement
+  if (!anchorGroupEl || !parentEl) {
+    if (attempt >= MAX_TOP_MENU_ATTACH_ATTEMPTS) {
+      console.warn("Manager Extension: unable to locate the ComfyUI action/settings button group.")
+      return
+    }
+    window.requestAnimationFrame(() => {
+      void attachTopMenuButton(attempt + 1)
+    })
+    return
+  }
+
+  const button = await createTopMenuButton()
+  const groupModulePath = "../../scripts/ui/components/buttonGroup.js"
+  const { ComfyButtonGroup } = await import(/* @vite-ignore */ groupModulePath) as {
+    ComfyButtonGroup: ComfyButtonGroupConstructor
+  }
+  const buttonGroup = new ComfyButtonGroup(button)
+  buttonGroup.element.classList.add(TOP_MENU_BUTTON_GROUP_CLASS)
+  anchorGroupEl.before(buttonGroup.element)
+}
+
+function parseVersion(version: string): [number, number, number] {
+  const cleanVersion = version.replace(/^[vV]/, "").split("-", 1)[0]
+  const parts = cleanVersion.split(".").map((part) => Number.parseInt(part, 10) || 0)
+  return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0]
+}
+
+function compareVersions(version: [number, number, number], minimum: readonly [number, number, number]): number {
+  for (let index = 0; index < 3; index += 1) {
+    if (version[index] > minimum[index]) {
+      return 1
+    }
+    if (version[index] < minimum[index]) {
+      return -1
+    }
+  }
+  return 0
+}
+
+async function getComfyUIFrontendVersion(): Promise<string> {
+  if (window.__COMFYUI_FRONTEND_VERSION__) {
+    return window.__COMFYUI_FRONTEND_VERSION__
+  }
+
+  try {
+    const response = await app.api.fetchApi("/system_stats")
+    const data = await response.json() as {
+      system?: {
+        comfyui_frontend_version?: string
+        required_frontend_version?: string
+      }
+    }
+    return data.system?.comfyui_frontend_version ?? data.system?.required_frontend_version ?? "0.0.0"
+  } catch (error) {
+    console.warn("Manager Extension: unable to read ComfyUI frontend version.", error)
+    return "0.0.0"
+  }
+}
+
+async function supportsActionBarButtons(): Promise<boolean> {
+  return compareVersions(parseVersion(await getComfyUIFrontendVersion()), MIN_VERSION_FOR_ACTION_BAR) >= 0
+}
+
+function createExtensionObject(useActionBar: boolean): ManagerExtension {
+  const extension: ManagerExtension = {
+    name: EXTENSION_NAME,
+    async setup() {
+      await attachTopMenuButton()
+    },
   commands: [
     {
       id: "manager-extension.open",
@@ -362,14 +484,6 @@ app.registerExtension({
     {
       path: ["Manager Extension"],
       commands: ["manager-extension.open"],
-    },
-  ],
-  actionBarButtons: [
-    {
-      icon: "pi pi-wrench",
-      label: "Manager",
-      tooltip: "Open Manager Extension",
-      onClick: openPanel,
     },
   ],
   settings: [
@@ -397,4 +511,22 @@ app.registerExtension({
       defaultValue: false,
     },
   ],
-})
+  }
+
+  if (useActionBar) {
+    extension.actionBarButtons = [
+      {
+        icon: "icon-[lucide--wrench]",
+        label: "Manager",
+        tooltip: TOP_MENU_BUTTON_TOOLTIP,
+        onClick: openPanel,
+      },
+    ]
+  }
+
+  return extension
+}
+
+void (async () => {
+  app.registerExtension(createExtensionObject(await supportsActionBarButtons()))
+})()
