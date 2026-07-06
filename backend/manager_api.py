@@ -500,14 +500,6 @@ async def request_manager_update_comfyui(request) -> dict[str, Any]:
     }
 
 
-async def request_manager_reboot(request) -> dict[str, Any]:
-    result = await request_first_manager_route(request, ["/v2/manager/reboot", "/manager/reboot"], "manager-rest")
-    return {
-        **result,
-        "message": result["message"] or "Restart requested through ComfyUI Manager.",
-    }
-
-
 def clear_terminal_for_restart() -> None:
     try:
         sys.stdout.write(_CLEAR_TERMINAL_CSI)
@@ -516,17 +508,13 @@ def clear_terminal_for_restart() -> None:
         LOGGER.debug("[ControlPanel] Failed to clear terminal before restart.", exc_info=True)
 
 
-async def restart_comfyui(request) -> dict[str, Any]:
+async def restart_comfyui(_request) -> dict[str, Any]:
     clear_terminal_for_restart()
-    try:
-        return await request_manager_reboot(request)
-    except ManagerApiError as error:
-        schedule_restart()
-        return {
-            "provider": "execv-fallback",
-            "message": "ComfyUI Manager reboot route failed; local process restart fallback was scheduled.",
-            "manager_error": str(error),
-        }
+    schedule_restart()
+    return {
+        "provider": "local-restart",
+        "message": "Local ComfyUI restart was scheduled.",
+    }
 
 
 async def _with_operation_lock(operation):
@@ -594,10 +582,14 @@ def schedule_restart(delay_seconds: float = 1.0) -> None:
     asyncio.create_task(delayed_restart())
 
 
+def restart_exec_args() -> list[str]:
+    return list(getattr(sys, "orig_argv", None) or [sys.executable, *sys.argv])
+
+
 def restart_current_process() -> None:
-    args = list(getattr(sys, "orig_argv", None) or [sys.executable, *sys.argv])
-    if not args:
-        args = [sys.executable]
+    args = restart_exec_args()
+    print("\nRestarting...\n\n", flush=True)
+    print(f"Command: {args}", flush=True)
     os.execv(sys.executable, args)
 
 

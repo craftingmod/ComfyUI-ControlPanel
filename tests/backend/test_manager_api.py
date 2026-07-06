@@ -55,24 +55,21 @@ def test_same_server_url_respects_forwarded_proto():
     assert manager_api._same_server_url(request, "/manager/reboot") == "https://example.test/manager/reboot"
 
 
-def test_restart_comfyui_falls_back_when_manager_route_fails(monkeypatch):
+def test_restart_comfyui_schedules_local_restart(monkeypatch):
     calls = []
-
-    async def fake_request_manager_reboot(_request):
-        raise manager_api.ManagerApiError("manager route unavailable")
 
     def fake_schedule_restart():
         calls.append("scheduled")
 
-    monkeypatch.setattr(manager_api, "request_manager_reboot", fake_request_manager_reboot)
     monkeypatch.setattr(manager_api, "schedule_restart", fake_schedule_restart)
     monkeypatch.setattr(manager_api, "clear_terminal_for_restart", lambda: calls.append("cleared"))
+    monkeypatch.delenv("__COMFY_CLI_SESSION__", raising=False)
 
     result = asyncio.run(manager_api.restart_comfyui(SimpleNamespace()))
 
     assert calls == ["cleared", "scheduled"]
-    assert result["provider"] == "execv-fallback"
-    assert result["manager_error"] == "manager route unavailable"
+    assert result["provider"] == "local-restart"
+    assert result["message"] == "Local ComfyUI restart was scheduled."
 
 
 def test_clear_terminal_for_restart_writes_csi(monkeypatch):
@@ -309,7 +306,7 @@ def test_start_job_rejects_concurrent_running_jobs(monkeypatch):
     manager_api._LATEST_JOB_ID = None
 
 
-def test_restart_current_process_execs_original_python_command(monkeypatch):
+def test_restart_current_process_execs_original_python_command(monkeypatch, capsys):
     calls = []
     original_argv = ["python", "-s", "main.py", "--listen", "0.0.0.0"]
 
@@ -323,3 +320,12 @@ def test_restart_current_process_execs_original_python_command(monkeypatch):
     manager_api.restart_current_process()
 
     assert calls == [("C:/Python/python.exe", original_argv)]
+    assert "Restarting..." in capsys.readouterr().out
+
+
+def test_restart_exec_args_falls_back_to_current_argv(monkeypatch):
+    monkeypatch.setattr(manager_api.sys, "executable", "C:/Python/python.exe")
+    monkeypatch.delattr(manager_api.sys, "orig_argv", raising=False)
+    monkeypatch.setattr(manager_api.sys, "argv", ["main.py", "--listen"], raising=False)
+
+    assert manager_api.restart_exec_args() == ["C:/Python/python.exe", "main.py", "--listen"]
