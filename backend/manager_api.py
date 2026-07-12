@@ -66,8 +66,7 @@ _MANAGER_CACHE_FILES = (
     "alter-list.json",
     "github-stats.json",
 )
-_DEFAULT_MANAGER_CHANNEL_URL = "https://raw.githubusercontent.com/Comfy-Org/ComfyUI-Manager/main"
-_OVERRIDE_MANAGER_CHANNEL_URL = "https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main"
+_DEFAULT_MANAGER_CHANNEL_URL = "https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main"
 _JSDELIVR_MANAGER_CHANNEL_URL = "https://cdn.jsdelivr.net/gh/Comfy-Org/ComfyUI-Manager@main"
 _MANAGER_REPOSITORY_DATA_CHANNEL_GITHUB = "github"
 _MANAGER_REPOSITORY_DATA_CHANNEL_JSDELIVR = "jsdelivr"
@@ -283,6 +282,7 @@ def set_manager_repository_data_channel(channel: Any, user_dir: Path | None = No
         is_override_enabled=is_manager_repository_override_enabled,
         normalize_channel=normalize_manager_repository_data_channel,
         channel_url=manager_repository_data_channel_url,
+        manager_channel_url=manager_repository_override_channel_url,
         read_settings=read_controlpanel_settings,
         write_settings=write_controlpanel_settings,
         deploy_cache=deploy_controlpanel_manager_cache_to_manager,
@@ -291,6 +291,10 @@ def set_manager_repository_data_channel(channel: Any, user_dir: Path | None = No
 
 def manager_repository_data_channel_url(channel: str | None = None) -> str:
     return _MANAGER_REPOSITORY_DATA_CHANNEL_URLS[normalize_manager_repository_data_channel(channel)]
+
+
+def manager_repository_override_channel_url(_channel: str | None = None) -> str:
+    return _DEFAULT_MANAGER_CHANNEL_URL
 
 
 def read_manager_config(manager_dir: Path) -> configparser.ConfigParser:
@@ -528,7 +532,7 @@ def set_manager_repository_override(enabled: bool, user_dir: Path | None = None)
         setting_previous_network_mode_key=_SETTING_PREVIOUS_MANAGER_NETWORK_MODE,
         setting_config_missing_key=_SETTING_MANAGER_CONFIG_WAS_MISSING,
         normalize_channel=normalize_manager_repository_data_channel,
-        channel_url=manager_repository_data_channel_url,
+        manager_channel_url=manager_repository_override_channel_url,
         read_settings=read_controlpanel_settings,
         write_settings=write_controlpanel_settings,
         deploy_cache=deploy_controlpanel_manager_cache_to_manager,
@@ -543,7 +547,7 @@ def apply_startup_manager_repository_override(user_dir: Path | None = None) -> d
     return manager_settings.apply_startup_manager_repository_override(
         user_dir=resolved_user_dir,
         channel=read_manager_repository_data_channel(resolved_user_dir),
-        channel_url=manager_repository_data_channel_url,
+        manager_channel_url=manager_repository_override_channel_url,
         deploy_cache=deploy_controlpanel_manager_cache_to_manager,
     )
 

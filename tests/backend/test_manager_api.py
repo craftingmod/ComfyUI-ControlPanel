@@ -394,19 +394,23 @@ def test_manager_repository_data_channel_defaults_to_jsdelivr(tmp_path):
     assert manager_api.manager_repository_data_channel_url("jsdelivr") == manager_api._JSDELIVR_MANAGER_CHANNEL_URL
 
 
-def test_set_manager_repository_data_channel_updates_override_channel_url(tmp_path):
+def test_set_manager_repository_data_channel_keeps_manager_channel_url_default(tmp_path):
     user_dir = tmp_path / "user"
     manager_dir = user_dir / "__manager"
-    source_dir = user_dir / "__controlpanel" / "manager-cache" / "sources" / "github"
+    source_dir = user_dir / "__controlpanel" / "manager-cache" / "sources" / "jsdelivr"
     manager_dir.mkdir(parents=True)
     source_dir.mkdir(parents=True)
     (source_dir / "custom-node-list.json").write_text(json.dumps({"custom_nodes": []}), encoding="utf-8")
-    manager_api.write_controlpanel_settings({"manager_repository_data_override_enabled": True}, user_dir)
+    manager_api.write_controlpanel_settings(
+        {"manager_repository_data_override_enabled": True, "manager_repository_data_channel": "github"},
+        user_dir,
+    )
 
-    result = manager_api.set_manager_repository_data_channel("github", user_dir=user_dir)
+    result = manager_api.set_manager_repository_data_channel("jsdelivr", user_dir=user_dir)
 
-    assert result["channel"] == "github"
-    assert manager_api.read_manager_repository_data_channel(user_dir) == "github"
+    assert result["channel"] == "jsdelivr"
+    assert result["channel_url"] == manager_api._JSDELIVR_MANAGER_CHANNEL_URL
+    assert manager_api.read_manager_repository_data_channel(user_dir) == "jsdelivr"
     assert manager_api.read_manager_channel_url(manager_dir) == manager_api._DEFAULT_MANAGER_CHANNEL_URL
 
 
@@ -426,14 +430,14 @@ def test_set_manager_repository_override_forces_offline_and_records_internal_set
 
     settings = manager_api.read_controlpanel_settings(user_dir)
     manager_path = manager_dir / "cache" / manager_api.manager_cache_filename(
-        manager_api._JSDELIVR_MANAGER_CHANNEL_URL,
+        manager_api._DEFAULT_MANAGER_CHANNEL_URL,
         "custom-node-list.json",
     )
 
     assert settings["manager_repository_data_override_enabled"] is True
     assert settings["manager_network_mode_before_override"] == "public"
     assert manager_api.read_manager_network_mode(manager_dir) == "offline"
-    assert manager_api.read_manager_channel_url(manager_dir) == manager_api._JSDELIVR_MANAGER_CHANNEL_URL
+    assert manager_api.read_manager_channel_url(manager_dir) == manager_api._DEFAULT_MANAGER_CHANNEL_URL
     assert (manager_dir / "config_org.ini").exists()
     assert manager_path.exists()
     assert result["enabled"] is True
@@ -510,7 +514,7 @@ def test_apply_startup_manager_repository_override_deploys_cached_sources(tmp_pa
     result = manager_api.apply_startup_manager_repository_override(user_dir=user_dir)
 
     manager_path = manager_dir / "cache" / manager_api.manager_cache_filename(
-        manager_api._JSDELIVR_MANAGER_CHANNEL_URL,
+        manager_api._DEFAULT_MANAGER_CHANNEL_URL,
         "custom-node-list.json",
     )
     registry_manager_path = manager_dir / "cache" / manager_api.manager_url_cache_filename(
@@ -518,7 +522,7 @@ def test_apply_startup_manager_repository_override_deploys_cached_sources(tmp_pa
     )
     assert result["enabled"] is True
     assert manager_api.read_manager_network_mode(manager_dir) == "offline"
-    assert manager_api.read_manager_channel_url(manager_dir) == manager_api._JSDELIVR_MANAGER_CHANNEL_URL
+    assert manager_api.read_manager_channel_url(manager_dir) == manager_api._DEFAULT_MANAGER_CHANNEL_URL
     assert json.loads(manager_path.read_text(encoding="utf-8")) == {"custom_nodes": [{"title": "Cached"}]}
     assert json.loads(registry_manager_path.read_text(encoding="utf-8")) == {
         "nodes": [{"id": "registry-node", "latest_version": {"version": "1.0.0"}}],
@@ -712,7 +716,7 @@ def test_refresh_manager_cache_fetches_github_raw_when_channel_selected(monkeypa
     result = asyncio.run(manager_api.refresh_manager_cache_from_cdn(user_dir=user_dir))
 
     assert requested_urls == [
-        "https://raw.githubusercontent.com/Comfy-Org/ComfyUI-Manager/main/custom-node-list.json"
+        f"{manager_api._DEFAULT_MANAGER_CHANNEL_URL}/custom-node-list.json"
     ]
     assert result["provider"] == "github"
     assert result["repository_data_channel"] == "github"

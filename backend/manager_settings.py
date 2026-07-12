@@ -153,6 +153,7 @@ def set_manager_repository_data_channel(
     is_override_enabled: Callable[[Path], bool],
     normalize_channel: Callable[[Any], str],
     channel_url: Callable[[str], str],
+    manager_channel_url: Callable[[str], str],
     read_settings: Callable[[Path], dict[str, Any]],
     write_settings: Callable[[dict[str, Any], Path], str],
     deploy_cache: Callable[[Path], dict[str, Any]],
@@ -165,7 +166,7 @@ def set_manager_repository_data_channel(
     deployment: dict[str, Any] = {"skipped": "Manager repository data override is disabled."}
     if is_override_enabled(user_dir):
         manager_dir = manager_user_dir(user_dir)
-        write_manager_config_values(manager_dir, {"channel_url": channel_url(normalized)})
+        write_manager_config_values(manager_dir, {"channel_url": manager_channel_url(normalized)})
         deployment = deploy_cache(user_dir)
 
     return {
@@ -184,7 +185,7 @@ def set_manager_repository_override(
     setting_previous_network_mode_key: str,
     setting_config_missing_key: str,
     normalize_channel: Callable[[Any], str],
-    channel_url: Callable[[str], str],
+    manager_channel_url: Callable[[str], str],
     read_settings: Callable[[Path], dict[str, Any]],
     write_settings: Callable[[dict[str, Any], Path], str],
     deploy_cache: Callable[[Path], dict[str, Any]],
@@ -208,7 +209,7 @@ def set_manager_repository_override(
             manager_dir,
             {
                 "network_mode": "offline",
-                "channel_url": channel_url(normalized_channel),
+                "channel_url": manager_channel_url(normalized_channel),
             },
         )
         deployment = deploy_cache(user_dir)
@@ -238,7 +239,7 @@ def apply_startup_manager_repository_override(
     *,
     user_dir: Path,
     channel: str,
-    channel_url: Callable[[str], str],
+    manager_channel_url: Callable[[str], str],
     deploy_cache: Callable[[Path], dict[str, Any]],
 ) -> dict[str, Any]:
     manager_dir = manager_user_dir(user_dir)
@@ -246,7 +247,7 @@ def apply_startup_manager_repository_override(
         manager_dir,
         {
             "network_mode": "offline",
-            "channel_url": channel_url(channel),
+            "channel_url": manager_channel_url(channel),
         },
     )
     deployment = deploy_cache(user_dir)
