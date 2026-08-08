@@ -58,11 +58,16 @@ def test_root_package_surface_matches_frontend_backend_split():
 
 def test_root_packaging_metadata_matches_layout():
     pyproject = tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8"))
+    package_json = json.loads(PACKAGE_JSON_PATH.read_text(encoding="utf-8"))
     tool_comfy = pyproject["tool"]["comfy"]
     bump_files = pyproject["tool"]["bumpversion"]["files"]
 
     assert pyproject["project"]["name"] == "comfyui-controlpanel"
-    assert pyproject["project"]["description"] == "A ComfyUI custom node for restoring control panel workflows."
+    assert pyproject["project"]["description"] == (
+        "A lightweight ComfyUI control panel that restores legacy local administration "
+        "features no longer available in ComfyUI Manager."
+    )
+    assert package_json["description"] == pyproject["project"]["description"]
     assert pyproject["project"]["dependencies"] == ["aiohttp>=3.9"]
     assert tool_comfy["DisplayName"] == "ComfyUI-ControlPanel"
     assert tool_comfy["includes"] == ["dist"]
@@ -112,6 +117,7 @@ def test_ci_workflows_use_repo_command_surface():
     assert "softprops/action-gh-release@v2" in release_workflow
     assert "Comfy-Org/publish-node-action" in release_workflow
     assert "REGISTRY_ACCESS_TOKEN" in release_workflow
+    assert 'skip_checkout: "true"' in release_workflow
 
 
 def test_docs_explain_the_slim_command_surface():

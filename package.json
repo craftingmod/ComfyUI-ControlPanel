@@ -2,7 +2,7 @@
   "name": "comfyui-controlpanel",
   "version": "1.2.1",
   "private": true,
-  "description": "A lightweight ComfyUI control panel for updates, custom-node installation, backup and restoration, Manager cache maintenance, and local administration.",
+  "description": "A lightweight ComfyUI control panel that restores legacy local administration features no longer available in ComfyUI Manager.",
   "type": "module",
   "scripts": {
     "dev": "tsc --noEmit -p frontend/tsconfig.json && vite build --watch --config frontend/vite.config.ts",

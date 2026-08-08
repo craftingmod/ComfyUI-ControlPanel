@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v1.2.1
+## v1.2.2
 
 - Preserved the generated `dist` directory when publishing to the Comfy Registry so Registry and GitHub release archives include the frontend bundle.
 
