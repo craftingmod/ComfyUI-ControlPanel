@@ -307,6 +307,7 @@ async def update_all_git_nodes(
 
 async def update_git_nodes_with_git(
     *,
+    workspace: Path,
     repositories: Callable[[], list[Path]],
     update_repository: Callable[[Path], Awaitable[dict[str, Any]]],
     on_line: Callable[[str], None] | None = None,
@@ -325,6 +326,10 @@ async def update_git_nodes_with_git(
         else:
             on_line and on_line(f"Updated {repo.name}")
         results.append(result)
+    dependency_sync_required = any(not result.get("skipped") and not result.get("error") for result in results)
+    dependency_sync_command = ["comfy", "--workspace", str(workspace), "node", "uv-sync"]
+    if dependency_sync_required:
+        on_line and on_line("Close ComfyUI, then run `comfy node uv-sync` for this workspace to sync dependencies.")
     return {
         "provider": "git",
         "restart_required": True,
@@ -334,78 +339,6 @@ async def update_git_nodes_with_git(
             "Updates use git pull --ff-only and never reset local work.",
         ],
         "results": results,
-    }
-
-
-async def update_comfyui(
-    *,
-    workspace: Path,
-    python_executable: str,
-    command_args: Callable[..., list[str]],
-    command_available: Callable[[str], bool],
-    run_command: Callable[..., Awaitable[dict[str, Any]]],
-) -> list[dict[str, Any]]:
-    results = [{"name": "ComfyUI git", "result": await run_command(command_args("git", "pull", "--ff-only"), workspace)}]
-    if (workspace / "requirements.txt").exists() and command_available("uv"):
-        results.append(
-            {
-                "name": "ComfyUI requirements",
-                "result": await run_command(
-                    command_args("uv", "pip", "install", "--python", python_executable, "-r", "requirements.txt"),
-                    workspace,
-                    timeout=1800,
-                ),
-            }
-        )
-    else:
-        results.append({"name": "ComfyUI dependencies", "skipped": "uv or dependency metadata was not found."})
-    return results
-
-
-async def update_comfyui_with_git(
-    *,
-    workspace: Path,
-    python_executable: str,
-    command_args: Callable[..., list[str]],
-    command_available: Callable[[str], bool],
-    run_command_stream: Callable[..., Awaitable[dict[str, Any]]],
-    inspect_torch_runtime: Callable[[], Awaitable[dict[str, Any]]],
-    on_line: Callable[[str], None] | None = None,
-) -> dict[str, Any]:
-    before_torch = await inspect_torch_runtime()
-    fetch_result = await run_command_stream(command_args("git", "fetch", "--tags", "--force"), workspace, timeout=1200, on_line=on_line)
-    tag_result = await run_command_stream(command_args("git", "tag", "--list"), workspace, timeout=60)
-    latest_tag = latest_version_tag(str(tag_result.get("stdout", "")))
-    on_line and on_line(f"Checking out latest tagged ComfyUI release: {latest_tag}")
-    checkout_result = await run_command_stream(
-        command_args("git", "-c", "advice.detachedHead=false", "checkout", latest_tag),
-        workspace,
-        timeout=1200,
-        on_line=on_line,
-    )
-    requirements_path = workspace / "requirements.txt"
-    if requirements_path.exists() and command_available("uv"):
-        on_line and on_line("Syncing ComfyUI requirements with the current Python runtime.")
-        dependency_result: dict[str, Any] = await run_command_stream(
-            command_args("uv", "pip", "install", "--python", python_executable, "-r", str(requirements_path)),
-            workspace,
-            timeout=1800,
-            on_line=on_line,
-        )
-    else:
-        dependency_result = {"skipped": "uv or requirements.txt was not found."}
-        on_line and on_line("Dependency sync skipped because uv or requirements.txt was not found.")
-    after_torch = await inspect_torch_runtime()
-    return {
-        "provider": "git",
-        "restart_required": True,
-        "warning": "Dependency sync uses the active Python runtime; verify torch/CUDA packages after restart if your install uses custom GPU wheels.",
-        "version_tag": latest_tag,
-        "torch": {"before": before_torch, "after": after_torch},
-        "results": [
-            {"name": "ComfyUI fetch tags", "result": fetch_result},
-            {"name": "ComfyUI latest tag", "result": tag_result, "selected": latest_tag},
-            {"name": "ComfyUI checkout", "result": checkout_result},
-            {"name": "ComfyUI requirements", "result": dependency_result},
-        ],
+        "dependency_sync_required": dependency_sync_required,
+        "dependency_sync_command": dependency_sync_command if dependency_sync_required else None,
     }

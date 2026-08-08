@@ -1390,38 +1390,6 @@ def test_latest_version_tag_prefers_highest_semver_tag():
     assert manager_api._latest_version_tag("latest\nv0.3.9\nv0.3.77\nv0.27.0\nrelease/v0.99\n") == "v0.27.0"
 
 
-def test_update_comfyui_git_provider_checks_out_latest_tag_and_syncs_requirements(monkeypatch, tmp_path):
-    calls = []
-    (tmp_path / "requirements.txt").write_text("comfyui-frontend-package\n", encoding="utf-8")
-
-    async def fake_inspect_torch_runtime():
-        return {"stdout": '{"available": true}'}
-
-    async def fake_run_command_stream(args, cwd, timeout=1800, on_line=None):
-        calls.append((args, cwd, timeout))
-        if args == ["/bin/git", "tag", "--list"]:
-            return {"returncode": 0, "stdout": "latest\nv0.26.2\nv0.27.0\n", "command": args}
-        return {"returncode": 0, "command": args}
-
-    monkeypatch.setattr(manager_api, "COMFYUI_ROOT", tmp_path)
-    monkeypatch.setattr(manager_api, "_find_executable", lambda command: f"/bin/{command}")
-    monkeypatch.setattr(manager_api, "inspect_torch_runtime", fake_inspect_torch_runtime)
-    monkeypatch.setattr(manager_api, "run_command_stream", fake_run_command_stream)
-    monkeypatch.setattr(manager_api.sys, "executable", "/venv/python")
-
-    result = asyncio.run(manager_api.update_comfyui_with_git())
-
-    assert calls == [
-        (["/bin/git", "fetch", "--tags", "--force"], tmp_path, 1200),
-        (["/bin/git", "tag", "--list"], tmp_path, 60),
-        (["/bin/git", "-c", "advice.detachedHead=false", "checkout", "v0.27.0"], tmp_path, 1200),
-        (["/bin/uv", "pip", "install", "--python", "/venv/python", "-r", str(tmp_path / "requirements.txt")], tmp_path, 1800),
-    ]
-    assert result["provider"] == "git"
-    assert result["version_tag"] == "v0.27.0"
-    assert result["restart_required"] is True
-
-
 def test_start_job_rejects_concurrent_running_jobs(monkeypatch):
     manager_jobs.reset_jobs_for_tests()
 

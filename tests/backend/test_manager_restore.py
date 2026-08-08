@@ -132,7 +132,11 @@ def test_restore_installs_latest_nodes_clones_git_and_requests_stopped_dependenc
     )
 
     assert commands == [
-        (["comfy", "--workspace", str(tmp_path), "node", "install", "registry-node"], tmp_path, 1800),
+        (
+            ["comfy", "--workspace", str(tmp_path), "node", "install", "registry-node", "--no-deps"],
+            tmp_path,
+            1800,
+        ),
     ]
     assert clones == [("https://github.com/example/GitNode.git", None)]
     assert result["installed"] == 2

@@ -173,7 +173,7 @@ async def restore_node_manifest(
         on_line and on_line(f"Installing registry node: {node_id}")
         try:
             result = await run_command_stream(
-                comfy_command("node", "install", node_id),
+                comfy_command("node", "install", node_id, "--no-deps"),
                 workspace,
                 timeout=1800,
                 on_line=on_line,

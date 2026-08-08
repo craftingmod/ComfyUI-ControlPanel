@@ -781,6 +781,7 @@ def comfy_cli_command(*args: str) -> list[str]:
 
 async def update_git_nodes_with_git(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
     return await manager_git.update_git_nodes_with_git(
+        workspace=COMFYUI_ROOT,
         repositories=discover_git_repositories,
         update_repository=update_git_repository,
         on_line=on_line,
@@ -861,43 +862,8 @@ async def restore_nodes_from_manifest(
     )
 
 
-async def inspect_torch_runtime() -> dict[str, Any]:
-    code = (
-        "import json\n"
-        "try:\n"
-        "    import torch\n"
-        "    print(json.dumps({'available': True, 'version': torch.__version__, 'cuda': torch.version.cuda}))\n"
-        "except Exception as error:\n"
-        "    print(json.dumps({'available': False, 'error': str(error)}))\n"
-    )
-    result = await run_command_stream([sys.executable, "-c", code], COMFYUI_ROOT, timeout=60)
-    return {"python": sys.executable, "stdout": result["stdout"]}
-
-
-async def update_comfyui() -> list[dict[str, Any]]:
-    return await manager_git.update_comfyui(
-        workspace=COMFYUI_ROOT,
-        python_executable=sys.executable,
-        command_args=_command_args,
-        command_available=_command_available,
-        run_command=run_command,
-    )
-
-
 def _latest_version_tag(tag_output: str) -> str:
     return manager_git.latest_version_tag(tag_output)
-
-
-async def update_comfyui_with_git(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
-    return await manager_git.update_comfyui_with_git(
-        workspace=COMFYUI_ROOT,
-        python_executable=sys.executable,
-        command_args=_command_args,
-        command_available=_command_available,
-        run_command_stream=run_command_stream,
-        inspect_torch_runtime=inspect_torch_runtime,
-        on_line=on_line,
-    )
 
 
 async def _read_json(request) -> dict[str, Any]:
@@ -1036,10 +1002,6 @@ async def _job_update_comfyui(job: ManagerJob) -> dict[str, Any]:
 
 async def _operation_update_all() -> dict[str, Any]:
     return {"results": await update_all_git_nodes()}
-
-
-async def _operation_update_comfyui() -> dict[str, Any]:
-    return {"results": await update_comfyui()}
 
 
 async def _operation_install_git_url(url: str, name: str | None) -> dict[str, Any]:
