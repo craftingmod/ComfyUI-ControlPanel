@@ -60,7 +60,7 @@
 .cp-panel-column-status .cp-log {
   box-sizing: border-box;
   height: 100%;
-  max-height: none;
+  max-height: 240px;
 }
 
 .cp-modal {

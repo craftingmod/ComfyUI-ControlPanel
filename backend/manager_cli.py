@@ -16,6 +16,15 @@ def sync_dependencies_response(result: dict[str, Any], protected_packages: set[s
     }
 
 
+def update_comfyui_response(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "provider": "comfy-cli",
+        "restart_required": True,
+        "version": "latest",
+        "result": result,
+    }
+
+
 def environment_response(result: dict[str, Any]) -> dict[str, Any]:
     try:
         envelope = json.loads(str(result.get("stdout", "")))

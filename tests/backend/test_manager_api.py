@@ -276,28 +276,28 @@ def test_request_manager_update_comfyui_uses_v2_queue_route(monkeypatch):
     assert result["message"] == "ComfyUI update was queued through ComfyUI Manager."
 
 
-def test_job_update_comfyui_uses_builtin_git_updater(monkeypatch):
+def test_job_update_comfyui_uses_comfy_cli_updater(monkeypatch):
     calls = []
     job = manager_api.ManagerJob(id="job", kind="comfyui", label="Update ComfyUI")
 
-    async def fake_update_comfyui_with_git(on_line=None):
-        calls.append("git")
+    async def fake_update_comfyui_with_comfy_cli(on_line=None):
+        calls.append("comfy-cli")
         if on_line:
-            on_line("git updater ran")
-        return {"provider": "git", "restart_required": True}
+            on_line("comfy-cli updater ran")
+        return {"provider": "comfy-cli", "restart_required": True}
 
     async def fail_request_manager_update_comfyui(*_args, **_kwargs):
         raise AssertionError("ComfyUI Manager update route should not be used")
 
-    monkeypatch.setattr(manager_api, "update_comfyui_with_git", fake_update_comfyui_with_git)
+    monkeypatch.setattr(manager_api, "update_comfyui_with_comfy_cli", fake_update_comfyui_with_comfy_cli)
     monkeypatch.setattr(manager_api, "request_manager_update_comfyui", fail_request_manager_update_comfyui)
 
     result = asyncio.run(manager_api._job_update_comfyui(job))
 
-    assert calls == ["git"]
-    assert result["provider"] == "git"
-    assert "Using built-in ComfyUI updater" in job.logs[0]
-    assert "git updater ran" in job.logs[1]
+    assert calls == ["comfy-cli"]
+    assert result["provider"] == "comfy-cli"
+    assert "latest version with Comfy CLI" in job.logs[0]
+    assert "comfy-cli updater ran" in job.logs[1]
 
 
 def test_repo_name_from_git_url_handles_common_url_shapes():
@@ -1299,6 +1299,33 @@ def test_dependency_sync_uses_comfy_cli_uv_sync(monkeypatch, tmp_path):
         )
     ]
     assert result["protected_packages"] == ["torch", "torchaudio", "torchvision"]
+
+
+def test_update_comfyui_uses_comfy_cli_latest_version(monkeypatch, tmp_path):
+    calls = []
+
+    async def fake_run_command_stream(args, cwd, timeout=1800, on_line=None):
+        calls.append((args, cwd, timeout, on_line))
+        return {"returncode": 0, "stdout": "updated"}
+
+    on_line = lambda _line: None
+    monkeypatch.setattr(manager_api, "COMFYUI_ROOT", tmp_path)
+    monkeypatch.setattr(manager_api, "_find_executable", lambda command: f"/bin/{command}")
+    monkeypatch.setattr(manager_api, "run_command_stream", fake_run_command_stream)
+
+    result = asyncio.run(manager_api.update_comfyui_with_comfy_cli(on_line))
+
+    assert calls == [
+        (
+            ["/bin/comfy", "--workspace", str(tmp_path), "update", "comfy", "--version", "latest"],
+            tmp_path,
+            3600,
+            on_line,
+        )
+    ]
+    assert result["provider"] == "comfy-cli"
+    assert result["version"] == "latest"
+    assert result["restart_required"] is True
 
 
 def test_latest_version_tag_prefers_highest_semver_tag():

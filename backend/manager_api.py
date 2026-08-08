@@ -793,6 +793,12 @@ async def sync_dependencies_with_comfy_cli(on_line: Callable[[str], None] | None
     return manager_cli.sync_dependencies_response(result, _TORCH_PACKAGES)
 
 
+async def update_comfyui_with_comfy_cli(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
+    command = comfy_cli_command("update", "comfy", "--version", "latest")
+    result = await run_command_stream(command, COMFYUI_ROOT, timeout=3600, on_line=on_line)
+    return manager_cli.update_comfyui_response(result)
+
+
 async def show_environment_with_comfy_cli() -> dict[str, Any]:
     command = comfy_cli_command("--json", "env")
     result = await run_command_stream(command, COMFYUI_ROOT, timeout=120)
@@ -991,8 +997,8 @@ async def _job_rebuild_manager_cache(job: ManagerJob) -> dict[str, Any]:
 
 
 async def _job_update_comfyui(job: ManagerJob) -> dict[str, Any]:
-    job.append_log("Using built-in ComfyUI updater; ComfyUI Manager update route is disabled.")
-    return await update_comfyui_with_git(job.append_log)
+    job.append_log("Updating ComfyUI to the latest version with Comfy CLI.")
+    return await update_comfyui_with_comfy_cli(job.append_log)
 
 
 async def _operation_update_all() -> dict[str, Any]:
