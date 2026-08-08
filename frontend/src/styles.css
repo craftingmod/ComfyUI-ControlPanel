@@ -232,7 +232,7 @@
 .cp-log-actions {
   position: absolute;
   top: 8px;
-  right: 8px;
+  right: 24px;
   z-index: 1;
   display: flex;
   gap: 6px;
