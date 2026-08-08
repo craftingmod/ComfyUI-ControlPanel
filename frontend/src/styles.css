@@ -52,15 +52,22 @@
   margin: 0;
 }
 
+.cp-panel-column-status {
+  min-height: 0;
+  overflow: hidden;
+  contain: size;
+}
+
 .cp-panel-column-status .cp-log-wrap {
   min-height: 0;
   flex: 1;
+  overflow: hidden;
 }
 
 .cp-panel-column-status .cp-log {
   box-sizing: border-box;
   height: 100%;
-  max-height: 240px;
+  max-height: none;
 }
 
 .cp-modal {
@@ -351,6 +358,11 @@
 
   .cp-panel-content {
     grid-template-columns: 1fr;
+  }
+
+  .cp-panel-column-status {
+    overflow: visible;
+    contain: none;
   }
 
   .cp-panel-column-status .cp-log {
