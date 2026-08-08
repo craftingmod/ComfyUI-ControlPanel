@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v1.2.1
+
+- Preserved the generated `dist` directory when publishing to the Comfy Registry so Registry and GitHub release archives include the frontend bundle.
+
+## v1.2.0
+
 - Removed the non-functional Playwright/ComfyUI E2E harness and simplified `pnpm test` to the unit suites.
 - Added tag-based Comfy Registry publishing, package version checks, and a runtime-focused `.comfyignore`.
 - Added browser-downloaded custom-node restore manifests using compact Registry IDs and Git URLs.

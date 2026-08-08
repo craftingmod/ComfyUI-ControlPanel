@@ -216,7 +216,7 @@ wheels = [
 
 [[package]]
 name = "comfyui-controlpanel"
-version = "1.2.0"
+version = "1.2.1"
 source = { virtual = "." }
 dependencies = [
     { name = "aiohttp" },
