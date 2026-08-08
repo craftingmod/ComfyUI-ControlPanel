@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-controlpanel"
 description = "A lightweight ComfyUI control panel that restores legacy local administration features no longer available in ComfyUI Manager."
-version = "1.2.2"
+version = "1.2.3"
 requires-python = ">=3.12"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -26,7 +26,7 @@ requires-comfyui = ">=0.28.0"
 includes = ['dist']
 
 [tool.bumpversion]
-current_version = "1.2.2"
+current_version = "1.2.3"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 commit = false

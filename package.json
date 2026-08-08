@@ -1,6 +1,6 @@
 {
   "name": "comfyui-controlpanel",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "private": true,
   "description": "A lightweight ComfyUI control panel that restores legacy local administration features no longer available in ComfyUI Manager.",
   "type": "module",
