@@ -11,8 +11,16 @@ describe("node restore manifests", () => {
       {
         nodes: [
           { folder: "RegistryFolder", git_url: "https://github.com/author/registry-repo.git" },
-          { folder: "GitFolder", git_url: "https://github.com/author/GitFolder.git" },
-          { folder: "RenamedFolder", git_url: "https://github.com/author/original-name.git" },
+          {
+            folder: "GitFolder",
+            git_url: "https://github.com/author/GitFolder.git",
+            git_commit: "1111111111111111111111111111111111111111",
+          },
+          {
+            folder: "RenamedFolder",
+            git_url: "https://github.com/author/original-name.git",
+            git_commit: "2222222222222222222222222222222222222222",
+          },
           { folder: "LocalOnly" },
         ],
       },
@@ -20,10 +28,17 @@ describe("node restore manifests", () => {
 
     expect(manifest).toEqual({
       format_version: 1,
-      registry_nodes: [{ id: "registry-node" }],
+      registry_nodes: [{ id: "registry-node", version: "1.2.3" }],
       git_nodes: [
-        { url: "https://github.com/author/GitFolder.git" },
-        { url: "https://github.com/author/original-name.git", folder: "RenamedFolder" },
+        {
+          url: "https://github.com/author/GitFolder.git",
+          commit: "1111111111111111111111111111111111111111",
+        },
+        {
+          url: "https://github.com/author/original-name.git",
+          folder: "RenamedFolder",
+          commit: "2222222222222222222222222222222222222222",
+        },
       ],
       unmanaged_nodes: [{ folder: "LocalOnly" }],
     })

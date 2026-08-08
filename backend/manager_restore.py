@@ -12,6 +12,7 @@ MANIFEST_VERSION = 1
 MAX_MANIFEST_NODES = 1000
 _NODE_ID_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,99}$")
 _FOLDER_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
+_GIT_COMMIT_PATTERN = re.compile(r"^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$")
 
 
 def _require_object(value: Any, label: str) -> dict[str, Any]:
@@ -52,6 +53,21 @@ def _validate_unmanaged_folder(value: Any) -> str:
     return folder
 
 
+def _validate_recorded_version(value: Any) -> str:
+    if not isinstance(value, str):
+        raise ManagerApiError("Registry node version must be a string.")
+    version = value.strip()
+    if not version or len(version) > 200 or any(ord(character) < 32 for character in version):
+        raise ManagerApiError("Registry node version is invalid.")
+    return version
+
+
+def _validate_git_commit(value: Any) -> str:
+    if not isinstance(value, str) or not _GIT_COMMIT_PATTERN.fullmatch(value.strip()):
+        raise ManagerApiError("Git node commit is invalid.")
+    return value.strip().lower()
+
+
 def validate_node_restore_manifest(value: Any) -> dict[str, Any]:
     manifest = _require_object(value, "Node restore manifest")
     if manifest.get("format_version") != MANIFEST_VERSION:
@@ -65,7 +81,10 @@ def validate_node_restore_manifest(value: Any) -> dict[str, Any]:
         if node_id in registry_ids:
             raise ManagerApiError(f"Duplicate registry node id: {node_id}")
         registry_ids.add(node_id)
-        registry_nodes.append({"id": node_id})
+        normalized_entry = {"id": node_id}
+        if "version" in entry:
+            normalized_entry["version"] = _validate_recorded_version(entry["version"])
+        registry_nodes.append(normalized_entry)
 
     git_nodes: list[dict[str, str]] = []
     git_destinations: set[str] = set()
@@ -80,6 +99,8 @@ def validate_node_restore_manifest(value: Any) -> dict[str, Any]:
         normalized_entry = {"url": url}
         if "folder" in entry:
             normalized_entry["folder"] = folder
+        if "commit" in entry:
+            normalized_entry["commit"] = _validate_git_commit(entry["commit"])
         git_nodes.append(normalized_entry)
 
     unmanaged_nodes: list[dict[str, str]] = []
@@ -119,6 +140,15 @@ async def collect_node_restore_inventory(
                 entry["git_url"] = validate_git_url(str(result.get("stdout", "")))
             except Exception as error:  # noqa: BLE001 - keep the rest of the inventory usable.
                 entry["git_error"] = str(error)
+            try:
+                result = await run_command(
+                    command_args("git", "rev-parse", "HEAD"),
+                    repository,
+                    timeout=60,
+                )
+                entry["git_commit"] = _validate_git_commit(result.get("stdout"))
+            except Exception as error:  # noqa: BLE001 - the URL remains useful without commit metadata.
+                entry["git_commit_error"] = str(error)
         nodes.append(entry)
     return {"nodes": nodes}
 

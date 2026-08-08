@@ -10,10 +10,17 @@ def test_validate_manifest_keeps_only_explicit_git_folder():
     result = manager_restore.validate_node_restore_manifest(
         {
             "format_version": 1,
-            "registry_nodes": [{"id": "registry-node"}],
+            "registry_nodes": [{"id": "registry-node", "version": "1.2.3"}],
             "git_nodes": [
-                {"url": "https://github.com/example/default-name.git"},
-                {"url": "https://github.com/example/original.git", "folder": "CustomFolder"},
+                {
+                    "url": "https://github.com/example/default-name.git",
+                    "commit": "1111111111111111111111111111111111111111",
+                },
+                {
+                    "url": "https://github.com/example/original.git",
+                    "folder": "CustomFolder",
+                    "commit": "2222222222222222222222222222222222222222",
+                },
             ],
             "unmanaged_nodes": [{"folder": "로컬 노드"}],
         }
@@ -21,10 +28,17 @@ def test_validate_manifest_keeps_only_explicit_git_folder():
 
     assert result == {
         "format_version": 1,
-        "registry_nodes": [{"id": "registry-node"}],
+        "registry_nodes": [{"id": "registry-node", "version": "1.2.3"}],
         "git_nodes": [
-            {"url": "https://github.com/example/default-name.git"},
-            {"url": "https://github.com/example/original.git", "folder": "CustomFolder"},
+            {
+                "url": "https://github.com/example/default-name.git",
+                "commit": "1111111111111111111111111111111111111111",
+            },
+            {
+                "url": "https://github.com/example/original.git",
+                "folder": "CustomFolder",
+                "commit": "2222222222222222222222222222222222222222",
+            },
         ],
         "unmanaged_nodes": [{"folder": "로컬 노드"}],
     }
@@ -59,7 +73,9 @@ def test_collect_inventory_reads_git_origin_and_keeps_unmanaged_folders(tmp_path
 
     async def fake_run_command(args, cwd, timeout=600):
         calls.append((args, cwd, timeout))
-        return {"stdout": "https://github.com/example/GitNode.git"}
+        if args[1:3] == ["config", "--get"]:
+            return {"stdout": "https://github.com/example/GitNode.git"}
+        return {"stdout": "1234567890abcdef1234567890abcdef12345678"}
 
     result = asyncio.run(
         manager_restore.collect_node_restore_inventory(
@@ -72,11 +88,18 @@ def test_collect_inventory_reads_git_origin_and_keeps_unmanaged_folders(tmp_path
 
     assert result == {
         "nodes": [
-            {"folder": "GitNode", "git_url": "https://github.com/example/GitNode.git"},
+            {
+                "folder": "GitNode",
+                "git_url": "https://github.com/example/GitNode.git",
+                "git_commit": "1234567890abcdef1234567890abcdef12345678",
+            },
             {"folder": "LocalNode"},
         ]
     }
-    assert calls == [(["git", "config", "--get", "remote.origin.url"], git_node, 60)]
+    assert calls == [
+        (["git", "config", "--get", "remote.origin.url"], git_node, 60),
+        (["git", "rev-parse", "HEAD"], git_node, 60),
+    ]
 
 
 def test_restore_installs_latest_nodes_clones_git_and_requests_stopped_dependency_sync(tmp_path):

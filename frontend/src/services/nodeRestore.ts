@@ -3,8 +3,8 @@ import { createMetadataCache } from "./cnrMetadata.ts"
 
 export type NodeRestoreManifest = JsonObject & {
   format_version: 1
-  registry_nodes: Array<{ id: string }>
-  git_nodes: Array<{ url: string, folder?: string }>
+  registry_nodes: Array<{ id: string, version?: string }>
+  git_nodes: Array<{ url: string, folder?: string, commit?: string }>
   unmanaged_nodes: Array<{ folder: string }>
 }
 
@@ -37,8 +37,8 @@ export function buildNodeRestoreManifest(installedResponse: unknown, inventoryRe
   const metadata = createMetadataCache(installedResponse)
   const rawNodes = asRecord(inventoryResponse)?.nodes
   const nodes = Array.isArray(rawNodes) ? rawNodes : []
-  const registryNodes = new Map<string, { id: string }>()
-  const gitNodes: Array<{ url: string, folder?: string }> = []
+  const registryNodes = new Map<string, { id: string, version?: string }>()
+  const gitNodes: Array<{ url: string, folder?: string, commit?: string }> = []
   const unmanagedNodes: Array<{ folder: string }> = []
 
   for (const rawNode of nodes) {
@@ -51,13 +51,20 @@ export function buildNodeRestoreManifest(installedResponse: unknown, inventoryRe
     const lowercasePack = metadata.lowercasePackages.get(folder.toLowerCase())
     const pack = exactPack ?? (lowercasePack === null ? undefined : lowercasePack)
     if (pack?.cnrId) {
-      registryNodes.set(pack.cnrId, { id: pack.cnrId })
+      registryNodes.set(pack.cnrId, {
+        id: pack.cnrId,
+        ...(pack.version ? { version: pack.version } : {}),
+      })
       continue
     }
 
     const url = typeof node?.git_url === "string" ? node.git_url.trim() : ""
     if (url) {
-      const gitNode: { url: string, folder?: string } = { url }
+      const commit = typeof node?.git_commit === "string" ? node.git_commit.trim() : ""
+      const gitNode: { url: string, folder?: string, commit?: string } = {
+        url,
+        ...(commit ? { commit } : {}),
+      }
       if (folder !== inferredGitFolder(url)) {
         gitNode.folder = folder
       }
@@ -88,8 +95,8 @@ export function parseNodeRestoreManifest(text: string): NodeRestoreManifest {
   return {
     ...manifest,
     format_version: 1,
-    registry_nodes: manifest.registry_nodes as Array<{ id: string }>,
-    git_nodes: manifest.git_nodes as Array<{ url: string, folder?: string }>,
+    registry_nodes: manifest.registry_nodes as Array<{ id: string, version?: string }>,
+    git_nodes: manifest.git_nodes as Array<{ url: string, folder?: string, commit?: string }>,
     unmanaged_nodes: Array.isArray(manifest.unmanaged_nodes)
       ? manifest.unmanaged_nodes as Array<{ folder: string }>
       : [],
