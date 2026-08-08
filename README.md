@@ -14,7 +14,7 @@ This custom node pack is primarily maintained as a personal-use replacement for
 
 ## Features
 
-
+![Panel Preview](./assets/panel.webp)
 
 - Install a custom node directly from a Git URL.
 - Update ComfyUI and Git-installed custom nodes without enabling the legacy Manager UI.
@@ -31,6 +31,9 @@ This custom node pack is primarily maintained as a personal-use replacement for
 
 ## Requirements
 
+- [`comfy-cli`](https://docs.comfy.org/comfy-cli/getting-started), with the `comfy` command available on `PATH` (in `venv`).
+- Git available on `PATH` for Git URL installation, updates, and restore manifests.
+- ComfyUI-Manager enabled for Manager cache, snapshot, and Registry metadata features.
 
 ## Install
 
