@@ -22,11 +22,6 @@ jobs:
         with:
           python-version-file: ".python-version"
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
@@ -39,27 +34,17 @@ jobs:
       - name: Install Node dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Sync Python dependencies
-        run: uv sync --locked --group dev
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Run unit tests
-        run: pnpm test:unit
-
       - name: Build frontend
         run: pnpm build
 
-      - name: Verify tag and package versions
+      - name: Verify tag and project version
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: >-
-          python -c "import json, os, pathlib, tomllib;
+          python -c "import os, pathlib, tomllib;
           expected = os.environ['RELEASE_VERSION'].removeprefix('v');
           project = tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'];
-          package = json.loads(pathlib.Path('package.json').read_text(encoding='utf-8'))['version'];
-          assert project == expected == package, f'version mismatch: tag={expected}, pyproject={project}, package={package}'"
+          assert project == expected, f'version mismatch: tag={expected}, pyproject={project}'"
 
       - name: Verify required release files
         run: |

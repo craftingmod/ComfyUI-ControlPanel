@@ -60,7 +60,6 @@ def test_root_packaging_metadata_matches_layout():
     pyproject = tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8"))
     package_json = json.loads(PACKAGE_JSON_PATH.read_text(encoding="utf-8"))
     tool_comfy = pyproject["tool"]["comfy"]
-    bump_files = pyproject["tool"]["bumpversion"]["files"]
 
     assert pyproject["project"]["name"] == "comfyui-controlpanel"
     assert pyproject["project"]["description"] == (
@@ -72,7 +71,6 @@ def test_root_packaging_metadata_matches_layout():
     assert tool_comfy["DisplayName"] == "ComfyUI-ControlPanel"
     assert tool_comfy["includes"] == ["dist"]
     assert tool_comfy["requires-comfyui"] == ">=0.28.0"
-    assert any(file_config["filename"] == "package.json" for file_config in bump_files)
 
 
 def test_root_workspace_surface_matches_expectations():
@@ -107,9 +105,6 @@ def test_ci_workflows_use_repo_command_surface():
     assert "v*.*.*" in release_workflow
     assert "node-version: 24" in release_workflow
     assert "pnpm install --frozen-lockfile" in release_workflow
-    assert "uv sync --locked --group dev" in release_workflow
-    assert "pnpm typecheck" in release_workflow
-    assert "pnpm test:unit" in release_workflow
     assert "pnpm build" in release_workflow
     assert "test -f dist/index.js" in release_workflow
     assert "shell: pwsh" in release_workflow

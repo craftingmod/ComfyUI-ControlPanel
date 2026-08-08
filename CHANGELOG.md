@@ -2,8 +2,11 @@
 
 ## Unreleased
 
-## v1.2.2
 
+## v1.2.4
+
+- Made `pyproject.toml` the single release-version source and documented `uv version` for synchronized lockfile updates.
+- Reduced tag publishing to frontend build and release-artifact validation; unit suites remain available through the separate CI workflow.
 - Preserved the generated `dist` directory when publishing to the Comfy Registry so Registry and GitHub release archives include the frontend bundle.
 
 ## v1.2.0

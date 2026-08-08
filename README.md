@@ -144,12 +144,18 @@ GitHub Release zip. Add a repository Actions secret named
 `REGISTRY_ACCESS_TOKEN` containing the publishing key for the `alyac` Registry
 publisher before creating a release tag.
 
-Keep the version in `pyproject.toml` and `package.json` synchronized with the
-tag, then create and push it:
+Use uv to update the version in `pyproject.toml` and `uv.lock` together:
 
 ```bash
-git tag v1.1.0
-git push origin v1.1.0
+uv version --bump patch
+```
+
+The private frontend `package.json` intentionally has no independent version.
+After committing the version change, create and push a matching tag:
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
 To create the same installable archive locally after `pnpm build`:
@@ -164,12 +170,11 @@ The archive is written to `release/` and contains a single
 The release workflow:
 
 1. Checks out the tagged source.
-2. Installs dependencies with Node.js 24, pnpm, and uv.
-3. Runs typecheck and unit tests.
-4. Builds the frontend.
-5. Verifies that the tag, Python package, and frontend package versions match.
-6. Verifies that `dist/index.js` exists and publishes the package to the Comfy Registry.
-7. Runs `scripts/New-CustomNodesZip.ps1` and uploads
+2. Installs frontend dependencies with Node.js 24 and pnpm.
+3. Builds the frontend, including its TypeScript check.
+4. Verifies that the tag matches the version in `pyproject.toml`.
+5. Verifies that `dist/index.js` exists and publishes the package to the Comfy Registry.
+6. Runs `scripts/New-CustomNodesZip.ps1` and uploads
    `ComfyUI-ControlPanel-vX.Y.Z.zip` to the GitHub Release.
 
 ### About `dist/index.js` in tag releases

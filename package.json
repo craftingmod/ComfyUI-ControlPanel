@@ -1,12 +1,12 @@
 {
   "name": "comfyui-controlpanel",
-  "version": "1.2.3",
   "private": true,
   "description": "A lightweight ComfyUI control panel that restores legacy local administration features no longer available in ComfyUI Manager.",
   "type": "module",
   "scripts": {
     "dev": "tsc --noEmit -p frontend/tsconfig.json && vite build --watch --config frontend/vite.config.ts",
     "build": "tsc --noEmit -p frontend/tsconfig.json && vite build --config frontend/vite.config.ts",
+    "bump:version": "uv version --bump patch",
     "eslint": "eslint ./frontend",
     "eslint:fix": "eslint ./frontend --fix",
     "typecheck": "tsc --noEmit -p frontend/tsconfig.json",
