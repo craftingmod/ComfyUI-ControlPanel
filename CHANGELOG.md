@@ -2,10 +2,13 @@
 
 ## Unreleased
 
+- Removed the non-functional Playwright/ComfyUI E2E harness and simplified `pnpm test` to the unit suites.
+- Added tag-based Comfy Registry publishing, package version checks, and a runtime-focused `.comfyignore`.
 - Added browser-downloaded custom-node restore manifests using compact Registry IDs and Git URLs.
 - Recorded installed Registry versions and current Git commits in node restore manifests while keeping restoration latest-version based.
 - Added browser-uploaded latest-version restoration through `comfy node install` and `git clone`.
-- Added a post-restore notice to close ComfyUI and run `comfy node uv-sync` instead of modifying the active runtime.
+- Added dependency-free Registry restoration and a post-restore notice to close ComfyUI and run `comfy node uv-sync` instead of modifying the active runtime.
+- Removed obsolete direct `uv pip install` update paths; Git node updates now request a stopped `comfy node uv-sync` dependency pass.
 - Added informational unmanaged-folder entries for custom nodes that cannot be restored automatically.
 
 ## v1.1.3 - Changes since v1.0.1

@@ -1,0 +1,32 @@
+# Development environments and caches
+.agents/
+.codex/
+.git/
+.github/
+.pytest_cache/
+.test-tmp/
+.uv-cache/
+.venv/
+coverage/
+node_modules/
+release/
+
+# Development source and tooling
+docs/
+frontend/
+scripts/
+tests/
+.python-version
+AGENTS.md
+CLAUDE.md
+PLAN.md
+cnr-id-injection-spec.md
+conftest.py
+eslint.config.ts
+package.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
+skills-lock.json
+uv.lock
+
+# The built frontend remains included through tool.comfy.includes.

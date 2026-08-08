@@ -37,11 +37,23 @@ This custom node pack is primarily maintained as a personal-use replacement for
 
 ## Install
 
+### From the Comfy Registry
+
+Install the published package through ComfyUI Manager, or target the current
+ComfyUI workspace with the Comfy CLI:
+
+```bash
+comfy node install comfyui-controlpanel
+```
+
+Restart ComfyUI after installation.
+
 ### From a GitHub Release
 
-For normal use, install from the GitHub Release zip attached to a version tag,
-not from GitHub's automatic source archive. The release zip includes the built
-frontend file at `dist/index.js`, which ComfyUI needs at runtime.
+As a manual alternative, install from the GitHub Release zip attached to a
+version tag, not from GitHub's automatic source archive. The release zip
+includes the built frontend file at `dist/index.js`, which ComfyUI needs at
+runtime.
 
 For example, for `v1.1.0`, download the attached release asset named like:
 
@@ -83,6 +95,14 @@ only to localhost clients such as `localhost`, `127.0.0.1`, and `::1`. This is
 intentional because the panel can install Git repositories, update custom nodes,
 restore snapshots, open local folders, and restart ComfyUI.
 
+Commands that install or update code, restore state, or restart ComfyUI run only
+after an explicit user action in the panel; loading a workflow does not execute
+them. External commands are launched with argument arrays rather than shell
+command strings. Custom nodes are installed without dependencies while ComfyUI
+is running, and dependency reconciliation is delegated to `comfy node uv-sync`
+after ComfyUI is closed. ComfyUI core updates and their requirements are
+delegated to the official Comfy CLI updater.
+
 To allow remote clients on a trusted private deployment, set this in the
 ControlPanel config file under the ComfyUI user directory:
 
@@ -101,10 +121,9 @@ pnpm dev
 pnpm typecheck
 pnpm test
 pnpm test:unit
-pnpm test:e2e
 ```
 
-`pnpm test:e2e` builds the frontend, provisions a scoped ComfyUI install, and runs the Playwright smoke suite.
+`pnpm test` runs the frontend and backend unit test suites.
 
 The backend is split by responsibility:
 
@@ -120,10 +139,13 @@ The backend is split by responsibility:
 
 ## Release
 
-Publishing to the Comfy Registry is intentionally not automated. Releases are
-GitHub Release zip artifacts built from version tags.
+Version tags publish the same built extension to the Comfy Registry and to a
+GitHub Release zip. Add a repository Actions secret named
+`REGISTRY_ACCESS_TOKEN` containing the publishing key for the `alyac` Registry
+publisher before creating a release tag.
 
-Create and push a version tag to publish an installable zip:
+Keep the version in `pyproject.toml` and `package.json` synchronized with the
+tag, then create and push it:
 
 ```bash
 git tag v1.1.0
@@ -145,15 +167,17 @@ The release workflow:
 2. Installs dependencies with Node.js 24, pnpm, and uv.
 3. Runs typecheck and unit tests.
 4. Builds the frontend.
-5. Verifies that `dist/index.js` exists.
-6. Runs `scripts/New-CustomNodesZip.ps1` and uploads
+5. Verifies that the tag, Python package, and frontend package versions match.
+6. Verifies that `dist/index.js` exists and publishes the package to the Comfy Registry.
+7. Runs `scripts/New-CustomNodesZip.ps1` and uploads
    `ComfyUI-ControlPanel-vX.Y.Z.zip` to the GitHub Release.
 
 ### About `dist/index.js` in tag releases
 
-`dist/` is intentionally ignored by Git, so GitHub's automatic source archives
-for tags do not contain `dist/index.js`. Use the attached release zip instead;
-it is created after `pnpm build` and includes the required `dist/index.js` file.
+`dist/` is intentionally ignored by Git. The Registry workflow builds it before
+publishing, and `[tool.comfy].includes` forces it into the Registry package. The
+GitHub automatic source archives still omit `dist/index.js`, so manual installs
+must use the attached release zip instead.
 
 The separate `CI` workflow is manual-only and can be run when an extra validation
 pass is useful before tagging.

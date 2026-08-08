@@ -5,26 +5,16 @@
 ```bash
 pnpm test
 pnpm test:unit
-pnpm test:e2e
 pnpm test:frontend
 pnpm test:backend
-pnpm setup:e2e
+pnpm test:watch
+pnpm test:coverage
 ```
 
 ## Coverage
 
-- `pnpm test` runs frontend unit tests, backend Python tests, and repo-local ComfyUI E2E.
-- `pnpm test:unit` runs the fast frontend and backend test lanes only.
-- `pnpm test:e2e` builds `dist/`, runs `pnpm setup:e2e`, starts scoped ComfyUI, and runs Playwright.
-- `pnpm setup:e2e` provisions Chromium, browser OS dependencies, and ComfyUI under `.e2e/`.
-
-## E2E Harness
-
-- ComfyUI is pinned to `v0.18.1`.
-- `comfy-cli` is pinned inside `.e2e/venv`.
-- The ComfyUI checkout and Python runtime live under `.e2e/comfyui`.
-- This repo is mounted into `.e2e/comfyui/custom_nodes/ComfyUI-ControlPanel`.
-- The harness is CPU-only so local and CI behavior are predictable.
-- The default test server port is `8199`; set `COMFYUI_E2E_PORT` if that port is busy.
-
-If the pin changes or the scoped install gets stale, delete `.e2e/` and rerun `pnpm setup:e2e`.
+- `pnpm test` and `pnpm test:unit` run the frontend and backend unit test suites.
+- `pnpm test:frontend` runs the Vitest frontend suite.
+- `pnpm test:backend` runs the pytest backend suite.
+- `pnpm test:watch` runs Vitest in watch mode.
+- `pnpm test:coverage` generates frontend unit-test coverage.

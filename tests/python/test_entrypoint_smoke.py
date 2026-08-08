@@ -9,20 +9,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT_PATH = REPO_ROOT / "__init__.py"
 PACKAGE_JSON_PATH = REPO_ROOT / "package.json"
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
-GITIGNORE_PATH = REPO_ROOT / ".gitignore"
 PNPM_WORKSPACE_PATH = REPO_ROOT / "pnpm-workspace.yaml"
 CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ci.yaml"
 RELEASE_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "release.yaml"
 README_PATH = REPO_ROOT / "README.md"
 AGENTS_PATH = REPO_ROOT / "AGENTS.md"
 TESTING_DOC_PATH = REPO_ROOT / "docs" / "TESTING.md"
-E2E_CONFIG_PATH = REPO_ROOT / "e2e.config.mjs"
-SETUP_E2E_SCRIPT_PATH = REPO_ROOT / "scripts" / "setup-e2e-comfy.mjs"
 PACKAGE_ZIP_SCRIPT_PATH = REPO_ROOT / "scripts" / "New-CustomNodesZip.ps1"
-PLAYWRIGHT_CONFIG_PATH = REPO_ROOT / "playwright.config.ts"
-E2E_SETUP_PATH = REPO_ROOT / "tests" / "e2e" / "global.setup.ts"
-E2E_TEARDOWN_PATH = REPO_ROOT / "tests" / "e2e" / "global.teardown.ts"
-E2E_SMOKE_SPEC_PATH = REPO_ROOT / "tests" / "e2e" / "smoke.spec.ts"
 
 
 def test_control_panel_entrypoint_exports_expected_symbols_via_package_loader():
@@ -57,14 +50,10 @@ def test_root_package_surface_matches_frontend_backend_split():
         "vite build --config frontend/vite.config.ts"
     )
     assert scripts["typecheck"] == "tsc --noEmit -p frontend/tsconfig.json"
-    assert scripts["test"] == "pnpm test:unit && pnpm test:e2e"
+    assert scripts["test"] == "pnpm test:unit"
     assert scripts["test:frontend"] == "vitest run --config frontend/vitest.config.ts"
     assert scripts["test:backend"] == "uv run pytest tests/python tests/backend -q"
     assert scripts["test:unit"] == "pnpm test:frontend && pnpm test:backend"
-    assert scripts["setup:e2e"] == (
-        "playwright install --with-deps chromium && node scripts/setup-e2e-comfy.mjs"
-    )
-    assert scripts["test:e2e"] == "pnpm build && pnpm setup:e2e && playwright test"
 
 
 def test_root_packaging_metadata_matches_layout():
@@ -77,29 +66,16 @@ def test_root_packaging_metadata_matches_layout():
     assert pyproject["project"]["dependencies"] == ["aiohttp>=3.9"]
     assert tool_comfy["DisplayName"] == "ComfyUI-ControlPanel"
     assert tool_comfy["includes"] == ["dist"]
-    assert tool_comfy["requires-comfyui"] == ">=0.31.1"
-    assert any(file_config["filename"] == "frontend/src/index.ts" for file_config in bump_files)
+    assert tool_comfy["requires-comfyui"] == ">=0.28.0"
+    assert any(file_config["filename"] == "package.json" for file_config in bump_files)
 
 
-def test_root_gitignore_and_workspace_surface_match_harness_expectations():
-    gitignore = GITIGNORE_PATH.read_text(encoding="utf-8")
+def test_root_workspace_surface_matches_expectations():
     pnpm_workspace = PNPM_WORKSPACE_PATH.read_text(encoding="utf-8")
 
-    assert ".e2e/" in gitignore
-    assert "test-results/" in gitignore
-    assert "playwright-report/" in gitignore
     assert PNPM_WORKSPACE_PATH.exists()
     assert "packages:\n  - ." in pnpm_workspace
     assert 'verifyDepsBeforeRun: "warn"' in pnpm_workspace
-
-
-def test_e2e_harness_files_exist():
-    assert E2E_CONFIG_PATH.is_file()
-    assert SETUP_E2E_SCRIPT_PATH.is_file()
-    assert PLAYWRIGHT_CONFIG_PATH.is_file()
-    assert E2E_SETUP_PATH.is_file()
-    assert E2E_TEARDOWN_PATH.is_file()
-    assert E2E_SMOKE_SPEC_PATH.is_file()
 
 
 def test_release_packaging_script_defines_installable_custom_nodes_archive():
@@ -122,7 +98,6 @@ def test_ci_workflows_use_repo_command_surface():
     assert "uv sync --locked --group dev" in ci_workflow
     assert "pnpm typecheck" in ci_workflow
     assert "pnpm test:unit" in ci_workflow
-    assert "pnpm test:e2e" in ci_workflow
 
     assert "v*.*.*" in release_workflow
     assert "node-version: 24" in release_workflow
@@ -135,7 +110,8 @@ def test_ci_workflows_use_repo_command_surface():
     assert "shell: pwsh" in release_workflow
     assert "./scripts/New-CustomNodesZip.ps1" in release_workflow
     assert "softprops/action-gh-release@v2" in release_workflow
-    assert "Comfy-Org/publish-node-action" not in release_workflow
+    assert "Comfy-Org/publish-node-action" in release_workflow
+    assert "REGISTRY_ACCESS_TOKEN" in release_workflow
 
 
 def test_docs_explain_the_slim_command_surface():
@@ -145,7 +121,7 @@ def test_docs_explain_the_slim_command_surface():
 
     assert "pnpm install" in readme
     assert "uv sync --locked --group dev" in readme
-    assert "pnpm test:e2e" in readme
+    assert "pnpm test:unit" in readme
     assert "docs/TESTING.md" in readme
     assert "ComfyUI Custom Node Template" not in readme
     assert "Customize This Template" not in readme
@@ -155,8 +131,6 @@ def test_docs_explain_the_slim_command_surface():
     assert "pnpm test" in agents
     assert "docs/TESTING.md" in agents
 
-    assert "pnpm setup:e2e" in testing_doc
     assert "pnpm test" in testing_doc
-    assert ".e2e/" in testing_doc
-    assert "v0.18.1" in testing_doc
-    assert "COMFYUI_E2E_PORT" in testing_doc
+    assert "pnpm test:frontend" in testing_doc
+    assert "pnpm test:backend" in testing_doc

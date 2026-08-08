@@ -10,12 +10,10 @@
     "eslint": "eslint ./frontend",
     "eslint:fix": "eslint ./frontend --fix",
     "typecheck": "tsc --noEmit -p frontend/tsconfig.json",
-    "test": "pnpm test:unit && pnpm test:e2e",
-    "setup:e2e": "playwright install --with-deps chromium && node scripts/setup-e2e-comfy.mjs",
+    "test": "pnpm test:unit",
     "test:frontend": "vitest run --config frontend/vitest.config.ts",
     "test:backend": "uv run pytest tests/python tests/backend -q",
     "test:unit": "pnpm test:frontend && pnpm test:backend",
-    "test:e2e": "pnpm build && pnpm setup:e2e && playwright test",
     "test:watch": "vitest --config frontend/vitest.config.ts",
     "test:coverage": "vitest run --coverage --config frontend/vitest.config.ts"
   },
@@ -34,7 +32,6 @@
   "devDependencies": {
     "@comfyorg/comfyui-frontend-types": "^1.45.20",
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.61.1",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@types/node": "^24.13.2",
     "@vitest/coverage-v8": "^4.1.9",
