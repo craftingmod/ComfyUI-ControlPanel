@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Added browser-downloaded custom-node restore manifests using compact Registry IDs and Git URLs.
+- Recorded installed Registry versions and current Git commits in node restore manifests while keeping restoration latest-version based.
 - Added browser-uploaded latest-version restoration through `comfy node install` and `git clone`.
 - Added a post-restore notice to close ComfyUI and run `comfy node uv-sync` instead of modifying the active runtime.
 - Added informational unmanaged-folder entries for custom nodes that cannot be restored automatically.

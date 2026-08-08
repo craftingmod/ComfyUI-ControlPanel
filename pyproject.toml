@@ -16,13 +16,13 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/craftingmod/comfyui-controlpanel"
+Repository = "https://github.com/craftingmod/ComfyUI-ControlPanel"
 
 [tool.comfy]
-PublisherId = "craftingmod"
+PublisherId = "alyac"
 DisplayName = "ComfyUI-ControlPanel"
-Icon = "https://raw.githubusercontent.com/craftingmod/comfyui-controlpanel/main/assets/icon.svg"
-requires-comfyui = ">=0.31.1"
+Icon = "https://cdn.jsdelivr.net/gh/craftingmod/ComfyUI-ControlPanel/assets/icon.svg"
+requires-comfyui = ">=0.28.0"
 includes = ['dist']
 
 [tool.bumpversion]
