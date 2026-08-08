@@ -1,6 +1,6 @@
 # ComfyUI-ControlPanel
 
-![UI Preview](./docs/static/preview.png)
+![Icon](./assets/icon.svg)
 
 ComfyUI-ControlPanel restores a few practical control panel workflows that are
 not exposed in the modern ComfyUI Manager V4 UI unless the legacy UI is enabled.
@@ -14,9 +14,10 @@ This custom node pack is primarily maintained as a personal-use replacement for
 
 ## Features
 
+
+
 - Install a custom node directly from a Git URL.
 - Update ComfyUI and Git-installed custom nodes without enabling the legacy Manager UI.
-- Sync custom node dependencies through `comfy node uv-sync`.
 - Replace the Manager repository cache with a safer and more efficient cache path.
 - Update or rebuild the Manager cache when Replace Manager Repository Data is enabled.
 - Save and restore Manager snapshots through the Comfy CLI.
@@ -30,9 +31,6 @@ This custom node pack is primarily maintained as a personal-use replacement for
 
 ## Requirements
 
-- ComfyUI 0.31.1 or newer.
-- ComfyUI Frontend 1.48.7 or newer.
-- ComfyUI Manager 4.2.2 or newer for custom-node package metadata. Core node metadata remains available from ComfyUI itself.
 
 ## Install
 
