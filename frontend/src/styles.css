@@ -71,6 +71,11 @@
   width: min(900px, calc(100vw - 32px));
 }
 
+.cp-update-check-modal {
+  width: min(1100px, calc(100vw - 32px));
+  overflow: hidden;
+}
+
 .cp-header {
   display: flex;
   align-items: center;
@@ -254,6 +259,26 @@
   color: #d6dae2;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.cp-log,
+.cp-update-check-output {
+  scrollbar-gutter: stable;
+}
+
+.cp-update-check-output {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: min(720px, calc(100vh - 160px));
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 6px;
+  background: #101115;
+  color: #d6dae2;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  white-space: pre;
 }
 
 .cp-environment-output {

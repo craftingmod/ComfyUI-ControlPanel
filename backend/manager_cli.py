@@ -7,15 +7,6 @@ from typing import Any
 from .manager_process import ManagerApiError
 
 
-def sync_dependencies_response(result: dict[str, Any], protected_packages: set[str]) -> dict[str, Any]:
-    return {
-        "provider": "comfy-cli",
-        "restart_required": True,
-        "protected_packages": sorted(protected_packages),
-        "result": result,
-    }
-
-
 def update_comfyui_response(result: dict[str, Any]) -> dict[str, Any]:
     return {
         "provider": "comfy-cli",

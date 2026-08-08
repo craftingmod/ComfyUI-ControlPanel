@@ -23,7 +23,7 @@ export const API_ROUTES = {
   UPDATE_CUSTOM_NODES: `${API_PREFIX}/update/custom-nodes`,
   REFRESH_MANAGER_CACHE: `${API_PREFIX}/manager-cache/refresh`,
   REBUILD_MANAGER_CACHE: `${API_PREFIX}/manager-cache/rebuild`,
-  SYNC_DEPENDENCIES: `${API_PREFIX}/deps/uv-sync`,
+  CHECK_UPDATES: `${API_PREFIX}/updates/check`,
   UPDATE_COMFYUI: `${API_PREFIX}/update/comfyui`,
   UPDATE_STATUS: `${API_PREFIX}/update/status`,
   RESTART: `${API_PREFIX}/restart`,

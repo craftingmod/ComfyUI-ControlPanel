@@ -1278,27 +1278,85 @@ def test_update_git_repository_uses_fast_forward_only(monkeypatch, tmp_path):
     assert result["result"]["stdout"] == "Already up to date."
 
 
-def test_dependency_sync_uses_comfy_cli_uv_sync(monkeypatch, tmp_path):
+def test_check_for_updates_reports_comfyui_and_git_nodes_on_one_line(monkeypatch, tmp_path):
     calls = []
+    node_repo = tmp_path / "custom_nodes" / "ControlPanel"
+    node_repo.mkdir(parents=True)
 
-    async def fake_run_command_stream(args, cwd, timeout=1800, on_line=None):
+    async def fake_run_command(args, cwd, timeout=600):
         calls.append((args, cwd, timeout))
-        return {"returncode": 0}
+        command = args[1:]
+        if command == ["tag", "--list"]:
+            return {"returncode": 0, "stdout": "v0.3.50\nv0.3.52"}
+        if command[:2] == ["describe", "--tags"]:
+            return {"returncode": 0, "stdout": "v0.3.50"}
+        if command == ["branch", "--show-current"]:
+            return {"returncode": 0, "stdout": "dev"}
+        if command[:2] == ["rev-parse", "--abbrev-ref"]:
+            return {"returncode": 0, "stdout": "upstream/release/dev"}
+        if command[-2:] == ["--format=%cI%x09%h", "HEAD"]:
+            return {"returncode": 0, "stdout": "2026-08-05T14:20:00+00:00\ta1b2c3d"}
+        if command[-2:] == ["--format=%cI%x09%h", "FETCH_HEAD"]:
+            return {"returncode": 0, "stdout": "2026-08-08T09:10:00+00:00\te4f5g6h"}
+        if command[:3] == ["rev-list", "--left-right", "--count"]:
+            return {"returncode": 0, "stdout": "0\t3"}
+        return {"returncode": 0, "stdout": ""}
 
     monkeypatch.setattr(manager_api, "COMFYUI_ROOT", tmp_path)
+    monkeypatch.setattr(manager_api, "discover_git_repositories", lambda: [node_repo])
     monkeypatch.setattr(manager_api, "_find_executable", lambda command: f"/bin/{command}")
-    monkeypatch.setattr(manager_api, "run_command_stream", fake_run_command_stream)
+    monkeypatch.setattr(manager_api, "run_command", fake_run_command)
+    logs = []
 
-    result = asyncio.run(manager_api.sync_dependencies_with_comfy_cli())
+    result = asyncio.run(manager_api.check_for_updates(logs.append))
 
-    assert calls == [
-        (
-            ["/bin/comfy", "--workspace", str(tmp_path), "node", "uv-sync"],
-            tmp_path,
-            3600,
-        )
+    assert logs[0] == "ComfyUI: Update available (v0.3.50 -> v0.3.52)"
+    assert logs[1].startswith("ControlPanel [dev]: 3 commits behind (")
+    assert "a1b2c3d ->" in logs[1]
+    assert logs[1].endswith("e4f5g6h)")
+    assert result["restart_required"] is False
+    assert result["comfyui"]["current"] == "v0.3.50"
+    assert result["nodes"][0]["behind"] == 3
+    assert result["nodes"][0]["upstream"] == "upstream/release/dev"
+    assert (["/bin/git", "fetch", "--quiet", "upstream", "release/dev"], node_repo, 1200) in calls
+
+
+def test_check_for_updates_handles_missing_fallback_branch_and_detached_head(monkeypatch, tmp_path):
+    node_repo = tmp_path / "custom_nodes" / "LegacyNode"
+    node_repo.mkdir(parents=True)
+    detached_repo = tmp_path / "custom_nodes" / "DetachedNode"
+    detached_repo.mkdir(parents=True)
+
+    async def fake_run_command(args, cwd, timeout=600):
+        command = args[1:]
+        if command == ["tag", "--list"]:
+            return {"returncode": 0, "stdout": "v0.3.52"}
+        if command[:2] == ["describe", "--tags"]:
+            return {"returncode": 0, "stdout": "v0.3.52"}
+        if command == ["branch", "--show-current"]:
+            branch = "" if cwd == detached_repo else "legacy"
+            return {"returncode": 0, "stdout": branch}
+        if command[:2] == ["rev-parse", "--abbrev-ref"]:
+            raise manager_api.ManagerApiError("fatal: no upstream configured")
+        if cwd == node_repo and command[:2] == ["fetch", "--quiet"]:
+            raise manager_api.ManagerApiError("fatal: couldn't find remote ref legacy")
+        return {"returncode": 0, "stdout": ""}
+
+    monkeypatch.setattr(manager_api, "COMFYUI_ROOT", tmp_path)
+    monkeypatch.setattr(manager_api, "discover_git_repositories", lambda: [node_repo, detached_repo])
+    monkeypatch.setattr(manager_api, "_find_executable", lambda command: f"/bin/{command}")
+    monkeypatch.setattr(manager_api, "run_command", fake_run_command)
+    logs = []
+
+    result = asyncio.run(manager_api.check_for_updates(logs.append))
+
+    assert logs == [
+        "ComfyUI: Latest (v0.3.52)",
+        "LegacyNode [legacy]: Remote branch not found (origin/legacy)",
+        "DetachedNode: Detached HEAD",
     ]
-    assert result["protected_packages"] == ["torch", "torchaudio", "torchvision"]
+    assert result["nodes"][0]["status"] == "Remote branch not found (origin/legacy)"
+    assert result["nodes"][1]["status"] == "Detached HEAD"
 
 
 def test_update_comfyui_uses_comfy_cli_latest_version(monkeypatch, tmp_path):

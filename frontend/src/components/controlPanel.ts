@@ -35,6 +35,8 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
   let snapshotSelectEl: HTMLSelectElement | undefined
   let environmentModalEl: HTMLElement | undefined
   let environmentOutputEl: HTMLElement | undefined
+  let updateCheckModalEl: HTMLElement | undefined
+  let updateCheckOutputEl: HTMLPreElement | undefined
   let statusPollTimer: number | undefined
 
   function toast(severity: ToastSeverity, summary: string, detail: string): void {
@@ -234,20 +236,23 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     }
   }
 
-  async function refreshUpdateStatus(): Promise<UpdateJob | undefined> {
+  async function refreshUpdateStatus(jobRenderer: (job: UpdateJob) => void = renderJob): Promise<UpdateJob | undefined> {
     const data = await api.fetchJson(API_ROUTES.UPDATE_STATUS)
     const job = data.job
     if (!isUpdateJob(job)) {
       return undefined
     }
-    renderJob(job)
+    jobRenderer(job)
     return job
   }
 
-  function pollUpdateStatus(): void {
+  function pollUpdateStatus(
+    jobRenderer: (job: UpdateJob) => void = renderJob,
+    statusErrorHandler?: (message: string) => void,
+  ): void {
     stopPolling()
     statusPollTimer = window.setInterval(() => {
-      void refreshUpdateStatus()
+      void refreshUpdateStatus(jobRenderer)
         .then((job) => {
           if (job && !["queued", "running"].includes(job.status)) {
             stopPolling()
@@ -258,11 +263,18 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
           stopPolling()
           const message = error instanceof Error ? error.message : String(error)
           writeLog(`Status polling failed: ${message}`)
+          statusErrorHandler?.(message)
         })
     }, 1500)
   }
 
-  async function startUpdateJob(label: string, route: string, body: JsonObject = {}): Promise<void> {
+  async function startUpdateJob(
+    label: string,
+    route: string,
+    body: JsonObject = {},
+    jobRenderer: (job: UpdateJob) => void = renderJob,
+    statusErrorHandler?: (message: string) => void,
+  ): Promise<void> {
     writeLog(`${label} queued.`)
     debugLog(readBooleanSetting, `${label} request`, { route, body })
 
@@ -272,12 +284,13 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       if (!isUpdateJob(job)) {
         throw new Error("Update job response was missing job details.")
       }
-      renderJob(job)
+      jobRenderer(job)
       toast("info", "ComfyUI-ControlPanel", `${label} started.`)
-      pollUpdateStatus()
+      pollUpdateStatus(jobRenderer, statusErrorHandler)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       writeLog(`${label} failed to start: ${message}`)
+      statusErrorHandler?.(message)
       toast("error", "ComfyUI-ControlPanel", message)
     }
   }
@@ -288,6 +301,14 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
 
   function closeEnvironmentModal(): void {
     environmentModalEl?.remove()
+    environmentModalEl = undefined
+    environmentOutputEl = undefined
+  }
+
+  function closeUpdateCheckModal(): void {
+    updateCheckModalEl?.remove()
+    updateCheckModalEl = undefined
+    updateCheckOutputEl = undefined
   }
 
   function snapshotNamesFromResponse(data: JsonObject): string[] {
@@ -514,6 +535,39 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     }
   }
 
+  function renderUpdateCheckJob(job: UpdateJob): void {
+    if (!updateCheckOutputEl) {
+      return
+    }
+    const logs = job.logs.length > 0 ? job.logs.join("\n") : `${job.label} is ${job.status}.`
+    const error = job.error ? `\n\nError:\n${job.error}` : ""
+    updateCheckOutputEl.textContent = `${job.label} (${job.status})\n\n${logs}${error}`
+    window.requestAnimationFrame(() => {
+      if (updateCheckOutputEl) {
+        updateCheckOutputEl.scrollTop = updateCheckOutputEl.scrollHeight
+      }
+    })
+  }
+
+  function renderUpdateCheckError(message: string): void {
+    if (updateCheckOutputEl) {
+      updateCheckOutputEl.textContent = `Check for Updates failed.\n\n${message}`
+    }
+  }
+
+  async function showUpdateCheck(): Promise<void> {
+    closeUpdateCheckModal()
+    updateCheckModalEl = createUpdateCheckModal()
+    document.body.append(updateCheckModalEl)
+    await startUpdateJob(
+      "Check for Updates",
+      API_ROUTES.CHECK_UPDATES,
+      {},
+      renderUpdateCheckJob,
+      renderUpdateCheckError,
+    )
+  }
+
   async function restartComfyUI(): Promise<void> {
     const label = "Restart"
     const body = { confirm: true }
@@ -627,6 +681,44 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     return backdrop
   }
 
+  function createUpdateCheckModal(): HTMLElement {
+    ensureStyles()
+
+    const backdrop = document.createElement("div")
+    backdrop.className = "cp-backdrop"
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) {
+        closeUpdateCheckModal()
+      }
+    })
+
+    const panel = document.createElement("section")
+    panel.className = "cp-panel cp-modal cp-update-check-modal"
+    panel.setAttribute("role", "dialog")
+    panel.setAttribute("aria-modal", "true")
+    panel.setAttribute("aria-labelledby", "cp-update-check-title")
+
+    const header = document.createElement("div")
+    header.className = "cp-header"
+
+    const title = document.createElement("h2")
+    title.id = "cp-update-check-title"
+    title.className = "cp-title"
+    title.textContent = "Check for Updates"
+
+    const closeButton = createButton("×", closeUpdateCheckModal, "cp-button cp-close")
+    closeButton.setAttribute("aria-label", "Close")
+    header.append(title, closeButton)
+
+    updateCheckOutputEl = document.createElement("pre")
+    updateCheckOutputEl.className = "cp-update-check-output"
+    updateCheckOutputEl.textContent = "Preparing update check..."
+
+    panel.append(header, updateCheckOutputEl)
+    backdrop.append(panel)
+    return backdrop
+  }
+
   function createPanel(): HTMLElement {
     ensureStyles()
 
@@ -661,8 +753,8 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       createButton("Install via Git URL", () => {
         gitInstallModal.open()
       }),
-      createButton("Sync Dependencies", () => {
-        void startUpdateJob("Sync Dependencies", API_ROUTES.SYNC_DEPENDENCIES)
+      createButton("Check for Updates", () => {
+        void showUpdateCheck()
       }),
       createButton("Update ComfyUI", () => {
         void startUpdateJob("Update ComfyUI", API_ROUTES.UPDATE_COMFYUI)
@@ -782,6 +874,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     gitInstallModal.close()
     closeSnapshotRestoreModal()
     closeEnvironmentModal()
+    closeUpdateCheckModal()
     panelEl?.remove()
   }
 

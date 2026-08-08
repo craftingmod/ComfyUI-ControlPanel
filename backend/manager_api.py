@@ -57,7 +57,6 @@ API_PREFIX = "/control-panel"
 _ROUTES_REGISTERED = False
 _OPERATION_LOCK = asyncio.Lock()
 _MANAGER_CACHE_REFRESH_LOCK = threading.Lock()
-_TORCH_PACKAGES = {"torch", "torchvision", "torchaudio"}
 _CLEAR_TERMINAL_CSI = "\033[2J\033[H"
 _MANAGER_CACHE_FILES = (
     "custom-node-list.json",
@@ -787,10 +786,14 @@ async def update_git_nodes_with_git(on_line: Callable[[str], None] | None = None
     )
 
 
-async def sync_dependencies_with_comfy_cli(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
-    command = comfy_cli_command("node", "uv-sync")
-    result = await run_command_stream(command, COMFYUI_ROOT, timeout=3600, on_line=on_line)
-    return manager_cli.sync_dependencies_response(result, _TORCH_PACKAGES)
+async def check_for_updates(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
+    return await manager_git.check_for_updates(
+        workspace=COMFYUI_ROOT,
+        repositories=discover_git_repositories,
+        command_args=_command_args,
+        run_command=run_command,
+        on_line=on_line,
+    )
 
 
 async def update_comfyui_with_comfy_cli(on_line: Callable[[str], None] | None = None) -> dict[str, Any]:
@@ -975,8 +978,8 @@ async def _job_update_git_nodes(job: ManagerJob) -> dict[str, Any]:
     return await update_git_nodes_with_git(job.append_log)
 
 
-async def _job_sync_dependencies(job: ManagerJob) -> dict[str, Any]:
-    return await sync_dependencies_with_comfy_cli(job.append_log)
+async def _job_check_for_updates(job: ManagerJob) -> dict[str, Any]:
+    return await check_for_updates(job.append_log)
 
 
 async def _job_save_snapshot(job: ManagerJob) -> dict[str, Any]:

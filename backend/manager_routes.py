@@ -138,10 +138,10 @@ def register_routes(api: Any) -> bool:
     async def update_custom_nodes(_request):
         return await api._start_job_response("git-nodes", "Update Git Nodes", api._job_update_git_nodes)
 
-    @routes.post(f"{api.API_PREFIX}/deps/uv-sync")
+    @routes.post(f"{api.API_PREFIX}/updates/check")
     @control_route
-    async def sync_dependencies(_request):
-        return await api._start_job_response("deps", "Sync Dependencies", api._job_sync_dependencies)
+    async def check_for_updates(_request):
+        return await api._start_job_response("check-updates", "Check for Updates", api._job_check_for_updates)
 
     @routes.post(f"{api.API_PREFIX}/manager-cache/refresh")
     @control_route
