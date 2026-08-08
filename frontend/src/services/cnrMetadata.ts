@@ -257,7 +257,7 @@ async function fetchJson(app: ComfyApp, route: string): Promise<unknown> {
   return await response.json() as unknown
 }
 
-async function fetchInstalledPackages(app: ComfyApp): Promise<unknown> {
+export async function fetchInstalledPackages(app: ComfyApp): Promise<unknown> {
   try {
     return await fetchJson(app, "/v2/customnode/installed")
   } catch (error) {

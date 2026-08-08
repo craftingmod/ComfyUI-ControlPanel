@@ -31,6 +31,7 @@ from . import manager_settings
 from .manager_jobs import JOBS as _JOBS
 from .manager_jobs import ManagerJob, latest_job, start_job
 from . import manager_process
+from . import manager_restore
 from .manager_process import ManagerApiError
 from .manager_process import run_command, run_command_stream
 
@@ -836,6 +837,30 @@ async def restore_snapshot_with_comfy_cli(
     return manager_cli.restore_snapshot_response(target, snapshot_path, result)
 
 
+async def node_restore_inventory() -> dict[str, Any]:
+    return await manager_restore.collect_node_restore_inventory(
+        CUSTOM_NODES_DIR,
+        discover_git_repositories,
+        _command_args,
+        run_command,
+    )
+
+
+async def restore_nodes_from_manifest(
+    manifest: Any,
+    on_line: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    return await manager_restore.restore_node_manifest(
+        manifest,
+        workspace=COMFYUI_ROOT,
+        custom_nodes_dir=CUSTOM_NODES_DIR,
+        comfy_command=comfy_cli_command,
+        install_git=install_git_url,
+        run_command_stream=run_command_stream,
+        on_line=on_line,
+    )
+
+
 async def inspect_torch_runtime() -> dict[str, Any]:
     code = (
         "import json\n"
@@ -989,6 +1014,11 @@ async def _job_save_snapshot(job: ManagerJob) -> dict[str, Any]:
 async def _job_restore_snapshot(job: ManagerJob, target: str) -> dict[str, Any]:
     job.append_log(f"Restoring snapshot: {target}")
     return await restore_snapshot_with_comfy_cli(target, job.append_log)
+
+
+async def _job_restore_nodes(job: ManagerJob, manifest: Any) -> dict[str, Any]:
+    job.append_log("Restoring custom nodes from a latest-version manifest.")
+    return await restore_nodes_from_manifest(manifest, job.append_log)
 
 
 async def _job_refresh_manager_cache(job: ManagerJob) -> dict[str, Any]:

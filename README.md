@@ -20,6 +20,7 @@ This custom node pack is primarily maintained as a personal-use replacement for
 - Replace the Manager repository cache with a safer and more efficient cache path.
 - Update or rebuild the Manager cache when Replace Manager Repository Data is enabled.
 - Save and restore Manager snapshots through the Comfy CLI.
+- Download a latest-version custom-node restore manifest and restore Registry/Git nodes from an uploaded JSON file.
 - Open the `custom_nodes` and Manager snapshots folders from the panel on local installs.
 - Show the parsed `comfy --json env` output in a table-style environment dialog.
 - Restart ComfyUI from the control panel.

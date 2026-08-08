@@ -5,6 +5,8 @@ import { createControlPanelApi, isUpdateJob } from "../services/controlPanelApi.
 import { createButton, ensureStyles } from "../ui/dom.ts"
 import { createGitInstallModalController } from "./gitInstallModal.ts"
 import type { FixMetadataSummary } from "../services/cnrMetadataController.ts"
+import { fetchInstalledPackages } from "../services/cnrMetadata.ts"
+import { buildNodeRestoreManifest, dependencySyncNotice, parseNodeRestoreManifest } from "../services/nodeRestore.ts"
 import type { JsonObject, ToastSeverity, UpdateJob } from "../types.ts"
 
 type ControlPanelOptions = {
@@ -33,11 +35,13 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
   let managerCacheButtons: HTMLButtonElement[] = []
   let snapshotRestoreModalEl: HTMLElement | undefined
   let snapshotSelectEl: HTMLSelectElement | undefined
+  let nodeRestoreFileInputEl: HTMLInputElement | undefined
   let environmentModalEl: HTMLElement | undefined
   let environmentOutputEl: HTMLElement | undefined
   let updateCheckModalEl: HTMLElement | undefined
   let updateCheckOutputEl: HTMLPreElement | undefined
   let statusPollTimer: number | undefined
+  const dependencySyncNotifiedJobs = new Set<string>()
 
   function toast(severity: ToastSeverity, summary: string, detail: string): void {
     app.extensionManager.toast.add({ severity, summary, detail, life: 5000 })
@@ -143,10 +147,17 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
 
     const logs = job.logs.length > 0 ? job.logs.join("\n") : `${job.label} is ${job.status}.`
     const error = job.error ? `\n\nError:\n${job.error}` : ""
-    logEl.textContent = `${job.label} (${job.status})\n\n${logs}${error}\n`
+    const syncNotice = job.status === "succeeded" ? dependencySyncNotice(job.result) : undefined
+    const requiredAction = syncNotice ? `\n\nAction required:\n${syncNotice}` : ""
+    logEl.textContent = `${job.label} (${job.status})\n\n${logs}${error}${requiredAction}\n`
     scrollLogToBottom()
     if (restartNoticeEl) {
       restartNoticeEl.hidden = !job.restart_required || job.status !== "succeeded"
+      restartNoticeEl.textContent = syncNotice ?? "Restart required to finish applying updates."
+    }
+    if (syncNotice && !dependencySyncNotifiedJobs.has(job.id)) {
+      dependencySyncNotifiedJobs.add(job.id)
+      toast("warn", "Dependency Sync Required", syncNotice)
     }
   }
 
@@ -354,6 +365,72 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       closeSnapshotRestoreModal()
       await startUpdateJob("Restore Snapshot", API_ROUTES.SNAPSHOT_RESTORE, { target })
     }
+  }
+
+  function nodeRestoreFilename(): string {
+    const timestamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")
+    return `comfyui-node-restore-${timestamp}.json`
+  }
+
+  function downloadJson(filename: string, value: JsonObject): void {
+    const blob = new Blob([`${JSON.stringify(value, null, 2)}\n`], { type: "application/json" })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement("a")
+    anchor.href = url
+    anchor.download = filename
+    anchor.hidden = true
+    document.body.append(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 0)
+  }
+
+  async function backupInstalledNodes(): Promise<void> {
+    writeLog("Backup Installed Nodes started.")
+    try {
+      const [installed, inventory] = await Promise.all([
+        fetchInstalledPackages(app),
+        api.fetchJson(API_ROUTES.NODE_RESTORE_INVENTORY),
+      ])
+      const manifest = buildNodeRestoreManifest(installed, inventory)
+      downloadJson(nodeRestoreFilename(), manifest)
+      writeLog("Backup Installed Nodes completed.", manifest)
+      const unmanaged = manifest.unmanaged_nodes.length
+      toast(
+        unmanaged > 0 ? "warn" : "success",
+        "ComfyUI-ControlPanel",
+        `Backed up ${manifest.registry_nodes.length} registry and ${manifest.git_nodes.length} Git nodes.${unmanaged > 0 ? ` ${unmanaged} unmanaged folders require manual backup.` : ""}`,
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      writeLog(`Backup Installed Nodes failed: ${message}`)
+      toast("error", "ComfyUI-ControlPanel", message)
+    }
+  }
+
+  async function restoreNodesFromFile(file: File): Promise<void> {
+    try {
+      const manifest = parseNodeRestoreManifest(await file.text())
+      const confirmed = await app.extensionManager.dialog.confirm({
+        title: "Restore Custom Nodes",
+        message: `Install the latest versions of ${manifest.registry_nodes.length} registry and ${manifest.git_nodes.length} Git nodes? Existing Git destination folders will be skipped.`,
+      })
+      if (confirmed) {
+        await startUpdateJob("Restore Custom Nodes", API_ROUTES.NODE_RESTORE_RESTORE, { manifest })
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      writeLog(`Restore Custom Nodes failed: ${message}`)
+      toast("error", "ComfyUI-ControlPanel", message)
+    }
+  }
+
+  function chooseNodeRestoreFile(): void {
+    if (!nodeRestoreFileInputEl) {
+      return
+    }
+    nodeRestoreFileInputEl.value = ""
+    nodeRestoreFileInputEl.click()
   }
 
   async function confirmRestart(): Promise<void> {
@@ -795,6 +872,25 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       }),
     )
 
+    const nodeRestoreActions = createActionGroup("Node Restore", "Custom node backup and restore actions")
+    nodeRestoreFileInputEl = document.createElement("input")
+    nodeRestoreFileInputEl.type = "file"
+    nodeRestoreFileInputEl.accept = ".json,application/json"
+    nodeRestoreFileInputEl.hidden = true
+    nodeRestoreFileInputEl.addEventListener("change", () => {
+      const file = nodeRestoreFileInputEl?.files?.[0]
+      if (file) {
+        void restoreNodesFromFile(file)
+      }
+    })
+    nodeRestoreActions.append(
+      nodeRestoreFileInputEl,
+      createButton("Backup Installed Nodes", () => {
+        void backupInstalledNodes()
+      }),
+      createButton("Restore Latest Nodes", chooseNodeRestoreFile, "cp-button cp-danger"),
+    )
+
     const metadataActions = createActionGroup("Workflow Metadata", "Workflow metadata actions")
     metadataActions.append(
       createButton("Repair Metadata", () => {
@@ -844,7 +940,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
 
     const workflowColumn = document.createElement("div")
     workflowColumn.className = "cp-panel-column"
-    workflowColumn.append(snapshotActions, metadataActions)
+    workflowColumn.append(snapshotActions, nodeRestoreActions, metadataActions)
 
     const statusColumn = document.createElement("div")
     statusColumn.className = "cp-panel-column cp-panel-column-status"

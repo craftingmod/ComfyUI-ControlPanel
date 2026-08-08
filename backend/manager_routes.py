@@ -128,6 +128,22 @@ def register_routes(api: Any) -> bool:
             lambda job: api._job_restore_snapshot(job, target),
         )
 
+    @routes.get(f"{api.API_PREFIX}/node-restore/inventory")
+    @control_route
+    async def node_restore_inventory(_request):
+        return await api._with_operation_lock(api.node_restore_inventory)
+
+    @routes.post(f"{api.API_PREFIX}/node-restore/restore")
+    @control_route
+    async def restore_nodes(request):
+        data = await api._read_json(request)
+        manifest = data.get("manifest")
+        return await api._start_job_response(
+            "node-restore",
+            "Restore Custom Nodes",
+            lambda job: api._job_restore_nodes(job, manifest),
+        )
+
     @routes.post(f"{api.API_PREFIX}/update-all")
     @control_route
     async def update_all(_request):

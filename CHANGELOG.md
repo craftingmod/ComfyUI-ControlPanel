@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added browser-downloaded custom-node restore manifests using compact Registry IDs and Git URLs.
+- Added browser-uploaded latest-version restoration through `comfy node install` and `git clone`.
+- Added a post-restore notice to close ComfyUI and run `comfy node uv-sync` instead of modifying the active runtime.
+- Added informational unmanaged-folder entries for custom nodes that cannot be restored automatically.
+
 ## v1.1.3 - Changes since v1.0.1
 
 This release expands the panel with the remaining local Manager-style workflows
