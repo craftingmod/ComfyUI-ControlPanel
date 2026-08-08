@@ -1,6 +1,8 @@
 import type { ComfyApp } from "@comfyorg/comfyui-frontend-types"
 import { API_ROUTES, EXTENSION_NAME, SETTINGS_IDS } from "./constants.ts"
 import { createControlPanelController } from "./components/controlPanel.ts"
+import { createCnrMetadataController } from "./services/cnrMetadataController.ts"
+import type { MetadataNode } from "./services/cnrMetadata.ts"
 import type { ComfySettingId, ManagerExtension } from "./types.ts"
 
 declare global {
@@ -40,7 +42,12 @@ function settingId(id: string): ComfySettingId {
   return id as ComfySettingId
 }
 
-const controlPanel = createControlPanelController({ app, readBooleanSetting })
+const cnrMetadata = createCnrMetadataController(app)
+const controlPanel = createControlPanelController({
+  app,
+  readBooleanSetting,
+  fixCnrId: cnrMetadata.fixActiveWorkflow,
+})
 
 async function fetchJson(route: string, body?: Record<string, unknown>): Promise<Record<string, unknown>> {
   const response = await app.api.fetchApi(route, {
@@ -123,11 +130,17 @@ function createExtensionObject(): ManagerExtension {
         icon: "pi pi-wrench",
         function: controlPanel.open,
       },
+      {
+        id: "control-panel.fix-cnr-id",
+        label: "Repair Metadata",
+        icon: "icon-[lucide--tags]",
+        function: cnrMetadata.fixActiveWorkflow,
+      },
     ],
     menuCommands: [
       {
         path: ["ComfyUI-ControlPanel"],
-        commands: ["control-panel.open"],
+        commands: ["control-panel.open", "control-panel.fix-cnr-id"],
       },
     ],
     settings: [
@@ -177,6 +190,15 @@ function createExtensionObject(): ManagerExtension {
         onChange: updateManagerRepositoryDataChannelSetting,
       },
     ],
+    async init() {
+      await cnrMetadata.initialize()
+    },
+    nodeCreated(node) {
+      cnrMetadata.fillNode(node as unknown as MetadataNode)
+    },
+    loadedGraphNode(node) {
+      cnrMetadata.fillNode(node as unknown as MetadataNode)
+    },
     async setup() {
       await syncManagerRepositoryDataOverrideSetting().catch((error) => {
         const message = error instanceof Error ? error.message : String(error)
@@ -201,6 +223,7 @@ function createExtensionObject(): ManagerExtension {
 
 async function registerControlPanelExtension(): Promise<void> {
   if (await shouldRegisterControlPanel()) {
+    void cnrMetadata.initialize()
     app.registerExtension(createExtensionObject())
   }
 }

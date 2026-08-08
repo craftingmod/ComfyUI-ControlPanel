@@ -24,6 +24,14 @@ This custom node pack is primarily maintained as a personal-use replacement for
 - Show the parsed `comfy --json env` output in a table-style environment dialog.
 - Restart ComfyUI from the control panel.
 - Inspect the latest status JSON and clear the local operation log.
+- Add missing `cnr_id`, `aux_id`, and version metadata when nodes are created or loaded.
+- Repair Registry metadata across the active workflow, including nested subgraphs, with one Undo step.
+
+## Requirements
+
+- ComfyUI 0.31.1 or newer.
+- ComfyUI Frontend 1.48.7 or newer.
+- ComfyUI Manager 4.2.2 or newer for custom-node package metadata. Core node metadata remains available from ComfyUI itself.
 
 ## Install
 
@@ -120,6 +128,15 @@ git tag v1.1.0
 git push origin v1.1.0
 ```
 
+To create the same installable archive locally after `pnpm build`:
+
+```powershell
+./scripts/New-CustomNodesZip.ps1 -Version v1.1.0
+```
+
+The archive is written to `release/` and contains a single
+`ComfyUI-ControlPanel/` folder ready to extract under `custom_nodes/`.
+
 The release workflow:
 
 1. Checks out the tagged source.
@@ -127,7 +144,8 @@ The release workflow:
 3. Runs typecheck and unit tests.
 4. Builds the frontend.
 5. Verifies that `dist/index.js` exists.
-6. Uploads `ComfyUI-ControlPanel-vX.Y.Z.zip` to the GitHub Release.
+6. Runs `scripts/New-CustomNodesZip.ps1` and uploads
+   `ComfyUI-ControlPanel-vX.Y.Z.zip` to the GitHub Release.
 
 ### About `dist/index.js` in tag releases
 

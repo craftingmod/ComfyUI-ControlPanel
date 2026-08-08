@@ -18,6 +18,7 @@ AGENTS_PATH = REPO_ROOT / "AGENTS.md"
 TESTING_DOC_PATH = REPO_ROOT / "docs" / "TESTING.md"
 E2E_CONFIG_PATH = REPO_ROOT / "e2e.config.mjs"
 SETUP_E2E_SCRIPT_PATH = REPO_ROOT / "scripts" / "setup-e2e-comfy.mjs"
+PACKAGE_ZIP_SCRIPT_PATH = REPO_ROOT / "scripts" / "New-CustomNodesZip.ps1"
 PLAYWRIGHT_CONFIG_PATH = REPO_ROOT / "playwright.config.ts"
 E2E_SETUP_PATH = REPO_ROOT / "tests" / "e2e" / "global.setup.ts"
 E2E_TEARDOWN_PATH = REPO_ROOT / "tests" / "e2e" / "global.teardown.ts"
@@ -76,6 +77,7 @@ def test_root_packaging_metadata_matches_layout():
     assert pyproject["project"]["dependencies"] == ["aiohttp>=3.9"]
     assert tool_comfy["DisplayName"] == "ComfyUI-ControlPanel"
     assert tool_comfy["includes"] == ["dist"]
+    assert tool_comfy["requires-comfyui"] == ">=0.31.1"
     assert any(file_config["filename"] == "frontend/src/index.ts" for file_config in bump_files)
 
 
@@ -100,6 +102,18 @@ def test_e2e_harness_files_exist():
     assert E2E_SMOKE_SPEC_PATH.is_file()
 
 
+def test_release_packaging_script_defines_installable_custom_nodes_archive():
+    assert PACKAGE_ZIP_SCRIPT_PATH.is_file()
+    package_script = PACKAGE_ZIP_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert '$packageName = "ComfyUI-ControlPanel"' in package_script
+    assert '"dist"' in package_script
+    assert '"pyproject.toml"' in package_script
+    assert "Compress-Archive" in package_script
+    assert '$_.Name -eq "__pycache__"' in package_script
+    assert '$_.Extension -in ".pyc", ".pyo"' in package_script
+
+
 def test_ci_workflows_use_repo_command_surface():
     ci_workflow = CI_WORKFLOW_PATH.read_text(encoding="utf-8")
     release_workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
@@ -118,6 +132,8 @@ def test_ci_workflows_use_repo_command_surface():
     assert "pnpm test:unit" in release_workflow
     assert "pnpm build" in release_workflow
     assert "test -f dist/index.js" in release_workflow
+    assert "shell: pwsh" in release_workflow
+    assert "./scripts/New-CustomNodesZip.ps1" in release_workflow
     assert "softprops/action-gh-release@v2" in release_workflow
     assert "Comfy-Org/publish-node-action" not in release_workflow
 

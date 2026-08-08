@@ -59,18 +59,10 @@ jobs:
           test -f pyproject.toml
 
       - name: Create installable zip
-        shell: bash
-        run: |
-          release_name="ComfyUI-ControlPanel-${GITHUB_REF_NAME:-manual}"
-          package_root="release/ComfyUI-ControlPanel"
-
-          mkdir -p "${package_root}"
-          cp -R __init__.py backend dist assets pyproject.toml README.md LICENSE "${package_root}/"
-          find "${package_root}" -type d -name "__pycache__" -prune -exec rm -rf {} +
-          find "${package_root}" -type f -name "*.py[co]" -delete
-
-          cd release
-          zip -r "${release_name}.zip" "ComfyUI-ControlPanel"
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: ./scripts/New-CustomNodesZip.ps1 -Version $env:RELEASE_VERSION -OutputDirectory release -Force
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2

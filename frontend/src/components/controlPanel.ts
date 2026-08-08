@@ -4,11 +4,13 @@ import { debugLog } from "../debug.ts"
 import { createControlPanelApi, isUpdateJob } from "../services/controlPanelApi.ts"
 import { createButton, ensureStyles } from "../ui/dom.ts"
 import { createGitInstallModalController } from "./gitInstallModal.ts"
+import type { FixMetadataSummary } from "../services/cnrMetadataController.ts"
 import type { JsonObject, ToastSeverity, UpdateJob } from "../types.ts"
 
 type ControlPanelOptions = {
   app: ComfyApp
   readBooleanSetting: (id: string) => boolean
+  fixCnrId: () => Promise<FixMetadataSummary | undefined>
 }
 
 type OperationOptions = {
@@ -199,6 +201,23 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       writeLog(`Status JSON failed: ${message}`)
       toast("error", "ComfyUI-ControlPanel", message)
     }
+  }
+
+  async function fixCnrId(): Promise<void> {
+    writeLog("Repair Metadata started.")
+    const summary = await options.fixCnrId()
+    if (!summary) {
+      writeLog("Repair Metadata stopped because metadata APIs were unavailable.")
+      return
+    }
+    writeLog("Repair Metadata completed.", {
+      updated: summary.updated,
+      already_correct: summary.alreadyCorrect,
+      unresolved: summary.unresolved,
+      skipped: summary.skipped,
+      conflicts_preserved: summary.conflictsPreserved,
+      unresolved_nodes: summary.unresolvedNodes,
+    })
   }
 
   const gitInstallModal = createGitInstallModalController({
@@ -620,7 +639,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     })
 
     const panel = document.createElement("section")
-    panel.className = "cp-panel"
+    panel.className = "cp-panel cp-control-panel"
     panel.setAttribute("role", "dialog")
     panel.setAttribute("aria-modal", "true")
     panel.setAttribute("aria-labelledby", "cp-title")
@@ -684,6 +703,13 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       }),
     )
 
+    const metadataActions = createActionGroup("Workflow Metadata", "Workflow metadata actions")
+    metadataActions.append(
+      createButton("Repair Metadata", () => {
+        void fixCnrId()
+      }, "cp-button cp-button-wide"),
+    )
+
     const actions = document.createElement("div")
     actions.className = "cp-actions"
     actions.append(
@@ -720,7 +746,23 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     logWrap.append(logActions, logEl)
     scrollLogToBottom()
 
-    panel.append(header, maintenanceActions, cacheActions, snapshotActions, actions, restartNoticeEl, logWrap)
+    const maintenanceColumn = document.createElement("div")
+    maintenanceColumn.className = "cp-panel-column"
+    maintenanceColumn.append(maintenanceActions, cacheActions)
+
+    const workflowColumn = document.createElement("div")
+    workflowColumn.className = "cp-panel-column"
+    workflowColumn.append(snapshotActions, metadataActions)
+
+    const statusColumn = document.createElement("div")
+    statusColumn.className = "cp-panel-column cp-panel-column-status"
+    statusColumn.append(actions, restartNoticeEl, logWrap)
+
+    const panelContent = document.createElement("div")
+    panelContent.className = "cp-panel-content"
+    panelContent.append(maintenanceColumn, workflowColumn, statusColumn)
+
+    panel.append(header, panelContent)
     backdrop.append(panel)
     return backdrop
   }

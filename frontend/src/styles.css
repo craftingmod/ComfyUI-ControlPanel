@@ -12,6 +12,7 @@
 }
 
 .cp-panel {
+  box-sizing: border-box;
   width: min(760px, calc(100vw - 32px));
   max-height: min(870px, calc(100vh - 24px));
   overflow: auto;
@@ -22,6 +23,44 @@
   color: #f1f3f7;
   box-shadow: 0 18px 48px rgb(0 0 0 / 0.36);
   font: 14px/1.45 system-ui, sans-serif;
+}
+
+.cp-control-panel {
+  display: flex;
+  width: min(1180px, calc(100vw - 32px));
+  max-height: calc(100vh - 24px);
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cp-panel-content {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 12px;
+}
+
+.cp-panel-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cp-panel-column > .cp-action-group,
+.cp-panel-column > .cp-actions {
+  margin: 0;
+}
+
+.cp-panel-column-status .cp-log-wrap {
+  min-height: 0;
+  flex: 1;
+}
+
+.cp-panel-column-status .cp-log {
+  box-sizing: border-box;
+  height: 100%;
+  max-height: none;
 }
 
 .cp-modal {
@@ -146,6 +185,10 @@
 
 .cp-button:hover {
   background: #394245;
+}
+
+.cp-button-wide {
+  grid-column: 1 / -1;
 }
 
 .cp-button:disabled {
@@ -273,6 +316,22 @@
 .cp-environment-stderr {
   margin-top: 12px;
   color: #ff9b9b;
+}
+
+@media (max-width: 980px), (max-height: 560px) {
+  .cp-control-panel {
+    width: min(760px, calc(100vw - 32px));
+    overflow: auto;
+  }
+
+  .cp-panel-content {
+    grid-template-columns: 1fr;
+  }
+
+  .cp-panel-column-status .cp-log {
+    height: auto;
+    max-height: 240px;
+  }
 }
 
 @media (max-width: 640px) {

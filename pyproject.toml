@@ -22,7 +22,7 @@ Repository = "https://github.com/craftingmod/comfyui-controlpanel"
 PublisherId = "craftingmod"
 DisplayName = "ComfyUI-ControlPanel"
 Icon = "https://raw.githubusercontent.com/craftingmod/comfyui-controlpanel/main/assets/icon.svg"
-requires-comfyui = ">=0.3.0"
+requires-comfyui = ">=0.31.1"
 includes = ['dist']
 
 [tool.bumpversion]
