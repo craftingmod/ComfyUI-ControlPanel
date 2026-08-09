@@ -67,7 +67,7 @@ def test_root_packaging_metadata_matches_layout():
         "features no longer available in ComfyUI Manager."
     )
     assert package_json["description"] == pyproject["project"]["description"]
-    assert pyproject["project"]["dependencies"] == ["aiohttp>=3.9"]
+    assert pyproject["project"]["dependencies"] == []
     assert tool_comfy["DisplayName"] == "ComfyUI-ControlPanel"
     assert tool_comfy["includes"] == ["dist"]
     assert tool_comfy["requires-comfyui"] == ">=0.28.0"
