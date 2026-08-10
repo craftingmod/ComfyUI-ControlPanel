@@ -39,21 +39,122 @@ def test_resolve_custom_nodes_dir_uses_comfyui_root_child(tmp_path):
 def test_control_request_allows_loopback_clients(monkeypatch):
     monkeypatch.setattr(manager_api, "read_controlpanel_settings", lambda user_dir=None: {})
 
-    assert manager_api.is_control_request_allowed(SimpleNamespace(remote="127.0.0.1")) is True
-    assert manager_api.is_control_request_allowed(SimpleNamespace(remote="::1")) is True
-    assert manager_api.is_control_request_allowed(SimpleNamespace(remote="localhost")) is True
+    assert manager_api.is_control_request_allowed(SimpleNamespace(remote="127.0.0.1", host="127.0.0.1:8188")) is True
+    assert manager_api.is_control_request_allowed(SimpleNamespace(remote="::1", host="[::1]:8188")) is True
+    assert manager_api.is_control_request_allowed(SimpleNamespace(remote="localhost", host="localhost:8188")) is True
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["example.com", "127.0.0.1.example.com", "", "localhost:invalid", "localhost/path", "localhost?x", "localhost#x"],
+)
+def test_control_request_rejects_non_loopback_or_invalid_host(monkeypatch, host):
+    monkeypatch.setattr(manager_api, "read_controlpanel_settings", lambda user_dir=None: {})
+
+    assert manager_api.is_control_request_allowed(SimpleNamespace(remote="127.0.0.1", host=host)) is False
 
 
 def test_control_request_rejects_remote_clients_by_default(monkeypatch):
     monkeypatch.setattr(manager_api, "read_controlpanel_settings", lambda user_dir=None: {})
 
-    assert manager_api.is_control_request_allowed(SimpleNamespace(remote="192.168.0.10")) is False
+    assert manager_api.is_control_request_allowed(SimpleNamespace(remote="192.168.0.10", host="localhost:8188")) is False
 
 
 def test_control_request_allows_remote_clients_when_configured(monkeypatch):
     monkeypatch.setattr(manager_api, "read_controlpanel_settings", lambda user_dir=None: {"allow_remote_control": True})
 
     assert manager_api.is_control_request_allowed(SimpleNamespace(remote="192.168.0.10")) is True
+
+
+def test_same_origin_allows_local_post_and_local_tools_without_origin():
+    browser_request = SimpleNamespace(
+        method="POST",
+        remote="127.0.0.1",
+        scheme="http",
+        host="localhost:8188",
+        headers={"Origin": "http://localhost:8188"},
+    )
+    cli_request = SimpleNamespace(method="POST", remote="127.0.0.1", headers={})
+
+    assert manager_api.is_same_origin_request(browser_request) is True
+    assert manager_api.is_same_origin_request(cli_request) is True
+
+
+def test_same_origin_rejects_cross_origin_and_remote_requests_without_origin():
+    cross_origin = SimpleNamespace(
+        method="POST",
+        remote="127.0.0.1",
+        scheme="http",
+        host="localhost:8188",
+        headers={"Origin": "https://example.com"},
+    )
+    remote_without_origin = SimpleNamespace(method="POST", remote="192.168.0.10", headers={})
+
+    assert manager_api.is_same_origin_request(cross_origin) is False
+    assert manager_api.is_same_origin_request(remote_without_origin) is False
+
+
+def test_same_origin_allows_remote_browser_when_origin_matches():
+    request = SimpleNamespace(
+        method="POST",
+        remote="192.168.0.10",
+        scheme="https",
+        host="comfy.example.com",
+        headers={"Origin": "https://comfy.example.com"},
+    )
+
+    assert manager_api.is_same_origin_request(request) is True
+
+
+@pytest.mark.parametrize(
+    ("level", "middle_allowed", "high_local_allowed", "high_remote_allowed"),
+    [
+        ("strong", False, False, False),
+        ("normal", True, False, False),
+        ("normal-", True, True, False),
+        ("weak", True, True, True),
+    ],
+)
+def test_manager_security_level_policy(
+    monkeypatch, level, middle_allowed, high_local_allowed, high_remote_allowed
+):
+    monkeypatch.setattr(manager_api, "manager_security_config_available", lambda user_dir=None: True)
+    monkeypatch.setattr(manager_api, "read_manager_security_level", lambda user_dir=None: level)
+
+    assert manager_api.is_manager_operation_allowed(SimpleNamespace(remote="127.0.0.1"), "middle") is middle_allowed
+    assert manager_api.is_manager_operation_allowed(SimpleNamespace(remote="127.0.0.1"), "high") is high_local_allowed
+    assert manager_api.is_manager_operation_allowed(SimpleNamespace(remote="192.168.0.10"), "high") is high_remote_allowed
+
+
+def test_manager_security_defaults_apply_when_config_exists(monkeypatch):
+    monkeypatch.setattr(manager_api.manager_settings, "read_manager_config_value", lambda manager_dir, option: None)
+
+    assert manager_api.read_manager_security_level() == "normal"
+    assert manager_api.read_manager_boolean("allow_git_url_install") is False
+
+
+@pytest.mark.parametrize("policy", ["middle", "high", "git-url"])
+def test_manager_policy_is_skipped_when_config_is_absent(monkeypatch, policy):
+    monkeypatch.setattr(manager_api, "manager_security_config_available", lambda user_dir=None: False)
+
+    assert manager_api.is_manager_operation_allowed(SimpleNamespace(remote="192.168.0.10"), policy) is True
+
+
+def test_manager_git_url_policy_requires_explicit_true(monkeypatch):
+    monkeypatch.setattr(manager_api, "manager_security_config_available", lambda user_dir=None: True)
+    monkeypatch.setattr(manager_api, "read_manager_boolean", lambda option, user_dir=None: option == "allowed")
+
+    assert manager_api.is_manager_operation_allowed(SimpleNamespace(), "git-url") is False
+
+    monkeypatch.setattr(manager_api, "read_manager_boolean", lambda option, user_dir=None: option == "allow_git_url_install")
+
+    assert manager_api.is_manager_operation_allowed(SimpleNamespace(), "git-url") is True
+
+
+def test_manifest_requires_git_url_install_only_for_nonempty_git_nodes():
+    assert manager_api.manifest_requires_git_url_install({"git_nodes": [{"url": "https://example.com/node.git"}]})
+    assert not manager_api.manifest_requires_git_url_install({"git_nodes": []})
+    assert not manager_api.manifest_requires_git_url_install({"registry_nodes": [{"id": "example"}]})
 
 
 def test_warn_if_remote_control_enabled_logs_security_warning(monkeypatch, caplog):
@@ -72,11 +173,51 @@ def test_control_request_denied_response_logs_blocked_remote(monkeypatch, caplog
 
     with caplog.at_level("WARNING", logger=manager_api.LOGGER.name):
         response = manager_api.control_request_denied_response(
-            SimpleNamespace(remote="192.168.0.10", path="/control-panel/status")
+            SimpleNamespace(remote="192.168.0.10", host="localhost:8188", path="/control-panel/status")
         )
 
     assert response.status == 403
     assert "Blocked remote control request from 192.168.0.10" in caplog.text
+
+
+def test_control_request_denied_response_reports_non_loopback_host(monkeypatch, caplog):
+    monkeypatch.setattr(manager_api, "read_controlpanel_settings", lambda user_dir=None: {})
+
+    with caplog.at_level("WARNING", logger=manager_api.LOGGER.name):
+        response = manager_api.control_request_denied_response(
+            SimpleNamespace(remote="127.0.0.1", host="comfy.example.com", path="/control-panel/status")
+        )
+
+    assert response.status == 403
+    assert "Blocked non-loopback Host" in caplog.text
+    assert "loopback Host" in json.loads(response.text)["error"]
+
+
+def test_control_request_denied_response_blocks_cross_origin_post(monkeypatch):
+    monkeypatch.setattr(manager_api, "read_controlpanel_settings", lambda user_dir=None: {})
+    request = SimpleNamespace(
+        method="POST",
+        remote="127.0.0.1",
+        host="localhost:8188",
+        scheme="http",
+        headers={"Origin": "https://example.com"},
+    )
+
+    response = manager_api.control_request_denied_response(request)
+
+    assert response.status == 403
+    assert "same-origin" in json.loads(response.text)["error"]
+
+
+def test_control_request_denied_response_blocks_manager_policy(monkeypatch):
+    monkeypatch.setattr(manager_api, "read_controlpanel_settings", lambda user_dir=None: {})
+    monkeypatch.setattr(manager_api, "is_manager_operation_allowed", lambda request, policy: False)
+    request = SimpleNamespace(method="POST", remote="127.0.0.1", host="localhost:8188", headers={})
+
+    response = manager_api.control_request_denied_response(request, "middle")
+
+    assert response.status == 403
+    assert "security_level" in json.loads(response.text)["error"]
 
 
 def test_open_path_in_file_manager_uses_windows_startfile(monkeypatch, tmp_path):

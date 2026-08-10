@@ -95,6 +95,19 @@ only to localhost clients such as `localhost`, `127.0.0.1`, and `::1`. This is
 intentional because the panel can install Git repositories, update custom nodes,
 restore snapshots, open local folders, and restart ComfyUI.
 
+When remote control is disabled, both the connection peer and HTTP `Host` must be
+loopback. This prevents an external hostname routed through a local reverse proxy
+or DNS rebinding from being treated as ordinary localhost access.
+
+State-changing requests must also be same-origin. Requests without an `Origin`
+header are accepted only from loopback clients so local command-line tools remain
+usable. ControlPanel follows ComfyUI-Manager's operation policy: Git URL installs
+require `allow_git_url_install = true` when Manager's `config.ini` is present,
+middle-risk operations such as custom-node updates, snapshot restore, and restart
+are blocked by `security_level = strong`, and ComfyUI updates remain low-risk
+operations. When Manager's configuration is absent, ControlPanel remains usable
+with its own access and same-origin checks rather than requiring Manager.
+
 Commands that install or update code, restore state, or restart ComfyUI run only
 after an explicit user action in the panel; loading a workflow does not execute
 them. External commands are launched with argument arrays rather than shell
@@ -113,6 +126,9 @@ ControlPanel config file under the ComfyUI user directory:
 ```
 
 Do not enable remote control for ComfyUI instances exposed to untrusted networks.
+Enabling it deliberately transfers responsibility for authenticating and
+protecting remote clients to the operator; browser requests must still be
+same-origin and all Manager operation policies continue to apply.
 
 ## Development
 

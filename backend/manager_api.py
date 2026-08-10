@@ -18,6 +18,8 @@ import sys
 import importlib
 from pathlib import Path
 from typing import Any, Awaitable, Callable
+from urllib.parse import urlsplit
+
 from aiohttp import ClientSession
 
 from .hash import manager_cache_key_hash
@@ -87,6 +89,12 @@ _SETTING_MANAGER_REPOSITORY_DATA_CHANNEL = "manager_repository_data_channel"
 _SETTING_PREVIOUS_MANAGER_NETWORK_MODE = "manager_network_mode_before_override"
 _SETTING_MANAGER_CONFIG_WAS_MISSING = "manager_config_was_missing_before_override"
 _SETTING_ALLOW_REMOTE_CONTROL = "allow_remote_control"
+_DEFAULT_MANAGER_SECURITY_LEVEL = "normal"
+_MANAGER_SECURITY_LEVELS = frozenset({"strong", "normal", "normal-", "weak"})
+_MANAGER_POLICY_LOW = "low"
+_MANAGER_POLICY_MIDDLE = "middle"
+_MANAGER_POLICY_HIGH = "high"
+_MANAGER_POLICY_GIT_URL = "git-url"
 LOGGER = logging.getLogger(__name__)
 
 
@@ -243,15 +251,146 @@ def is_loopback_request(request) -> bool:
     return is_loopback_host(_request_remote_host(request))
 
 
-def is_control_request_allowed(request) -> bool:
-    return is_remote_control_allowed() or is_loopback_request(request)
-
-
-def control_request_denied_response(request):
-    if is_control_request_allowed(request):
+def _request_host_name(request) -> str | None:
+    value = getattr(request, "host", None)
+    if not isinstance(value, str) or not value.strip():
+        value = _request_header(request, "Host")
+    if not isinstance(value, str) or not value.strip():
         return None
+
+    normalized = value.strip()
+    if any(character in normalized for character in ("/", "\\", "@", ",", "?", "#")):
+        return None
+    try:
+        parsed = urlsplit(f"//{normalized}")
+        # Accessing port validates malformed and out-of-range port values.
+        parsed.port
+    except ValueError:
+        return None
+    return parsed.hostname
+
+
+def is_loopback_request_host(request) -> bool:
+    return is_loopback_host(_request_host_name(request))
+
+
+def is_control_request_allowed(request) -> bool:
+    return is_remote_control_allowed() or (is_loopback_request(request) and is_loopback_request_host(request))
+
+
+def _request_header(request, name: str) -> str | None:
+    headers = getattr(request, "headers", None)
+    if headers is None:
+        return None
+    value = headers.get(name)
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _normalized_http_origin(value: str | None) -> tuple[str, str, int] | None:
+    if not value:
+        return None
+    try:
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            return None
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError:
+        return None
+    return parsed.scheme, parsed.hostname.lower(), port
+
+
+def is_same_origin_request(request) -> bool:
+    method = str(getattr(request, "method", "GET")).upper()
+    if method in {"GET", "HEAD", "OPTIONS"}:
+        return True
+
+    origin = _request_header(request, "Origin")
+    if origin is None:
+        # Local non-browser clients commonly omit Origin. A remote caller must
+        # prove same-origin even when remote control is explicitly enabled.
+        return is_loopback_request(request)
+
+    scheme = str(getattr(request, "scheme", "http")).lower()
+    host = str(getattr(request, "host", ""))
+    expected = _normalized_http_origin(f"{scheme}://{host}")
+    return expected is not None and _normalized_http_origin(origin) == expected
+
+
+def read_manager_security_level(user_dir: Path | None = None) -> str:
+    value = manager_settings.read_manager_config_value(manager_user_dir(user_dir), "security_level")
+    normalized = value.strip().lower() if isinstance(value, str) else ""
+    return normalized if normalized in _MANAGER_SECURITY_LEVELS else _DEFAULT_MANAGER_SECURITY_LEVEL
+
+
+def read_manager_boolean(option: str, user_dir: Path | None = None) -> bool:
+    value = manager_settings.read_manager_config_value(manager_user_dir(user_dir), option)
+    return isinstance(value, str) and value.strip().lower() == "true"
+
+
+def manager_security_config_available(user_dir: Path | None = None) -> bool:
+    return manager_settings.manager_config_path(manager_user_dir(user_dir)).is_file()
+
+
+def is_manager_operation_allowed(request, policy: str | None) -> bool:
+    if policy is None or policy == _MANAGER_POLICY_LOW or not manager_security_config_available():
+        return True
+    if policy == _MANAGER_POLICY_GIT_URL:
+        return read_manager_boolean("allow_git_url_install")
+
+    level = read_manager_security_level()
+    if policy == _MANAGER_POLICY_MIDDLE:
+        return level != "strong"
+    if policy == _MANAGER_POLICY_HIGH:
+        return level == "weak" or (level == "normal-" and is_loopback_request(request))
+    raise ValueError(f"Unknown Manager security policy: {policy}")
+
+
+def manifest_requires_git_url_install(manifest: Any) -> bool:
+    return (
+        isinstance(manifest, dict)
+        and isinstance(manifest.get("git_nodes"), list)
+        and bool(manifest["git_nodes"])
+    )
+
+
+def control_request_denied_response(request, manager_policy: str | None = None):
+    if is_control_request_allowed(request):
+        if not is_same_origin_request(request):
+            LOGGER.warning("[ControlPanel][SECURITY WARNING] Blocked cross-origin control request")
+            return _error_response("ControlPanel state-changing requests must be same-origin.", status=403)
+        if not is_manager_operation_allowed(request, manager_policy):
+            if manager_policy == _MANAGER_POLICY_GIT_URL:
+                message = (
+                    "Manager policy blocks Git URL installation. "
+                    "Set allow_git_url_install=true in Manager config.ini."
+                )
+            else:
+                message = f"Manager security_level blocks this {manager_policy}-risk operation."
+            LOGGER.warning("[ControlPanel][SECURITY WARNING] %s", message)
+            return _error_response(message, status=403)
+        return None
+
     host = _request_remote_host(request) or "unknown"
     path = getattr(request, "path", None) or getattr(request, "rel_url", "")
+    if is_loopback_request(request) and not is_loopback_request_host(request):
+        request_host = getattr(request, "host", None) or _request_header(request, "Host") or "unknown"
+        LOGGER.warning(
+            "[ControlPanel][SECURITY WARNING] Blocked non-loopback Host from local peer %s: %s",
+            host,
+            request_host,
+        )
+        return _error_response(
+            "ControlPanel local access requires a loopback Host unless allow_remote_control is enabled.",
+            status=403,
+        )
     LOGGER.warning("[ControlPanel][SECURITY WARNING] Blocked remote control request from %s: %s", host, path)
     return _error_response(
         "ComfyUI-ControlPanel is available only from localhost by default. "

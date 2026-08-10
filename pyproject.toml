@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-controlpanel"
 description = "A lightweight ComfyUI control panel that restores legacy local administration features no longer available in ComfyUI Manager."
-version = "1.2.4"
+version = "1.2.5"
 requires-python = ">=3.12"
 readme = "README.md"
 license = { file = "LICENSE" }

@@ -12,10 +12,13 @@ def register_routes(api: Any) -> bool:
 
     routes = PromptServer.instance.routes
 
-    def control_route(handler):
+    def control_route(handler=None, *, manager_policy=None):
+        if handler is None:
+            return lambda decorated: control_route(decorated, manager_policy=manager_policy)
+
         @wraps(handler)
         async def wrapper(request):
-            denied = api.control_request_denied_response(request)
+            denied = api.control_request_denied_response(request, manager_policy)
             if denied is not None:
                 return denied
             return await handler(request)
@@ -82,7 +85,7 @@ def register_routes(api: Any) -> bool:
             return api._error_response(str(error), status=500)
 
     @routes.post(f"{api.API_PREFIX}/install-git-url")
-    @control_route
+    @control_route(manager_policy=api._MANAGER_POLICY_GIT_URL)
     async def install(request):
         data = await api._read_json(request)
         return await api._with_operation_lock(
@@ -118,7 +121,7 @@ def register_routes(api: Any) -> bool:
         return await api._start_job_response("snapshot", "Save Snapshot", api._job_save_snapshot)
 
     @routes.post(f"{api.API_PREFIX}/snapshot/restore")
-    @control_route
+    @control_route(manager_policy=api._MANAGER_POLICY_MIDDLE)
     async def restore_snapshot(request):
         data = await api._read_json(request)
         target = str(data.get("target", ""))
@@ -134,10 +137,14 @@ def register_routes(api: Any) -> bool:
         return await api._with_operation_lock(api.node_restore_inventory)
 
     @routes.post(f"{api.API_PREFIX}/node-restore/restore")
-    @control_route
+    @control_route(manager_policy=api._MANAGER_POLICY_MIDDLE)
     async def restore_nodes(request):
         data = await api._read_json(request)
         manifest = data.get("manifest")
+        if api.manifest_requires_git_url_install(manifest):
+            denied = api.control_request_denied_response(request, api._MANAGER_POLICY_GIT_URL)
+            if denied is not None:
+                return denied
         return await api._start_job_response(
             "node-restore",
             "Restore Custom Nodes",
@@ -145,12 +152,12 @@ def register_routes(api: Any) -> bool:
         )
 
     @routes.post(f"{api.API_PREFIX}/update-all")
-    @control_route
+    @control_route(manager_policy=api._MANAGER_POLICY_MIDDLE)
     async def update_all(_request):
         return await api._start_job_response("git-nodes", "Update Git Nodes", api._job_update_git_nodes)
 
     @routes.post(f"{api.API_PREFIX}/update/custom-nodes")
-    @control_route
+    @control_route(manager_policy=api._MANAGER_POLICY_MIDDLE)
     async def update_custom_nodes(_request):
         return await api._start_job_response("git-nodes", "Update Git Nodes", api._job_update_git_nodes)
 
@@ -170,12 +177,12 @@ def register_routes(api: Any) -> bool:
         return await api._start_job_response("manager-cache", "Rebuild Manager Cache", api._job_rebuild_manager_cache)
 
     @routes.post(f"{api.API_PREFIX}/update-comfyui")
-    @control_route
+    @control_route(manager_policy=api._MANAGER_POLICY_LOW)
     async def update_core(_request):
         return await api._start_job_response("comfyui", "Update ComfyUI", api._job_update_comfyui)
 
     @routes.post(f"{api.API_PREFIX}/update/comfyui")
-    @control_route
+    @control_route(manager_policy=api._MANAGER_POLICY_LOW)
     async def update_comfyui_route(_request):
         return await api._start_job_response("comfyui", "Update ComfyUI", api._job_update_comfyui)
 
@@ -194,7 +201,7 @@ def register_routes(api: Any) -> bool:
         return api._json_response({"ok": True, "job": job.to_dict()})
 
     @routes.post(f"{api.API_PREFIX}/restart")
-    @control_route
+    @control_route(manager_policy=api._MANAGER_POLICY_MIDDLE)
     async def restart(request):
         data = await api._read_json(request)
         if data.get("confirm") is not True:
