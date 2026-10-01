@@ -148,6 +148,7 @@ The backend is split by responsibility:
 - `backend/manager_jobs.py` tracks background update jobs.
 - `backend/manager_process.py` runs external commands and opens local folders.
 - `backend/manager_cache.py` handles Manager and Comfy Registry cache data.
+- `backend/registry_cache.py` owns the [SQLite Registry catalog and installed-version summaries](docs/REGISTRY_CACHE.md).
 - `backend/manager_settings.py` reads and writes ControlPanel/Manager settings.
 - `backend/manager_git.py` handles Git-based update flows.
 - `backend/manager_cli.py` formats Comfy CLI responses.

@@ -12,6 +12,51 @@ from backend import manager_api
 from backend import manager_jobs
 
 
+def test_corrupt_registry_db_startup_deployment_keeps_existing_manager_cache(tmp_path):
+    source_dir = tmp_path / "sources"
+    source_dir.mkdir()
+    manager_cache_dir = tmp_path / "manager-cache"
+    manager_cache_dir.mkdir()
+    manager_api.registry_cache_path(source_dir).write_bytes(b"invalid sqlite")
+    manager_path = manager_cache_dir / manager_api.manager_url_cache_filename(manager_api._COMFY_REGISTRY_NODES_URL)
+    manager_path.write_text('{"nodes":[{"id":"keep"}]}', encoding="utf-8")
+    result = manager_api.deploy_registry_nodes_cache_to_manager(source_dir, manager_cache_dir)
+    assert result["action"] == "missing"
+    assert json.loads(manager_path.read_text(encoding="utf-8"))["nodes"] == [{"id": "keep"}]
+
+
+@pytest.mark.parametrize("disable_after_first", [False, True])
+def test_startup_refresh_runs_hourly_and_checks_override_setting(tmp_path, monkeypatch, disable_after_first):
+    manager_api.write_controlpanel_settings({"manager_repository_data_override_enabled": True}, tmp_path)
+    calls, waits = [], []
+    original_sleep = asyncio.sleep
+
+    async def scenario():
+        completed = asyncio.Event()
+
+        async def refresh(on_line=None, *, user_dir=None, max_age_seconds=0):
+            calls.append(user_dir)
+            if disable_after_first:
+                manager_api.write_controlpanel_settings({"manager_repository_data_override_enabled": False}, tmp_path)
+            return {"provider": "fake"}
+
+        async def sleep(seconds):
+            waits.append(seconds)
+            if len(waits) == 2:
+                completed.set()
+                raise asyncio.CancelledError
+            await original_sleep(0)
+
+        monkeypatch.setattr(manager_api, "refresh_manager_cache_from_cdn", refresh)
+        monkeypatch.setattr(manager_api.asyncio, "sleep", sleep)
+        manager_api.schedule_startup_manager_cache_refresh(user_dir=tmp_path)
+        await completed.wait()
+
+    asyncio.run(scenario())
+    assert calls == [tmp_path] * (1 if disable_after_first else 2)
+    assert waits == [3600, 3600]
+
+
 def test_resolve_comfyui_root_prefers_comfyui_path_env(monkeypatch, tmp_path):
     configured_root = tmp_path / "ConfiguredComfyUI"
     monkeypatch.setenv("COMFYUI_PATH", str(configured_root))
@@ -947,7 +992,7 @@ def test_refresh_manager_cache_hashes_existing_fresh_manager_cache(monkeypatch, 
     assert result["results"][0]["sha256"]
 
 
-def test_rebuild_manager_cache_removes_existing_source_and_refetches(monkeypatch, tmp_path):
+def test_rebuild_manager_cache_preserves_existing_source_until_refetched(monkeypatch, tmp_path):
     requested_urls = []
 
     class FakeResponse:
@@ -984,7 +1029,8 @@ def test_rebuild_manager_cache_removes_existing_source_and_refetches(monkeypatch
     monkeypatch.setattr(manager_api, "_MANAGER_CACHE_FILES", ("custom-node-list.json",))
     monkeypatch.setattr(manager_api, "ClientSession", FakeSession)
 
-    async def fake_refresh_registry(session, source_dir, on_line=None, channel=None):
+    async def fake_refresh_registry(session, source_dir, on_line=None, channel=None, *, force_rebuild=False):
+        assert force_rebuild is True
         (source_dir / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME).write_text(
             json.dumps({"nodes": []}),
             encoding="utf-8",
@@ -1000,18 +1046,47 @@ def test_rebuild_manager_cache_removes_existing_source_and_refetches(monkeypatch
     ]
     assert result["rebuilt"] is True
     assert result["max_age_seconds"] == 0
-    assert not (source_dir / "stale-extra.json").exists()
+    assert (source_dir / "stale-extra.json").exists()
     assert json.loads((source_dir / "custom-node-list.json").read_text(encoding="utf-8")) == {
         "custom_nodes": [{"name": "fresh"}]
     }
 
 
-def test_registry_nodes_incremental_timestamp_uses_latest_node_date():
+def test_rebuild_manager_cache_api_failure_preserves_previous_database_and_source(monkeypatch, tmp_path):
+    user_dir = tmp_path / "user"
+    source_dir = manager_api.controlpanel_manager_cache_source_dir(user_dir, "jsdelivr")
+    source_dir.mkdir(parents=True)
+    source_path = source_dir / "custom-node-list.json"
+    source_path.write_text('{"custom_nodes": [{"name": "cached"}]}', encoding="utf-8")
+    database_path = manager_api.registry_cache_path(source_dir)
+    database_path.write_bytes(b"existing sqlite cache")
+
+    async def failed_refresh(on_line=None, *, user_dir=None, max_age_seconds=None, force_registry_rebuild=False):
+        assert max_age_seconds == 0
+        assert force_registry_rebuild is True
+        raise manager_api.ManagerApiError("Registry unavailable")
+
+    monkeypatch.setattr(manager_api, "_refresh_manager_cache_from_cdn_unlocked", failed_refresh)
+
+    with pytest.raises(manager_api.ManagerApiError, match="Registry unavailable"):
+        asyncio.run(manager_api.rebuild_manager_cache_from_cdn(user_dir=user_dir))
+
+    assert database_path.read_bytes() == b"existing sqlite cache"
+    assert json.loads(source_path.read_text(encoding="utf-8")) == {"custom_nodes": [{"name": "cached"}]}
+    assert not manager_api._MANAGER_CACHE_REFRESH_LOCK.locked()
+
+
+def test_registry_nodes_incremental_timestamp_uses_created_node_date_only():
     timestamp = manager_api.registry_nodes_incremental_timestamp(
         {
             "nodes": [
-                {"id": "old", "updated_at": "2026-07-01T00:00:00Z"},
-                {"id": "new", "updatedAt": "2026-07-02T00:00:05Z"},
+                {
+                    "id": "old",
+                    "created_at": "2026-07-01T00:00:00Z",
+                    "updated_at": "2026-09-01T00:00:00Z",
+                    "latest_version": {"createdAt": "2026-10-01T00:00:00Z"},
+                },
+                {"id": "new", "createdAt": "2026-07-02T00:00:05Z", "updatedAt": "2026-08-01T00:00:00Z"},
             ]
         }
     )
@@ -1065,249 +1140,123 @@ def test_deploy_registry_nodes_cache_to_manager_writes_api_url_cache(tmp_path):
     }
 
 
-def test_refresh_registry_nodes_cache_full_fetches_all_pages(monkeypatch, tmp_path):
-    requested_urls = []
+def test_refresh_registry_nodes_cache_delegates_to_sqlite_sync(monkeypatch, tmp_path):
     metadata = {
         "comfyui_version": "0.3.50",
         "platform": "windows",
         "form_factor": "git-windows",
         "channel": "jsdelivr",
     }
-    responses = [
-        {"nodes": [{"id": "a", "updated_at": "2026-07-01T00:00:00Z"}], "totalPages": 2},
-        {"nodes": [{"id": "b", "updated_at": "2026-07-02T00:00:00Z"}], "totalPages": 2},
-    ]
+    session = SimpleNamespace()
+    logs = []
+    sync_arguments = {}
+    expected_result = {"action": "updated", "total": 2}
 
-    class FakeSession:
-        def get(self, url):
-            requested_urls.append(url)
+    async def fake_sync(**kwargs):
+        sync_arguments.update(kwargs)
+        return expected_result
 
-            class FakeResponse:
-                status = 200
-
-                async def __aenter__(self):
-                    return self
-
-                async def __aexit__(self, *_args):
-                    return None
-
-                async def text(self):
-                    return json.dumps(responses.pop(0))
-
-            return FakeResponse()
-
+    monkeypatch.setattr(manager_api.registry_cache, "sync_registry_cache", fake_sync)
     monkeypatch.setattr(manager_api, "_current_registry_cache_metadata", lambda: metadata)
     monkeypatch.setattr(manager_api.time, "time", lambda: 1000.0)
 
-    result = asyncio.run(manager_api.refresh_comfy_registry_nodes_cache(FakeSession(), tmp_path))
+    result = asyncio.run(manager_api.refresh_comfy_registry_nodes_cache(session, tmp_path, logs.append))
 
-    data = json.loads((tmp_path / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME).read_text(encoding="utf-8"))
-    expected_metadata = {
-        **metadata,
-        "created_at": "1970-01-01T00:16:40Z",
-        "updated_at": "1970-01-01T00:16:40Z",
+    assert result is expected_result
+    assert sync_arguments == {
+        "session": session,
+        "db_path": tmp_path / manager_api.registry_cache.DB_FILENAME,
+        "metadata": metadata,
+        "installed_node_ids": manager_api.installed_registry_node_ids,
+        "fetch_json": manager_api.fetch_json,
+        "fetch_nodes": manager_api.fetch_registry_nodes_pages,
+        "nodes_url": "https://api.comfy.org/nodes",
+        "now": 1000.0,
+        "force_rebuild": False,
+        "on_line": logs.append,
     }
-    assert result["action"] == "updated"
-    assert result["cache_metadata"] == expected_metadata
-    assert data["cache_metadata"] == expected_metadata
-    assert data["nodes"] == [
-        {"id": "a", "updated_at": "2026-07-01T00:00:00Z"},
-        {"id": "b", "updated_at": "2026-07-02T00:00:00Z"},
-    ]
-    assert requested_urls == [
-        "https://api.comfy.org/nodes?limit=30&form_factor=git-windows&comfyui_version=0.3.50&page=1",
-        "https://api.comfy.org/nodes?limit=30&form_factor=git-windows&comfyui_version=0.3.50&page=2",
-    ]
+    assert not (tmp_path / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME).exists()
 
 
-def test_refresh_registry_nodes_cache_incremental_merges_timestamped_updates(monkeypatch, tmp_path):
-    cache_path = tmp_path / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME
-    metadata = {
-        "comfyui_version": None,
-        "platform": "freebsd",
-        "form_factor": "git-linux",
-        "channel": "github",
-    }
-    cached_metadata = {
-        "comfyui_version": None,
-        "platform": "linux",
-        "form_factor": "git-linux",
-        "channel": "github",
-        "created_at": "2026-07-01T00:00:00Z",
-        "updated_at": "2026-07-01T01:00:00Z",
-    }
-    cache_path.write_text(
-        json.dumps(
-            {
-                "cache_metadata": cached_metadata,
-                "nodes": [
-                    {"id": "a", "name": "Old", "updated_at": "2026-07-01T00:00:00Z"},
-                    {"id": "b", "name": "Keep", "updated_at": "2026-07-02T00:00:05Z"},
-                ]
-            }
-        ),
+def test_refresh_registry_nodes_cache_shares_database_across_repository_channels(monkeypatch, tmp_path):
+    calls = []
+
+    async def fake_sync(**kwargs):
+        calls.append(kwargs)
+        return {"action": "fresh"}
+
+    monkeypatch.setattr(manager_api.registry_cache, "sync_registry_cache", fake_sync)
+    monkeypatch.setattr(manager_api, "_current_registry_cache_metadata", lambda channel: {"channel": channel})
+    cache_dir = tmp_path / "__controlpanel" / "manager-cache"
+
+    for channel in ("jsdelivr", "github"):
+        asyncio.run(manager_api.refresh_comfy_registry_nodes_cache(
+            SimpleNamespace(), cache_dir / "sources" / channel, channel=channel,
+        ))
+
+    assert [call["db_path"] for call in calls] == [cache_dir / manager_api.registry_cache.DB_FILENAME] * 2
+    assert [call["metadata"]["channel"] for call in calls] == ["jsdelivr", "github"]
+    assert all(call["force_rebuild"] is False for call in calls)
+
+
+def test_refresh_registry_nodes_cache_forwards_forced_catalog_refresh(monkeypatch, tmp_path):
+    calls = []
+
+    async def fake_sync(**kwargs):
+        calls.append(kwargs)
+        return {"action": "rebuilt"}
+
+    monkeypatch.setattr(manager_api.registry_cache, "sync_registry_cache", fake_sync)
+    monkeypatch.setattr(manager_api, "_current_registry_cache_metadata", lambda: {"comfyui_version": "0.3.51"})
+
+    result = asyncio.run(manager_api.refresh_comfy_registry_nodes_cache(
+        SimpleNamespace(), tmp_path, force_rebuild=True,
+    ))
+
+    assert result["action"] == "rebuilt"
+    assert calls[0]["force_rebuild"] is True
+    assert calls[0]["metadata"] == {"comfyui_version": "0.3.51"}
+
+
+def test_startup_registry_cache_deploys_sqlite_projection(monkeypatch, tmp_path):
+    user_dir = tmp_path / "user"
+    manager_dir = manager_api.manager_user_dir(user_dir)
+    source_dir = manager_api.controlpanel_manager_cache_source_dir(user_dir, "jsdelivr")
+    manager_dir.mkdir(parents=True)
+    source_dir.mkdir(parents=True)
+    manager_api.write_controlpanel_settings({"manager_repository_data_override_enabled": True}, user_dir)
+    database_path = manager_api.registry_cache_path(source_dir)
+    database_path.touch()
+    (source_dir / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME).write_text(
+        json.dumps({"nodes": [{"id": "legacy-json", "latest_version": {"version": "0.1.0"}}]}),
         encoding="utf-8",
     )
-    requested_urls = []
+    read_paths = []
 
-    class FakeSession:
-        def get(self, url):
-            requested_urls.append(url)
+    def fake_read_registry_cache(path):
+        read_paths.append(path)
+        return {
+            "nodes": [
+                {"id": "sqlite-node", "latest_version": {"version": "1.2.0"}},
+                {"id": "missing-version"},
+            ],
+            "installed_node_versions": {"sqlite-node": {"latest_flagged": None}},
+        }
 
-            class FakeResponse:
-                status = 200
+    monkeypatch.setattr(manager_api.registry_cache, "read_registry_cache", fake_read_registry_cache)
+    monkeypatch.setattr(manager_api, "_MANAGER_CACHE_FILES", ())
 
-                async def __aenter__(self):
-                    return self
+    result = manager_api.apply_startup_manager_repository_override(user_dir=user_dir)
 
-                async def __aexit__(self, *_args):
-                    return None
-
-                async def text(self):
-                    return json.dumps({"nodes": [{"id": "b", "name": "New"}], "totalPages": 1})
-
-            return FakeResponse()
-
-    monkeypatch.setattr(manager_api, "_current_registry_cache_metadata", lambda: metadata)
-    monkeypatch.setattr(manager_api.time, "time", lambda: 2000.0)
-
-    result = asyncio.run(manager_api.refresh_comfy_registry_nodes_cache(FakeSession(), tmp_path))
-
-    data = json.loads(cache_path.read_text(encoding="utf-8"))
-    expected_metadata = {
-        **metadata,
-        "created_at": "2026-07-01T00:00:00Z",
-        "updated_at": "1970-01-01T00:33:20Z",
+    manager_path = manager_dir / "cache" / manager_api.manager_url_cache_filename(manager_api._COMFY_REGISTRY_NODES_URL)
+    assert result["enabled"] is True
+    assert read_paths == [database_path]
+    assert json.loads(manager_path.read_text(encoding="utf-8")) == {
+        "nodes": [{"id": "sqlite-node", "latest_version": {"version": "1.2.0"}}],
+        "page": 1,
+        "total": 1,
+        "totalPages": 1,
     }
-    assert result["action"] == "incremental"
-    assert result["timestamp"] == "2026-07-01T23:59:55Z"
-    assert result["cache_metadata"] == expected_metadata
-    assert data["cache_metadata"] == expected_metadata
-    assert data["nodes"] == [
-        {"id": "a", "name": "Old", "updated_at": "2026-07-01T00:00:00Z"},
-        {"id": "b", "name": "New"},
-    ]
-    assert requested_urls == [
-        "https://api.comfy.org/nodes?limit=30&form_factor=git-linux&timestamp=2026-07-01T23%3A59%3A55Z&page=1"
-    ]
-
-
-def test_refresh_registry_nodes_cache_invalidates_when_metadata_changes(monkeypatch, tmp_path):
-    cache_path = tmp_path / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME
-    current_metadata = {
-        "comfyui_version": "0.3.51",
-        "platform": "windows",
-        "form_factor": "git-windows",
-        "channel": "jsdelivr",
-    }
-    cache_path.write_text(
-        json.dumps(
-            {
-                "cache_metadata": {
-                    "comfyui_version": "0.3.50",
-                    "platform": "windows",
-                    "form_factor": "git-windows",
-                    "channel": "jsdelivr",
-                    "created_at": "2026-07-01T00:00:00Z",
-                    "updated_at": "2026-07-01T01:00:00Z",
-                },
-                "nodes": [{"id": "old", "updated_at": "2026-07-01T00:00:00Z"}],
-            }
-        ),
-        encoding="utf-8",
-    )
-    requested_urls = []
-
-    class FakeSession:
-        def get(self, url):
-            requested_urls.append(url)
-
-            class FakeResponse:
-                status = 200
-
-                async def __aenter__(self):
-                    return self
-
-                async def __aexit__(self, *_args):
-                    return None
-
-                async def text(self):
-                    return json.dumps({"nodes": [{"id": "new"}], "totalPages": 1})
-
-            return FakeResponse()
-
-    monkeypatch.setattr(manager_api, "_current_registry_cache_metadata", lambda: current_metadata)
-    monkeypatch.setattr(manager_api.time, "time", lambda: 3000.0)
-
-    result = asyncio.run(manager_api.refresh_comfy_registry_nodes_cache(FakeSession(), tmp_path))
-
-    data = json.loads(cache_path.read_text(encoding="utf-8"))
-    expected_metadata = {
-        **current_metadata,
-        "created_at": "1970-01-01T00:50:00Z",
-        "updated_at": "1970-01-01T00:50:00Z",
-    }
-    assert result["action"] == "invalidated"
-    assert result["timestamp"] is None
-    assert result["cache_metadata"] == expected_metadata
-    assert data["cache_metadata"] == expected_metadata
-    assert data["nodes"] == [{"id": "new"}]
-    assert requested_urls == [
-        "https://api.comfy.org/nodes?limit=30&form_factor=git-windows&comfyui_version=0.3.51&page=1"
-    ]
-
-
-def test_refresh_registry_nodes_cache_invalidates_when_channel_changes(monkeypatch, tmp_path):
-    cache_path = tmp_path / manager_api._COMFY_REGISTRY_NODES_CACHE_FILENAME
-    current_metadata = {
-        "comfyui_version": None,
-        "platform": "windows",
-        "form_factor": "git-windows",
-        "channel": "github",
-    }
-    cache_path.write_text(
-        json.dumps(
-            {
-                "cache_metadata": {
-                    "comfyui_version": None,
-                    "platform": "windows",
-                    "form_factor": "git-windows",
-                    "channel": "jsdelivr",
-                    "created_at": "2026-07-01T00:00:00Z",
-                    "updated_at": "2026-07-01T01:00:00Z",
-                },
-                "nodes": [{"id": "old", "updated_at": "2026-07-01T00:00:00Z"}],
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    class FakeSession:
-        def get(self, _url):
-            class FakeResponse:
-                status = 200
-
-                async def __aenter__(self):
-                    return self
-
-                async def __aexit__(self, *_args):
-                    return None
-
-                async def text(self):
-                    return json.dumps({"nodes": [{"id": "new"}], "totalPages": 1})
-
-            return FakeResponse()
-
-    monkeypatch.setattr(manager_api, "_current_registry_cache_metadata", lambda: current_metadata)
-    monkeypatch.setattr(manager_api.time, "time", lambda: 4000.0)
-
-    result = asyncio.run(manager_api.refresh_comfy_registry_nodes_cache(FakeSession(), tmp_path))
-
-    data = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert result["action"] == "invalidated"
-    assert result["timestamp"] is None
-    assert data["cache_metadata"]["channel"] == "github"
-    assert data["nodes"] == [{"id": "new"}]
 
 
 def test_fetch_registry_nodes_pages_logs_every_tenth_page_and_completion(monkeypatch):

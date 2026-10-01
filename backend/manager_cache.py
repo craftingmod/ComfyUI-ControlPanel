@@ -104,10 +104,14 @@ async def fetch_registry_nodes_pages(
         page_nodes = data.get("nodes")
         if not isinstance(page_nodes, list):
             raise api_error_type("Comfy Registry nodes response did not include a nodes list.")
-        nodes.extend(node for node in page_nodes if isinstance(node, dict))
+        if any(not isinstance(node, dict) for node in page_nodes):
+            raise api_error_type("Comfy Registry nodes response included an invalid node.")
+        nodes.extend(page_nodes)
 
-        total_pages_value = data.get("totalPages", 1)
-        total_pages = total_pages_value if isinstance(total_pages_value, int) and total_pages_value > 0 else 1
+        total_pages_value = data.get("totalPages")
+        if type(total_pages_value) is not int or total_pages_value < 0:
+            raise api_error_type("Comfy Registry nodes response had invalid pagination.")
+        total_pages = max(1, total_pages_value)
         if on_line and (page % 10 == 0 or page >= total_pages):
             on_line(f"Updating ComfyRegistry nodes ({page}/{total_pages})")
         page += 1
@@ -131,68 +135,6 @@ def registry_cache_metadata_matches(
     if not isinstance(cached_metadata, dict):
         return False
     return all(cached_metadata.get(key) == metadata.get(key) for key in invalidation_keys)
-
-
-async def refresh_comfy_registry_nodes_cache(
-    *,
-    session: Any,
-    source_dir: Path,
-    filename: str,
-    source_url: str,
-    metadata_key: str,
-    current_metadata: Callable[[str | None], dict[str, str | None]],
-    metadata_matches: Callable[[dict[str, Any], dict[str, str | None]], bool],
-    incremental_timestamp: Callable[[dict[str, Any]], str | None],
-    fetch_pages: Callable[..., Any],
-    merge_cache: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]],
-    with_metadata: Callable[[dict[str, Any], dict[str, str | None], dict[str, Any] | None], dict[str, Any]],
-    write_json: Callable[[Path, Any], str],
-    channel: str | None = None,
-    on_line: Callable[[str], None] | None = None,
-) -> dict[str, Any]:
-    cache_path = source_dir / filename
-    cache_data: dict[str, Any] | None = None
-    timestamp: str | None = None
-    metadata = current_metadata(channel) if channel is not None else current_metadata(None)
-    previous_metadata: dict[str, Any] | None = None
-    action = "updated"
-
-    if cache_path.exists():
-        try:
-            loaded = json.loads(cache_path.read_text(encoding="utf-8"))
-            cache_data = loaded if isinstance(loaded, dict) else None
-        except json.JSONDecodeError:
-            cache_data = None
-        if cache_data is not None and isinstance(cache_data.get(metadata_key), dict):
-            previous_metadata = cache_data[metadata_key]
-        if cache_data is not None and metadata_matches(cache_data, metadata):
-            timestamp = incremental_timestamp(cache_data)
-            if timestamp:
-                action = "incremental"
-        elif cache_data is not None:
-            cache_data = None
-            previous_metadata = None
-            action = "invalidated"
-
-    if timestamp:
-        on_line and on_line(f"Updating Comfy Registry nodes since {timestamp}")
-    else:
-        on_line and on_line("Building Comfy Registry nodes cache")
-
-    fetched_data = await fetch_pages(session, timestamp=timestamp, metadata=metadata, on_line=on_line)
-    data = merge_cache(cache_data, fetched_data) if cache_data is not None else fetched_data
-    data = with_metadata(data, metadata, previous_metadata)
-    digest = write_json(cache_path, data)
-    return {
-        "file": filename,
-        "action": action,
-        "source_url": source_url,
-        "source_path": str(cache_path),
-        "timestamp": timestamp,
-        "cache_metadata": data[metadata_key],
-        "total": len(data.get("nodes", [])) if isinstance(data.get("nodes"), list) else 0,
-        "sha256": digest,
-    }
 
 
 def locked_refresh_skipped_response(
@@ -361,7 +303,10 @@ def registry_nodes_incremental_timestamp(cache_data: dict[str, Any]) -> str | No
     if not isinstance(nodes, list):
         return None
 
-    timestamps = [node_updated_timestamp(node) for node in nodes if isinstance(node, dict)]
+    timestamps = [
+        parse_iso_datetime(node.get("created_at") or node.get("createdAt"))
+        for node in nodes if isinstance(node, dict)
+    ]
     latest_timestamp = max((value for value in timestamps if value is not None), default=None)
     if latest_timestamp is None:
         return None
@@ -427,6 +372,7 @@ def deploy_registry_nodes_cache_to_manager(
     compatible_cache: Callable[[dict[str, Any]], dict[str, Any]],
     write_json: Callable[[Path, Any], str],
     on_line: Callable[[str], None] | None = None,
+    data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not source_path.exists():
         on_line and on_line(f"Comfy Registry nodes cache source missing: {filename}")
@@ -438,7 +384,8 @@ def deploy_registry_nodes_cache_to_manager(
             "manager_cache_path": str(manager_path),
         }
 
-    data = json.loads(source_path.read_text(encoding="utf-8"))
+    if data is None:
+        data = json.loads(source_path.read_text(encoding="utf-8"))
     manager_data = compatible_cache(data) if isinstance(data, dict) else data
     digest = write_json(manager_path, manager_data)
     filtered = 0

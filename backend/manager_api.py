@@ -13,9 +13,9 @@ import time
 import uuid
 import os
 import re
-import shutil
 import sys
 import importlib
+import sqlite3
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlsplit
@@ -24,6 +24,8 @@ from aiohttp import ClientSession
 
 from .hash import manager_cache_key_hash
 from . import manager_cache
+from . import registry_cache
+from . import registry_installed
 from . import manager_cli
 from . import manager_git
 from . import manager_http
@@ -79,7 +81,7 @@ _MANAGER_REPOSITORY_DATA_CHANNEL_URLS = {
 }
 _COMFY_REGISTRY_NODES_URL = "https://api.comfy.org/nodes"
 _COMFY_REGISTRY_NODES_CACHE_FILENAME = "registry-node-list.json"
-_COMFY_REGISTRY_NODES_PAGE_LIMIT = 30
+_COMFY_REGISTRY_NODES_PAGE_LIMIT = 100
 _COMFY_REGISTRY_CACHE_METADATA_KEY = "cache_metadata"
 _COMFY_REGISTRY_CACHE_INVALIDATION_KEYS = ("comfyui_version", "form_factor", "channel")
 _CACHE_MAX_AGE_SECONDS = 86400
@@ -598,17 +600,42 @@ def deploy_registry_nodes_cache_to_manager(
     manager_cache_dir: Path,
     on_line: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    source_path = source_dir / _COMFY_REGISTRY_NODES_CACHE_FILENAME
+    source_path = registry_cache_path(source_dir)
+    data = None
+    if source_path.exists():
+        try:
+            data = registry_cache.read_registry_cache(source_path)
+            data.pop("installed_node_versions", None)
+        except (sqlite3.DatabaseError, ValueError, TypeError):
+            on_line and on_line("Registry SQLite cache requires recovery; keeping the existing Manager cache.")
+    if data is None:
+        # Existing JSON is usable offline until the first successful SQLite bootstrap.
+        source_path = source_dir / _COMFY_REGISTRY_NODES_CACHE_FILENAME
     manager_path = manager_cache_dir / manager_url_cache_filename(_COMFY_REGISTRY_NODES_URL)
     return manager_cache.deploy_registry_nodes_cache_to_manager(
         source_path=source_path,
         manager_path=manager_path,
-        filename=_COMFY_REGISTRY_NODES_CACHE_FILENAME,
+        filename=source_path.name,
         source_url=_COMFY_REGISTRY_NODES_URL,
         compatible_cache=manager_compatible_registry_nodes_cache,
         write_json=write_json_atomic,
         on_line=on_line,
+        data=data,
     )
+
+
+def registry_cache_path(source_dir: Path) -> Path:
+    cache_dir = source_dir.parent.parent if source_dir.parent.name == "sources" else source_dir
+    return cache_dir / registry_cache.DB_FILENAME
+
+
+def installed_registry_node_ids(catalog_nodes: list[dict[str, Any]]) -> set[str]:
+    roots = [CUSTOM_NODES_DIR]
+    with contextlib.suppress(ImportError, AttributeError):
+        import folder_paths
+
+        roots = [Path(path) for path in folder_paths.get_folder_paths("custom_nodes")]
+    return registry_installed.discover_installed_registry_nodes(roots, catalog_nodes)
 
 
 def deploy_controlpanel_manager_cache_to_manager(
@@ -626,7 +653,7 @@ def deploy_controlpanel_manager_cache_to_manager(
 
     channel = read_manager_repository_data_channel(resolved_user_dir)
     source_dir = controlpanel_manager_cache_source_dir(resolved_user_dir, channel)
-    if not source_dir.exists():
+    if not source_dir.exists() and not registry_cache_path(source_dir).exists():
         on_line and on_line(f"ControlPanel Manager cache source directory was not found: {source_dir}")
         return {
             "skipped": "ControlPanel Manager cache source directory was not found.",
@@ -700,11 +727,14 @@ def schedule_startup_manager_cache_refresh(user_dir: Path | None = None) -> dict
         LOGGER.info("[ControlPanel] [Startup] %s", message)
 
     async def refresh() -> None:
-        try:
-            result = await refresh_manager_cache_from_cdn(on_line, user_dir=resolved_user_dir)
-            LOGGER.info("[ControlPanel] [Startup] Updating cache completed: %s", result.get("provider"))
-        except Exception as err:
-            LOGGER.warning("[ControlPanel] [Startup] Updating cache failed: %s", err, exc_info=True)
+        while True:
+            if is_manager_repository_override_enabled(resolved_user_dir):
+                try:
+                    result = await refresh_manager_cache_from_cdn(on_line, user_dir=resolved_user_dir)
+                    LOGGER.info("[ControlPanel] Updating cache completed: %s", result.get("provider"))
+                except Exception as err:
+                    LOGGER.warning("[ControlPanel] Updating cache failed: %s", err, exc_info=True)
+            await asyncio.sleep(registry_cache.SYNC_INTERVAL_SECONDS)
 
     try:
         loop = asyncio.get_running_loop()
@@ -757,26 +787,20 @@ async def refresh_comfy_registry_nodes_cache(
     source_dir: Path,
     on_line: Callable[[str], None] | None = None,
     channel: str | None = None,
+    *,
+    force_rebuild: bool = False,
 ) -> dict[str, Any]:
-    def current_metadata_adapter(resolved_channel: str | None = None) -> dict[str, str | None]:
-        if resolved_channel is None:
-            return _current_registry_cache_metadata()
-        return _current_registry_cache_metadata(resolved_channel)
-
-    return await manager_cache.refresh_comfy_registry_nodes_cache(
+    metadata = _current_registry_cache_metadata(channel) if channel is not None else _current_registry_cache_metadata()
+    return await registry_cache.sync_registry_cache(
         session=session,
-        source_dir=source_dir,
-        filename=_COMFY_REGISTRY_NODES_CACHE_FILENAME,
-        source_url=_COMFY_REGISTRY_NODES_URL,
-        metadata_key=_COMFY_REGISTRY_CACHE_METADATA_KEY,
-        current_metadata=current_metadata_adapter,
-        metadata_matches=_registry_cache_metadata_matches,
-        incremental_timestamp=registry_nodes_incremental_timestamp,
-        fetch_pages=fetch_registry_nodes_pages,
-        merge_cache=merge_registry_nodes_cache,
-        with_metadata=_with_registry_cache_metadata,
-        write_json=write_json_atomic,
-        channel=channel,
+        db_path=registry_cache_path(source_dir),
+        metadata=metadata,
+        installed_node_ids=installed_registry_node_ids,
+        fetch_json=fetch_json,
+        fetch_nodes=fetch_registry_nodes_pages,
+        nodes_url=_COMFY_REGISTRY_NODES_URL,
+        now=time.time(),
+        force_rebuild=force_rebuild,
         on_line=on_line,
     )
 
@@ -822,16 +846,13 @@ async def rebuild_manager_cache_from_cdn(
             on_line=on_line,
         )
 
-    source_dir = controlpanel_manager_cache_source_dir(resolved_user_dir, channel)
     try:
-        if source_dir.exists():
-            on_line and on_line(f"Removing ControlPanel Manager cache source: {source_dir}")
-            shutil.rmtree(source_dir)
         on_line and on_line("Rebuilding Manager cache from repository data sources.")
         result = await _refresh_manager_cache_from_cdn_unlocked(
             on_line,
             user_dir=resolved_user_dir,
             max_age_seconds=0,
+            force_registry_rebuild=True,
         )
         result["rebuilt"] = True
         return result
@@ -844,6 +865,7 @@ async def _refresh_manager_cache_from_cdn_unlocked(
     *,
     user_dir: Path | None = None,
     max_age_seconds: int = _CACHE_MAX_AGE_SECONDS,
+    force_registry_rebuild: bool = False,
 ) -> dict[str, Any]:
     resolved_user_dir = user_dir or COMFYUI_USER_DIR
     manager_dir = manager_user_dir(resolved_user_dir)
@@ -878,7 +900,8 @@ async def _refresh_manager_cache_from_cdn_unlocked(
     )
 
     async with ClientSession() as session:
-        registry_result = await refresh_comfy_registry_nodes_cache(session, source_dir, on_line, channel)
+        registry_options = {"force_rebuild": True} if force_registry_rebuild else {}
+        registry_result = await refresh_comfy_registry_nodes_cache(session, source_dir, on_line, channel, **registry_options)
     registry_manager_cache = deploy_registry_nodes_cache_to_manager(source_dir, manager_cache_dir, on_line)
 
     return {
