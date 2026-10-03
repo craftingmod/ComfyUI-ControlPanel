@@ -44,6 +44,7 @@ def register_routes(api: Any) -> bool:
                 "settings": {
                     "manager_repository_data_override": api.is_manager_repository_override_enabled(),
                     "manager_repository_data_channel": api.read_manager_repository_data_channel(),
+                    "allow_flagged_version_as_latest": api.is_allow_flagged_version_as_latest_enabled(),
                     "manager_network_mode": api.read_manager_network_mode(api.manager_user_dir()),
                     "manager_channel_url": api.read_manager_channel_url(api.manager_user_dir()),
                 },
@@ -59,6 +60,7 @@ def register_routes(api: Any) -> bool:
                 "ok": True,
                 "manager_repository_data_override": api.is_manager_repository_override_enabled(),
                 "manager_repository_data_channel": api.read_manager_repository_data_channel(),
+                "allow_flagged_version_as_latest": api.is_allow_flagged_version_as_latest_enabled(),
                 "manager_network_mode": api.read_manager_network_mode(manager_dir),
                 "manager_channel_url": api.read_manager_channel_url(manager_dir),
             }
@@ -80,6 +82,16 @@ def register_routes(api: Any) -> bool:
         data = await api._read_json(request)
         try:
             result = api.set_manager_repository_data_channel(data.get("channel"))
+            return api._json_response({"ok": True, **result})
+        except Exception as error:  # noqa: BLE001 - settings errors should surface to the UI.
+            return api._error_response(str(error), status=500)
+
+    @routes.post(f"{api.API_PREFIX}/settings/allow-flagged-version-as-latest")
+    @control_route
+    async def set_allow_flagged_version_as_latest(request):
+        data = await api._read_json(request)
+        try:
+            result = api.set_allow_flagged_version_as_latest(data.get("enabled") is True)
             return api._json_response({"ok": True, **result})
         except Exception as error:  # noqa: BLE001 - settings errors should surface to the UI.
             return api._error_response(str(error), status=500)

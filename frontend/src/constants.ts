@@ -6,6 +6,7 @@ export const SETTINGS_IDS = {
   DEBUG_LOGGING: `${SETTINGS_PREFIX}.Debug_Logging`,
   MANAGER_REPOSITORY_DATA_OVERRIDE: `${SETTINGS_PREFIX}.Manager_Repository_Data_Override`,
   MANAGER_REPOSITORY_DATA_CHANNEL: `${SETTINGS_PREFIX}.Manager_Repository_Data_Channel`,
+  ALLOW_FLAGGED_VERSION_AS_LATEST: `${SETTINGS_PREFIX}.Allow_Flagged_Version_As_Latest`,
 } as const
 export const API_PREFIX = "/control-panel"
 export const API_ROUTES = {
@@ -13,6 +14,7 @@ export const API_ROUTES = {
   SETTINGS: `${API_PREFIX}/settings`,
   MANAGER_REPOSITORY_DATA_OVERRIDE: `${API_PREFIX}/settings/manager-repository-data-override`,
   MANAGER_REPOSITORY_DATA_CHANNEL: `${API_PREFIX}/settings/manager-repository-data-channel`,
+  ALLOW_FLAGGED_VERSION_AS_LATEST: `${API_PREFIX}/settings/allow-flagged-version-as-latest`,
   INSTALL_GIT_URL: `${API_PREFIX}/install-git-url`,
   OPEN_CUSTOM_NODES: `${API_PREFIX}/open/custom-nodes`,
   OPEN_SNAPSHOTS: `${API_PREFIX}/open/snapshots`,

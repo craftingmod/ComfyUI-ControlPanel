@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from backend import registry_cache
+from backend import manager_api, registry_cache
 
 
 ACTIVE = "NodeVersionStatusActive"
@@ -92,6 +92,82 @@ class Registry:
     def history_calls(self, node_id=None):
         return [params for path, params in self.requests if path == "/versions" and "nodeId" in params
                 and (node_id is None or params["nodeId"] == [node_id])]
+
+
+@pytest.mark.parametrize("active_number,flagged_number,expected", [
+    ("0.9.0", "0.10.0", "0.10.0"),
+    ("0.10.0", "0.9.0", "0.10.0"),
+    ("0.9.0", "0.9.0+flagged", "0.9.0"),
+    ("1.0.0", "1.0.0-rc.10", "1.0.0"),
+    ("1.0.0-rc.9", "1.0.0-rc.10", "1.0.0-rc.10"),
+    (None, "0.10.0", "0.10.0"),
+])
+def test_flagged_manager_projection_preserves_registry_cache(tmp_path, active_number, flagged_number, expected):
+    api = Registry(tmp_path)
+    active = version("a", active_number) if active_number else None
+    flagged = version("a", flagged_number, FLAGGED)
+    api.active["a"] = active
+    api.histories["a"] = [flagged, *([active] if active else [])]
+    api.feed = [flagged]
+    api.sync()
+    original = api.path.read_bytes()
+
+    exported = registry_cache.read_registry_cache(api.path, allow_flagged=True)
+    latest = exported["nodes"][0]["latest_version"]
+    assert latest["version"] == expected
+    assert latest == (flagged if expected == flagged_number else active)
+    assert exported["installed_node_versions"]["a"]["latest_flagged"] == flagged
+    assert api.data()["nodes"][0]["latest_version"] == active
+    assert api.path.read_bytes() == original
+
+
+@pytest.mark.parametrize("export_path", ["startup", "refresh"])
+def test_flagged_setting_controls_manager_exports_and_redeploys_on_toggle(tmp_path, monkeypatch, export_path):
+    user_dir = tmp_path / "user"
+    source_dir = manager_api.controlpanel_manager_cache_source_dir(user_dir, "jsdelivr")
+    source_dir.mkdir(parents=True)
+    manager_dir = manager_api.manager_user_dir(user_dir)
+    manager_dir.mkdir()
+    api = Registry(tmp_path)
+    api.path = manager_api.registry_cache_path(source_dir)
+    flagged = version("a", "0.10.0", FLAGGED)
+    api.histories["a"].insert(0, flagged)
+    api.feed.insert(0, flagged)
+    api.sync()
+    original = api.path.read_bytes()
+    manager_api.write_controlpanel_settings({
+        "manager_repository_data_override_enabled": True,
+        "allow_flagged_version_as_latest": True,
+    }, user_dir)
+    monkeypatch.setattr(manager_api, "_MANAGER_CACHE_FILES", ())
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    async def refresh_registry(*_args, **_kwargs):
+        return {"action": "fresh"}
+
+    monkeypatch.setattr(manager_api, "ClientSession", FakeSession)
+    monkeypatch.setattr(manager_api, "refresh_comfy_registry_nodes_cache", refresh_registry)
+    if export_path == "startup":
+        manager_api.apply_startup_manager_repository_override(user_dir)
+    else:
+        asyncio.run(manager_api.refresh_manager_cache_from_cdn(user_dir=user_dir))
+    manager_path = manager_dir / "cache" / manager_api.manager_url_cache_filename(manager_api._COMFY_REGISTRY_NODES_URL)
+    exported = json.loads(manager_path.read_text(encoding="utf-8"))
+    assert exported["nodes"][0]["latest_version"] == flagged
+    assert "installed_node_versions" not in exported
+
+    result = manager_api.set_allow_flagged_version_as_latest(False, user_dir)
+    assert result["deployment"]["registry_nodes"]["action"] == "deployed"
+    assert manager_api.is_allow_flagged_version_as_latest_enabled(user_dir) is False
+    assert manager_api.is_manager_repository_override_enabled(user_dir) is True
+    assert json.loads(manager_path.read_text(encoding="utf-8"))["nodes"][0]["latest_version"] == api.active["a"]
+    assert api.path.read_bytes() == original
 
 
 def test_bootstrap_seeds_only_installed_summaries_and_records_empty_flagged(tmp_path):

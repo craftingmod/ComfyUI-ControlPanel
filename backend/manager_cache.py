@@ -23,7 +23,7 @@ def manager_url_cache_filename(url: str, hash_func: Callable[[str], str]) -> str
 
 
 def is_cache_file_fresh(path: Path, max_age_seconds: int, now: Callable[[], float]) -> bool:
-    if not path.exists():
+    if max_age_seconds <= 0 or not path.exists():
         return False
     return now() - path.stat().st_mtime < max_age_seconds
 

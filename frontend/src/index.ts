@@ -18,7 +18,10 @@ const ACTION_BAR_BUTTON_TOOLTIP = "Open ControlPanel"
 type ControlPanelSettingsResponse = {
   manager_repository_data_override?: boolean
   manager_repository_data_channel?: string
+  allow_flagged_version_as_latest?: boolean
 }
+
+let managerSettingsSynced = false
 
 class ControlPanelFetchError extends Error {
   constructor(
@@ -91,10 +94,15 @@ async function syncManagerRepositoryDataOverrideSetting(): Promise<void> {
     settingId(SETTINGS_IDS.MANAGER_REPOSITORY_DATA_CHANNEL),
     data.manager_repository_data_channel === "github" ? "github" : "jsdelivr",
   )
+  await app.extensionManager.setting.set(
+    settingId(SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST),
+    data.allow_flagged_version_as_latest === true,
+  )
+  managerSettingsSynced = true
 }
 
-function updateManagerRepositoryDataOverrideSetting(enabled: boolean): void {
-  void fetchJson(API_ROUTES.MANAGER_REPOSITORY_DATA_OVERRIDE, { enabled })
+function updateManagerBooleanSetting(route: string, enabled: boolean): void {
+  void fetchJson(route, { enabled })
     .catch((error) => {
       const message = error instanceof Error ? error.message : String(error)
       app.extensionManager.toast.add({
@@ -147,6 +155,7 @@ function createExtensionObject(): ManagerExtension {
       {
         id: settingId(SETTINGS_IDS.VERSION),
         name: "ComfyUI-ControlPanel",
+        category: ["ControlPanel", "General", "ComfyUI-ControlPanel"],
         type: () => {
           const spanEl = document.createElement("span")
           const linkEl = document.createElement("a")
@@ -163,6 +172,7 @@ function createExtensionObject(): ManagerExtension {
       {
         id: settingId(SETTINGS_IDS.DEBUG_LOGGING),
         name: "Enable Debug Logging",
+        category: ["ControlPanel", "General", "Enable Debug Logging"],
         type: "boolean",
         tooltip: "Show detailed debug logs in browser console during manager operations",
         defaultValue: false,
@@ -170,16 +180,18 @@ function createExtensionObject(): ManagerExtension {
       {
         id: settingId(SETTINGS_IDS.MANAGER_REPOSITORY_DATA_OVERRIDE),
         name: "Replace Manager Repository Data",
+        category: ["ControlPanel", "Manager", "Replace Manager Repository Data"],
         type: "boolean",
         tooltip: "Use ControlPanel cached Manager repository data and force ComfyUI Manager offline channel settings",
         defaultValue: false,
         onChange: (value) => {
-          updateManagerRepositoryDataOverrideSetting(value === true)
+          updateManagerBooleanSetting(API_ROUTES.MANAGER_REPOSITORY_DATA_OVERRIDE, value === true)
         },
       },
       {
         id: settingId(SETTINGS_IDS.MANAGER_REPOSITORY_DATA_CHANNEL),
         name: "Manager Repository Data Source",
+        category: ["ControlPanel", "Manager", "Manager Repository Data Source"],
         type: "combo",
         options: [
           { value: "jsdelivr", text: "jsDelivr" },
@@ -188,6 +200,19 @@ function createExtensionObject(): ManagerExtension {
         tooltip: "Choose where ControlPanel fetches ComfyUI Manager repository data",
         defaultValue: "jsdelivr",
         onChange: updateManagerRepositoryDataChannelSetting,
+      },
+      {
+        id: settingId(SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST),
+        name: "Allow flagged version as latest",
+        category: ["ControlPanel", "Manager", "Allow flagged version as latest"],
+        type: "boolean",
+        tooltip: "Use a newer cached Flagged version as latest in Manager exports, preserving its Registry status",
+        defaultValue: false,
+        onChange: (value) => {
+          if (managerSettingsSynced) {
+            updateManagerBooleanSetting(API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST, value === true)
+          }
+        },
       },
     ],
     async init() {

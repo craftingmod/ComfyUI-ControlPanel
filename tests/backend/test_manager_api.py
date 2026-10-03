@@ -756,6 +756,10 @@ def test_is_cache_file_fresh_uses_mtime(tmp_path):
 
     assert manager_api.is_cache_file_fresh(cache_file, max_age_seconds=86400)
 
+    future_time = time.time() + 60
+    os.utime(cache_file, (future_time, future_time))
+    assert not manager_api.is_cache_file_fresh(cache_file, max_age_seconds=0)
+
     old_time = time.time() - 90000
     os.utime(cache_file, (old_time, old_time))
 
@@ -1233,7 +1237,8 @@ def test_startup_registry_cache_deploys_sqlite_projection(monkeypatch, tmp_path)
     )
     read_paths = []
 
-    def fake_read_registry_cache(path):
+    def fake_read_registry_cache(path, *, allow_flagged=False):
+        assert allow_flagged is False
         read_paths.append(path)
         return {
             "nodes": [

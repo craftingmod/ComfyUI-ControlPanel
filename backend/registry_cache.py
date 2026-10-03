@@ -196,7 +196,7 @@ def _summaries(connection: sqlite3.Connection) -> dict[str, dict[str, Any]]:
     return result
 
 
-def read_registry_cache(db_path: Path) -> dict[str, Any]:
+def read_registry_cache(db_path: Path, *, allow_flagged: bool = False) -> dict[str, Any]:
     connection = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
     try:
         connection.execute("BEGIN")
@@ -206,7 +206,11 @@ def read_registry_cache(db_path: Path) -> dict[str, Any]:
         for node in nodes:
             summary = summaries.get(_node_id(node))
             if summary is not None:
-                node["latest_version"] = summary["latest_active"]
+                active = summary["latest_active"]
+                flagged = summary["latest_flagged"]
+                node["latest_version"] = active
+                if allow_flagged and flagged is not None and (active is None or _semver_key(flagged) > _semver_key(active)):
+                    node["latest_version"] = flagged
         return {
             "nodes": nodes,
             "cache_metadata": state.get("cache_metadata", {}),

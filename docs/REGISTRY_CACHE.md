@@ -34,6 +34,12 @@ directories, Registry archive tracking and Git Registry identities/repository ma
 Local IDs match catalog IDs without case sensitivity; requests and summaries retain
 the Registry's original spelling because `/nodes` filters are case-sensitive.
 Manager deployment overlays installed `latest_active` onto the catalog snapshot.
+In Settings > ControlPanel > Manager, `Allow flagged version as latest` (off by
+default) selects cached `latest_flagged` when its SemVer is newer than `latest_active`,
+or when no Active version exists. The exported version retains its Flagged status;
+SQLite data and stored summaries stay unchanged. This applies to startup deployment
+and cache refresh/rebuild. Changing the toggle redeploys the cached data immediately
+when Replace Manager Repository Data is enabled.
 Full-history version selectors may continue using `/nodes/<id>/versions` on demand.
 
 ComfyUI version/form-factor changes, 30 days since the last catalog full sync, or
