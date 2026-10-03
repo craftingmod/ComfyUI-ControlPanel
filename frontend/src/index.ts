@@ -3,7 +3,12 @@ import { createControlPanelController } from "./components/controlPanel.ts"
 import { API_ROUTES, EXTENSION_NAME, SETTINGS_IDS } from "./constants.ts"
 import type { MetadataNode } from "./services/cnrMetadata.ts"
 import { createCnrMetadataController } from "./services/cnrMetadataController.ts"
+import { installStylesheet } from "./stylesheet.ts"
 import type { ComfySettingId, ManagerExtension } from "./types.ts"
+import { ensureGlobalStyles } from "./ui/dom.ts"
+
+installStylesheet(import.meta.url)
+ensureGlobalStyles()
 
 const ACTION_BAR_BUTTON_TOOLTIP = "Open ControlPanel"
 

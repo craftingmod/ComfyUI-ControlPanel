@@ -26,15 +26,16 @@ describe("Bun build config", () => {
     expect(buildConfig.external).toEqual(["*/scripts/app.js", "*/scripts/api.js"])
   })
 
-  it("bundles the ControlPanel entry and native styles for browsers", async () => {
+  it("bundles the ControlPanel entry and CSS Module stylesheet for browsers", async () => {
     const result = await Bun.build({ ...buildConfig, outdir: undefined })
     expect(result.success).toBeTrue()
     expect(result.logs).toHaveLength(0)
-    const bundle = await result.outputs[0]!.text()
+    const bundle = (await Promise.all(result.outputs.map((output) => output.text()))).join("\n")
     expect(bundle).not.toContain("process.env.NODE_ENV")
     expect(bundle).toMatch(/from\s*["']\.\.\/\.\.\/scripts\/app\.js["']/)
     expect(bundle).toContain("control-panel.open")
-    expect(bundle).toContain("cp-backdrop")
-    expect(bundle).not.toContain("Count:")
+    expect(bundle).toContain("1180px")
+    expect(bundle).toContain("data-template-theme")
+    expect(bundle).not.toContain("Count: 0")
   })
 })

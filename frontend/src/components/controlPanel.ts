@@ -1,7 +1,10 @@
 import type { ComfyApp } from "@comfyorg/comfyui-frontend-types"
+import { createElement } from "react"
+import { createRoot, type Root } from "react-dom/client"
 
 import { API_ROUTES } from "../constants.ts"
 import { debugLog } from "../debug.ts"
+import { ControlPanelPage } from "../pages/ControlPanelPage.tsx"
 import { fetchInstalledPackages } from "../services/cnrMetadata.ts"
 import type { FixMetadataSummary } from "../services/cnrMetadataController.ts"
 import { createControlPanelApi, isUpdateJob } from "../services/controlPanelApi.ts"
@@ -11,8 +14,7 @@ import {
   parseNodeRestoreManifest,
 } from "../services/nodeRestore.ts"
 import type { JsonObject, ToastSeverity, UpdateJob } from "../types.ts"
-import { createButton, ensureStyles } from "../ui/dom.ts"
-import { createGitInstallModalController } from "./gitInstallModal.ts"
+import type { ControlPanelActions, ControlPanelViewState } from "./controlPanelTypes.ts"
 
 type ControlPanelOptions = {
   app: ComfyApp
@@ -20,83 +22,46 @@ type ControlPanelOptions = {
   fixCnrId: () => Promise<FixMetadataSummary | undefined>
 }
 
-type OperationOptions = {
-  toastOnSuccess?: boolean
-}
+type JobOutput = "panel" | "update-check"
 
-export type ControlPanelController = {
+export type ControlPanelController = ControlPanelActions & {
   open: () => void
-  close: () => void
 }
 
 export function createControlPanelController(options: ControlPanelOptions): ControlPanelController {
   const { app, readBooleanSetting } = options
   const api = createControlPanelApi(app)
-
-  let panelEl: HTMLElement | undefined
-  let logEl: HTMLPreElement | undefined
-  let restartNoticeEl: HTMLElement | undefined
-  let managerCacheStatusEl: HTMLElement | undefined
-  let managerCacheButtons: HTMLButtonElement[] = []
-  let snapshotRestoreModalEl: HTMLElement | undefined
-  let snapshotSelectEl: HTMLSelectElement | undefined
-  let nodeRestoreFileInputEl: HTMLInputElement | undefined
-  let environmentModalEl: HTMLElement | undefined
-  let environmentOutputEl: HTMLElement | undefined
-  let updateCheckModalEl: HTMLElement | undefined
-  let updateCheckOutputEl: HTMLPreElement | undefined
-  let statusPollTimer: number | undefined
+  const listeners = new Set<() => void>()
   const dependencySyncNotifiedJobs = new Set<string>()
+  let viewState: ControlPanelViewState = {
+    isOpen: false,
+    log: "Ready.\n",
+    managerCacheControlsEnabled: false,
+    managerCacheStatus: "Checking Replace Manager Repository Data setting...",
+    updateCheckOutput: "Preparing update check...",
+  }
+  let host: HTMLDivElement | undefined
+  let root: Root | undefined
+  let statusPollTimer: number | undefined
+  let panelGeneration = 0
+  let snapshotRequestGeneration = 0
+
+  function setViewState(patch: Partial<ControlPanelViewState>): void {
+    viewState = { ...viewState, ...patch }
+    for (const listener of listeners) listener()
+  }
+
+  function subscribe(listener: () => void): () => void {
+    listeners.add(listener)
+    return () => listeners.delete(listener)
+  }
 
   function toast(severity: ToastSeverity, summary: string, detail: string): void {
     app.extensionManager.toast.add({ severity, summary, detail, life: 5000 })
   }
 
-  function scrollLogToBottom(): void {
-    const currentLogEl = logEl
-    if (!currentLogEl) {
-      return
-    }
-
-    window.requestAnimationFrame(() => {
-      currentLogEl.scrollTop = currentLogEl.scrollHeight
-    })
-  }
-
-  function clearLog(): void {
-    if (!logEl) {
-      return
-    }
-    logEl.textContent = "Ready.\n"
-    scrollLogToBottom()
-  }
-
-  function createActionGroup(titleText: string, ariaLabel: string): HTMLDivElement {
-    const group = document.createElement("div")
-    group.className = "cp-action-group"
-    group.setAttribute("aria-label", ariaLabel)
-
-    const title = document.createElement("h3")
-    title.className = "cp-group-title"
-    title.textContent = titleText
-    group.append(title)
-    return group
-  }
-
-  function setManagerCacheControlsEnabled(enabled: boolean, message: string): void {
-    for (const button of managerCacheButtons) {
-      button.disabled = !enabled
-    }
-    if (managerCacheStatusEl) {
-      managerCacheStatusEl.textContent = message
-      managerCacheStatusEl.classList.toggle("cp-group-status-disabled", !enabled)
-    }
-  }
-
   function asRecord(value: unknown): JsonObject | undefined {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return undefined
-    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
     return value as JsonObject
   }
 
@@ -106,10 +71,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     const result = asRecord(install?.result)
     const stdout = typeof result?.stdout === "string" ? result.stdout.trim() : ""
     const stderr = typeof result?.stderr === "string" ? result.stderr.trim() : ""
-
-    if (!destination && !stdout && !stderr) {
-      return undefined
-    }
+    if (!destination && !stdout && !stderr) return undefined
 
     const lines = ["Install via Git URL completed."]
     if (destination) {
@@ -118,12 +80,8 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       lines.push(`Installed: ${folderName}`)
       lines.push(`Path: ${destination}`)
     }
-    if (stdout) {
-      lines.push("", stdout)
-    }
-    if (stderr) {
-      lines.push("", stderr)
-    }
+    if (stdout) lines.push("", stdout)
+    if (stderr) lines.push("", stderr)
     return lines.join("\n")
   }
 
@@ -132,60 +90,60 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     route: string,
     data: JsonObject,
   ): string | undefined {
-    if (route === API_ROUTES.INSTALL_GIT_URL) {
-      return formatGitInstallResult(data)
-    }
+    if (route === API_ROUTES.INSTALL_GIT_URL) return formatGitInstallResult(data)
     return `${label} completed.\n${JSON.stringify(data, null, 2)}`
   }
 
   function writeLog(message: string, payload?: unknown): void {
-    if (!logEl) {
-      return
-    }
-
     const timestamp = new Date().toLocaleTimeString()
     const body = payload === undefined ? "" : `\n${JSON.stringify(payload, null, 2)}`
-    logEl.textContent = `${logEl.textContent ?? ""}[${timestamp}] ${message}${body}\n\n`
-    scrollLogToBottom()
+    setViewState({ log: `${viewState.log}[${timestamp}] ${message}${body}\n\n` })
+  }
+
+  function clearLog(): void {
+    setViewState({ log: "Ready.\n" })
   }
 
   function renderJob(job: UpdateJob): void {
-    if (!logEl) {
-      return
-    }
-
     const logs = job.logs.length > 0 ? job.logs.join("\n") : `${job.label} is ${job.status}.`
     const error = job.error ? `\n\nError:\n${job.error}` : ""
     const syncNotice = job.status === "succeeded" ? dependencySyncNotice(job.result) : undefined
     const requiredAction = syncNotice ? `\n\nAction required:\n${syncNotice}` : ""
-    logEl.textContent = `${job.label} (${job.status})\n\n${logs}${error}${requiredAction}\n`
-    scrollLogToBottom()
-    if (restartNoticeEl) {
-      restartNoticeEl.hidden = !job.restart_required || job.status !== "succeeded"
-      restartNoticeEl.textContent = syncNotice ?? "Restart required to finish applying updates."
-    }
+    setViewState({
+      log: `${job.label} (${job.status})\n\n${logs}${error}${requiredAction}\n`,
+      restartNotice:
+        job.restart_required && job.status === "succeeded"
+          ? (syncNotice ?? "Restart required to finish applying updates.")
+          : undefined,
+    })
     if (syncNotice && !dependencySyncNotifiedJobs.has(job.id)) {
       dependencySyncNotifiedJobs.add(job.id)
       toast("warn", "Dependency Sync Required", syncNotice)
     }
   }
 
+  function renderUpdateCheckJob(job: UpdateJob): void {
+    const logs = job.logs.length > 0 ? job.logs.join("\n") : `${job.label} is ${job.status}.`
+    const error = job.error ? `\n\nError:\n${job.error}` : ""
+    setViewState({ updateCheckOutput: `${job.label} (${job.status})\n\n${logs}${error}` })
+  }
+
+  function renderJobFor(output: JobOutput, job: UpdateJob): void {
+    if (output === "update-check") renderUpdateCheckJob(job)
+    else renderJob(job)
+  }
+
   async function runOperation(
     label: string,
     route: string,
     body?: JsonObject,
-    operationOptions: OperationOptions = {},
   ): Promise<JsonObject | undefined> {
-    const { toastOnSuccess = true } = operationOptions
     writeLog(`${label} started.`)
     debugLog(readBooleanSetting, `${label} request`, { route, body })
-
     try {
       const data = await api.fetchJson(route, body)
-      writeLog(formatOperationResult(label, route, data) ?? `${label} completed.`, undefined)
-      if (toastOnSuccess) {
-        toast("success", "ComfyUI-ControlPanel", `${label} completed.`)
-      }
+      writeLog(formatOperationResult(label, route, data) ?? `${label} completed.`)
+      toast("success", "ComfyUI-ControlPanel", `${label} completed.`)
       return data
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -205,15 +163,18 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       const data = await fetchStatus()
       const settings = asRecord(data.settings)
       const managerCacheEnabled = settings?.manager_repository_data_override === true
-      setManagerCacheControlsEnabled(
-        managerCacheEnabled,
-        managerCacheEnabled
+      setViewState({
+        managerCacheControlsEnabled: managerCacheEnabled,
+        managerCacheStatus: managerCacheEnabled
           ? "Replace Manager Repository Data is enabled."
           : "Enable Replace Manager Repository Data in settings to use these actions.",
-      )
+      })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      setManagerCacheControlsEnabled(false, "Status check failed. See the log for details.")
+      setViewState({
+        managerCacheControlsEnabled: false,
+        managerCacheStatus: "Status check failed. See the log for details.",
+      })
       writeLog(`Status check failed: ${message}`)
     }
   }
@@ -230,7 +191,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     }
   }
 
-  async function fixCnrId(): Promise<void> {
+  async function repairMetadata(): Promise<void> {
     writeLog("Repair Metadata started.")
     const summary = await options.fixCnrId()
     if (!summary) {
@@ -247,13 +208,6 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     })
   }
 
-  const gitInstallModal = createGitInstallModalController({
-    runOperation(label, route, body) {
-      void runOperation(label, route, body)
-    },
-    toast,
-  })
-
   function stopPolling(): void {
     if (statusPollTimer !== undefined) {
       window.clearInterval(statusPollTimer)
@@ -262,25 +216,23 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
   }
 
   async function refreshUpdateStatus(
-    jobRenderer: (job: UpdateJob) => void = renderJob,
+    output: JobOutput,
+    generation: number,
   ): Promise<UpdateJob | undefined> {
     const data = await api.fetchJson(API_ROUTES.UPDATE_STATUS)
     const job = data.job
-    if (!isUpdateJob(job)) {
-      return undefined
-    }
-    jobRenderer(job)
+    if (!isUpdateJob(job) || generation !== panelGeneration || !viewState.isOpen) return undefined
+    renderJobFor(output, job)
     return job
   }
 
-  function pollUpdateStatus(
-    jobRenderer: (job: UpdateJob) => void = renderJob,
-    statusErrorHandler?: (message: string) => void,
-  ): void {
+  function pollUpdateStatus(output: JobOutput): void {
     stopPolling()
+    const generation = panelGeneration
     statusPollTimer = window.setInterval(() => {
-      void refreshUpdateStatus(jobRenderer)
+      void refreshUpdateStatus(output, generation)
         .then((job) => {
+          if (generation !== panelGeneration || !viewState.isOpen) return
           if (job && !["queued", "running"].includes(job.status)) {
             stopPolling()
             toast(
@@ -290,11 +242,14 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
             )
           }
         })
-        .catch((error) => {
+        .catch((error: unknown) => {
+          if (generation !== panelGeneration || !viewState.isOpen) return
           stopPolling()
           const message = error instanceof Error ? error.message : String(error)
           writeLog(`Status polling failed: ${message}`)
-          statusErrorHandler?.(message)
+          if (output === "update-check") {
+            setViewState({ updateCheckOutput: `Check for Updates failed.\n\n${message}` })
+          }
         })
     }, 1500)
   }
@@ -303,43 +258,26 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     label: string,
     route: string,
     body: JsonObject = {},
-    jobRenderer: (job: UpdateJob) => void = renderJob,
-    statusErrorHandler?: (message: string) => void,
+    output: JobOutput = "panel",
   ): Promise<void> {
+    const generation = panelGeneration
     writeLog(`${label} queued.`)
     debugLog(readBooleanSetting, `${label} request`, { route, body })
-
     try {
       const data = await api.fetchJson(route, body)
       const job = data.job
-      if (!isUpdateJob(job)) {
-        throw new Error("Update job response was missing job details.")
-      }
-      jobRenderer(job)
+      if (!isUpdateJob(job)) throw new Error("Update job response was missing job details.")
+      renderJobFor(output, job)
       toast("info", "ComfyUI-ControlPanel", `${label} started.`)
-      pollUpdateStatus(jobRenderer, statusErrorHandler)
+      if (generation === panelGeneration && viewState.isOpen) pollUpdateStatus(output)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       writeLog(`${label} failed to start: ${message}`)
-      statusErrorHandler?.(message)
+      if (output === "update-check") {
+        setViewState({ updateCheckOutput: `Check for Updates failed.\n\n${message}` })
+      }
       toast("error", "ComfyUI-ControlPanel", message)
     }
-  }
-
-  function closeSnapshotRestoreModal(): void {
-    snapshotRestoreModalEl?.remove()
-  }
-
-  function closeEnvironmentModal(): void {
-    environmentModalEl?.remove()
-    environmentModalEl = undefined
-    environmentOutputEl = undefined
-  }
-
-  function closeUpdateCheckModal(): void {
-    updateCheckModalEl?.remove()
-    updateCheckModalEl = undefined
-    updateCheckOutputEl = undefined
   }
 
   function snapshotNamesFromResponse(data: JsonObject): string[] {
@@ -349,40 +287,39 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       .filter((name): name is string => typeof name === "string" && name.length > 0)
   }
 
-  async function openSnapshotRestoreModal(): Promise<void> {
+  async function listSnapshots(): Promise<string[] | undefined> {
+    const generation = ++snapshotRequestGeneration
     writeLog("Snapshot List started.")
     try {
       const data = await api.fetchJson(API_ROUTES.SNAPSHOT_LIST)
+      if (generation !== snapshotRequestGeneration || !viewState.isOpen) return undefined
       const names = snapshotNamesFromResponse(data)
       writeLog(`Snapshot List completed.\n${JSON.stringify(data, null, 2)}`)
       if (names.length === 0) {
         toast("warn", "ComfyUI-ControlPanel", "No snapshots were found.")
-        return
+        return undefined
       }
-      snapshotRestoreModalEl?.remove()
-      snapshotRestoreModalEl = createSnapshotRestoreModal(names)
-      document.body.append(snapshotRestoreModalEl)
-      snapshotSelectEl?.focus()
+      return names
     } catch (error) {
+      if (generation !== snapshotRequestGeneration || !viewState.isOpen) return undefined
       const message = error instanceof Error ? error.message : String(error)
       writeLog(`Snapshot List failed: ${message}`)
       toast("error", "ComfyUI-ControlPanel", message)
+      return undefined
     }
   }
 
-  async function confirmRestoreSnapshot(): Promise<void> {
-    const target = snapshotSelectEl?.value
+  async function restoreSnapshot(target: string, onConfirmed: () => void): Promise<void> {
     if (!target) {
       toast("warn", "ComfyUI-ControlPanel", "Select a snapshot to restore.")
       return
     }
-
     const confirmed = await app.extensionManager.dialog.confirm({
       title: "Restore Snapshot",
       message: `Restoring "${target}" may change installed custom nodes and dependencies. Continue?`,
     })
     if (confirmed) {
-      closeSnapshotRestoreModal()
+      onConfirmed()
       await startUpdateJob("Restore Snapshot", API_ROUTES.SNAPSHOT_RESTORE, { target })
     }
   }
@@ -448,240 +385,14 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     }
   }
 
-  function chooseNodeRestoreFile(): void {
-    if (!nodeRestoreFileInputEl) {
-      return
-    }
-    nodeRestoreFileInputEl.value = ""
-    nodeRestoreFileInputEl.click()
-  }
-
-  async function confirmRestart(): Promise<void> {
-    const confirmed = await app.extensionManager.dialog.confirm({
-      title: "Restart ComfyUI",
-      message: "Restart ComfyUI now?",
-    })
-    if (confirmed) {
-      await restartComfyUI()
-    }
-  }
-
-  async function confirmRebuildManagerCache(): Promise<void> {
-    const confirmed = await app.extensionManager.dialog.confirm({
-      title: "Rebuild Manager Cache",
-      message: "Rebuilding the Manager cache may take some time. Continue?",
-    })
-    if (confirmed) {
-      await startUpdateJob("Rebuild Manager Cache", API_ROUTES.REBUILD_MANAGER_CACHE)
-    }
-  }
-
-  type EnvironmentSection = {
-    title: string
-    rows: Array<[string, unknown]>
-  }
-
-  function environmentSections(data: JsonObject): EnvironmentSection[] | undefined {
-    const environment = asRecord(data.environment)
-    if (!environment) {
-      return undefined
-    }
-
-    const cli = asRecord(data.cli)
-    const python = asRecord(environment.python)
-    const config = asRecord(environment.config)
-    const server = asRecord(environment.server)
-    const workspace = asRecord(environment.workspace)
-    return [
-      {
-        title: "Comfy CLI",
-        rows: [
-          ["Version", cli?.version],
-          ["Command", cli?.command],
-        ],
-      },
-      {
-        title: "Python",
-        rows: [
-          ["Python Version", python?.version],
-          ["Python Executable", python?.executable],
-          ["Virtualenv Path", python?.virtualenv],
-          ["Conda Env", python?.conda_env],
-        ],
-      },
-      {
-        title: "Workspace",
-        rows: [
-          ["Current selected workspace", workspace?.path],
-          ["Workspace Type", workspace?.type],
-          ["Manager", workspace?.manager_mode],
-          ["UV Compile Default", workspace?.uv_compile_default],
-        ],
-      },
-      {
-        title: "Server",
-        rows: [
-          ["Comfy Server Running", server?.running],
-          ["Server URL", server?.url],
-        ],
-      },
-      {
-        title: "Config",
-        rows: [
-          ["Config Path", config?.path],
-          ["Default ComfyUI workspace", config?.default_workspace],
-          ["Default ComfyUI launch extra options", config?.default_launch_extras],
-          ["Recent ComfyUI workspace", config?.recent_workspace],
-          ["Tracking Analytics", config?.tracking_enabled],
-          ["Background ComfyUI", config?.background],
-        ],
-      },
-    ]
-  }
-
-  function environmentValueText(value: unknown): string {
-    if (value === null || value === undefined || value === "") {
-      return "Not set"
-    }
-    if (typeof value === "boolean") {
-      return value ? "Yes" : "No"
-    }
-    return typeof value === "string" || typeof value === "number" || typeof value === "bigint"
-      ? String(value)
-      : (JSON.stringify(value) ?? "Not set")
-  }
-
-  function renderEnvironmentOutput(data: JsonObject): void {
-    if (!environmentOutputEl) {
-      return
-    }
-    environmentOutputEl.replaceChildren()
-    const sections = environmentSections(data)
-    if (!sections) {
-      const fallback = document.createElement("pre")
-      fallback.className = "cp-environment-fallback"
-      fallback.textContent = JSON.stringify(data, null, 2)
-      environmentOutputEl.append(fallback)
-      return
-    }
-
-    const table = document.createElement("table")
-    table.className = "cp-environment-table"
-
-    const thead = document.createElement("thead")
-    const headerRow = document.createElement("tr")
-    for (const label of ["Environment", "Value"]) {
-      const cell = document.createElement("th")
-      cell.scope = "col"
-      cell.textContent = label
-      headerRow.append(cell)
-    }
-    thead.append(headerRow)
-    table.append(thead)
-
-    const tbody = document.createElement("tbody")
-    for (const section of sections) {
-      const sectionRow = document.createElement("tr")
-      sectionRow.className = "cp-environment-section-row"
-      const sectionCell = document.createElement("th")
-      sectionCell.scope = "rowgroup"
-      sectionCell.colSpan = 2
-      sectionCell.textContent = section.title
-      sectionRow.append(sectionCell)
-      tbody.append(sectionRow)
-
-      for (const [label, value] of section.rows) {
-        const row = document.createElement("tr")
-        const keyCell = document.createElement("th")
-        keyCell.scope = "row"
-        keyCell.textContent = label
-        const valueCell = document.createElement("td")
-        valueCell.textContent = environmentValueText(value)
-        row.append(keyCell, valueCell)
-        tbody.append(row)
-      }
-    }
-    table.append(tbody)
-    environmentOutputEl.append(table)
-
-    const result = asRecord(data.result)
-    const stderr = typeof result?.stderr === "string" ? result.stderr.trim() : ""
-    if (stderr) {
-      const error = document.createElement("pre")
-      error.className = "cp-environment-fallback cp-environment-stderr"
-      error.textContent = `stderr\n${stderr}`
-      environmentOutputEl.append(error)
-    }
-  }
-
-  async function showEnvironment(): Promise<void> {
-    environmentModalEl?.remove()
-    environmentModalEl = createEnvironmentModal()
-    document.body.append(environmentModalEl)
-    if (environmentOutputEl) {
-      environmentOutputEl.textContent = "Loading comfy env..."
-    }
-    writeLog("Show Environment started.")
-
-    try {
-      const data = await api.fetchJson(API_ROUTES.SHOW_ENVIRONMENT, {})
-      renderEnvironmentOutput(data)
-      writeLog("Show Environment completed.")
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (environmentOutputEl) {
-        environmentOutputEl.textContent = message
-      }
-      writeLog(`Show Environment failed: ${message}`)
-      toast("error", "ComfyUI-ControlPanel", message)
-    }
-  }
-
-  function renderUpdateCheckJob(job: UpdateJob): void {
-    if (!updateCheckOutputEl) {
-      return
-    }
-    const logs = job.logs.length > 0 ? job.logs.join("\n") : `${job.label} is ${job.status}.`
-    const error = job.error ? `\n\nError:\n${job.error}` : ""
-    updateCheckOutputEl.textContent = `${job.label} (${job.status})\n\n${logs}${error}`
-    window.requestAnimationFrame(() => {
-      if (updateCheckOutputEl) {
-        updateCheckOutputEl.scrollTop = updateCheckOutputEl.scrollHeight
-      }
-    })
-  }
-
-  function renderUpdateCheckError(message: string): void {
-    if (updateCheckOutputEl) {
-      updateCheckOutputEl.textContent = `Check for Updates failed.\n\n${message}`
-    }
-  }
-
-  async function showUpdateCheck(): Promise<void> {
-    closeUpdateCheckModal()
-    updateCheckModalEl = createUpdateCheckModal()
-    document.body.append(updateCheckModalEl)
-    await startUpdateJob(
-      "Check for Updates",
-      API_ROUTES.CHECK_UPDATES,
-      {},
-      renderUpdateCheckJob,
-      renderUpdateCheckError,
-    )
-  }
-
   async function restartComfyUI(): Promise<void> {
     const label = "Restart"
     const body = { confirm: true }
     writeLog(`${label} started.`)
     debugLog(readBooleanSetting, `${label} request`, { route: API_ROUTES.RESTART, body })
-
     try {
       const data = await api.fetchJson(API_ROUTES.RESTART, body)
-      writeLog(
-        formatOperationResult(label, API_ROUTES.RESTART, data) ?? `${label} completed.`,
-        undefined,
-      )
+      writeLog(formatOperationResult(label, API_ROUTES.RESTART, data) ?? `${label} completed.`)
       toast("info", "ComfyUI-ControlPanel", "Restarting")
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -690,344 +401,81 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     }
   }
 
-  function createSnapshotRestoreModal(snapshotNames: string[]): HTMLElement {
-    ensureStyles()
-
-    const backdrop = document.createElement("div")
-    backdrop.className = "cp-backdrop"
-    backdrop.dataset.templateTheme = ""
-    backdrop.addEventListener("click", (event) => {
-      if (event.target === backdrop) {
-        closeSnapshotRestoreModal()
-      }
+  async function confirmRestart(): Promise<void> {
+    const confirmed = await app.extensionManager.dialog.confirm({
+      title: "Restart ComfyUI",
+      message: "Restart ComfyUI now?",
     })
+    if (confirmed) await restartComfyUI()
+  }
 
-    const panel = document.createElement("section")
-    panel.className = "cp-panel cp-modal"
-    panel.setAttribute("role", "dialog")
-    panel.setAttribute("aria-modal", "true")
-    panel.setAttribute("aria-labelledby", "cp-snapshot-restore-title")
+  async function rebuildManagerCache(): Promise<void> {
+    const confirmed = await app.extensionManager.dialog.confirm({
+      title: "Rebuild Manager Cache",
+      message: "Rebuilding the Manager cache may take some time. Continue?",
+    })
+    if (confirmed) await startUpdateJob("Rebuild Manager Cache", API_ROUTES.REBUILD_MANAGER_CACHE)
+  }
 
-    const header = document.createElement("div")
-    header.className = "cp-header"
-
-    const title = document.createElement("h2")
-    title.id = "cp-snapshot-restore-title"
-    title.className = "cp-title"
-    title.textContent = "Restore Snapshot"
-
-    const closeButton = createButton("×", closeSnapshotRestoreModal, "cp-button cp-close")
-    closeButton.setAttribute("aria-label", "Close")
-    header.append(title, closeButton)
-
-    const field = document.createElement("div")
-    field.className = "cp-field"
-    const label = document.createElement("label")
-    label.htmlFor = "cp-snapshot-select"
-    label.textContent = "Snapshot"
-    snapshotSelectEl = document.createElement("select")
-    snapshotSelectEl.id = "cp-snapshot-select"
-    for (const name of snapshotNames) {
-      const option = document.createElement("option")
-      option.value = name
-      option.textContent = name
-      snapshotSelectEl.append(option)
+  async function showEnvironment(): Promise<JsonObject> {
+    writeLog("Show Environment started.")
+    try {
+      const data = await api.fetchJson(API_ROUTES.SHOW_ENVIRONMENT, {})
+      writeLog("Show Environment completed.")
+      return data
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      writeLog(`Show Environment failed: ${message}`)
+      toast("error", "ComfyUI-ControlPanel", message)
+      throw error
     }
-    field.append(label, snapshotSelectEl)
-
-    const actions = document.createElement("div")
-    actions.className = "cp-modal-actions"
-    actions.append(
-      createButton("Cancel", closeSnapshotRestoreModal),
-      createButton(
-        "Restore",
-        () => {
-          void confirmRestoreSnapshot()
-        },
-        "cp-button cp-danger",
-      ),
-    )
-
-    panel.append(header, field, actions)
-    backdrop.append(panel)
-    return backdrop
   }
 
-  function createEnvironmentModal(): HTMLElement {
-    ensureStyles()
-
-    const backdrop = document.createElement("div")
-    backdrop.className = "cp-backdrop"
-    backdrop.dataset.templateTheme = ""
-    backdrop.addEventListener("click", (event) => {
-      if (event.target === backdrop) {
-        closeEnvironmentModal()
-      }
-    })
-
-    const panel = document.createElement("section")
-    panel.className = "cp-panel cp-modal cp-environment-modal"
-    panel.setAttribute("role", "dialog")
-    panel.setAttribute("aria-modal", "true")
-    panel.setAttribute("aria-labelledby", "cp-environment-title")
-
-    const header = document.createElement("div")
-    header.className = "cp-header"
-
-    const title = document.createElement("h2")
-    title.id = "cp-environment-title"
-    title.className = "cp-title"
-    title.textContent = "Comfy CLI Environment"
-
-    const closeButton = createButton("×", closeEnvironmentModal, "cp-button cp-close")
-    closeButton.setAttribute("aria-label", "Close")
-    header.append(title, closeButton)
-
-    environmentOutputEl = document.createElement("div")
-    environmentOutputEl.className = "cp-environment-output"
-    environmentOutputEl.textContent = "Loading comfy env..."
-
-    panel.append(header, environmentOutputEl)
-    backdrop.append(panel)
-    return backdrop
-  }
-
-  function createUpdateCheckModal(): HTMLElement {
-    ensureStyles()
-
-    const backdrop = document.createElement("div")
-    backdrop.className = "cp-backdrop"
-    backdrop.dataset.templateTheme = ""
-    backdrop.addEventListener("click", (event) => {
-      if (event.target === backdrop) {
-        closeUpdateCheckModal()
-      }
-    })
-
-    const panel = document.createElement("section")
-    panel.className = "cp-panel cp-modal cp-update-check-modal"
-    panel.setAttribute("role", "dialog")
-    panel.setAttribute("aria-modal", "true")
-    panel.setAttribute("aria-labelledby", "cp-update-check-title")
-
-    const header = document.createElement("div")
-    header.className = "cp-header"
-
-    const title = document.createElement("h2")
-    title.id = "cp-update-check-title"
-    title.className = "cp-title"
-    title.textContent = "Check for Updates"
-
-    const closeButton = createButton("×", closeUpdateCheckModal, "cp-button cp-close")
-    closeButton.setAttribute("aria-label", "Close")
-    header.append(title, closeButton)
-
-    updateCheckOutputEl = document.createElement("pre")
-    updateCheckOutputEl.className = "cp-update-check-output"
-    updateCheckOutputEl.textContent = "Preparing update check..."
-
-    panel.append(header, updateCheckOutputEl)
-    backdrop.append(panel)
-    return backdrop
-  }
-
-  function createPanel(): HTMLElement {
-    ensureStyles()
-
-    const backdrop = document.createElement("div")
-    backdrop.className = "cp-backdrop"
-    backdrop.dataset.templateTheme = ""
-    backdrop.addEventListener("click", (event) => {
-      if (event.target === backdrop) {
-        close()
-      }
-    })
-
-    const panel = document.createElement("section")
-    panel.className = "cp-panel cp-control-panel"
-    panel.setAttribute("role", "dialog")
-    panel.setAttribute("aria-modal", "true")
-    panel.setAttribute("aria-labelledby", "cp-title")
-
-    const header = document.createElement("div")
-    header.className = "cp-header"
-
-    const title = document.createElement("h2")
-    title.id = "cp-title"
-    title.className = "cp-title"
-    title.textContent = "⚙️ ComfyUI-ControlPanel"
-
-    const closeButton = createButton("×", close, "cp-button cp-close")
-    closeButton.setAttribute("aria-label", "Close")
-    header.append(title, closeButton)
-
-    const maintenanceActions = createActionGroup("Install / Update", "Install and update actions")
-    maintenanceActions.append(
-      createButton("Install via Git URL", () => {
-        gitInstallModal.open()
-      }),
-      createButton("Check for Updates", () => {
-        void showUpdateCheck()
-      }),
-      createButton("Update ComfyUI", () => {
-        void startUpdateJob("Update ComfyUI", API_ROUTES.UPDATE_COMFYUI)
-      }),
-      createButton("Update Git Nodes", () => {
-        void startUpdateJob("Update Git Nodes", API_ROUTES.UPDATE_CUSTOM_NODES)
-      }),
-    )
-
-    const cacheActions = createActionGroup("Manager Cache", "Manager cache actions")
-    managerCacheStatusEl = document.createElement("div")
-    managerCacheStatusEl.className = "cp-group-status cp-group-status-disabled"
-    managerCacheStatusEl.textContent = "Checking Replace Manager Repository Data setting..."
-
-    const updateManagerCacheButton = createButton("Update Manager Cache", () => {
-      void startUpdateJob("Update Manager Cache", API_ROUTES.REFRESH_MANAGER_CACHE)
-    })
-    const rebuildManagerCacheButton = createButton("Rebuild Manager Cache", () => {
-      void confirmRebuildManagerCache()
-    })
-    managerCacheButtons = [updateManagerCacheButton, rebuildManagerCacheButton]
-    setManagerCacheControlsEnabled(false, "Checking Replace Manager Repository Data setting...")
-    cacheActions.append(managerCacheStatusEl, updateManagerCacheButton, rebuildManagerCacheButton)
-
-    const snapshotActions = createActionGroup("Snapshot", "Snapshot actions")
-    snapshotActions.append(
-      createButton("Save Snapshot", () => {
-        void startUpdateJob("Save Snapshot", API_ROUTES.SNAPSHOT_SAVE)
-      }),
-      createButton(
-        "Restore Snapshot",
-        () => {
-          void openSnapshotRestoreModal()
-        },
-        "cp-button cp-danger",
-      ),
-      createButton("Open Snapshots Folder", () => {
-        void runOperation("Open Snapshots Folder", API_ROUTES.OPEN_SNAPSHOTS, {})
-      }),
-      createButton("Open custom_nodes Folder", () => {
-        void runOperation("Open custom_nodes Folder", API_ROUTES.OPEN_CUSTOM_NODES, {})
-      }),
-    )
-
-    const nodeRestoreActions = createActionGroup(
-      "Node Restore",
-      "Custom node backup and restore actions",
-    )
-    nodeRestoreFileInputEl = document.createElement("input")
-    nodeRestoreFileInputEl.type = "file"
-    nodeRestoreFileInputEl.accept = ".json,application/json"
-    nodeRestoreFileInputEl.hidden = true
-    nodeRestoreFileInputEl.addEventListener("change", () => {
-      const file = nodeRestoreFileInputEl?.files?.[0]
-      if (file) {
-        void restoreNodesFromFile(file)
-      }
-    })
-    nodeRestoreActions.append(
-      nodeRestoreFileInputEl,
-      createButton("Backup Installed Nodes", () => {
-        void backupInstalledNodes()
-      }),
-      createButton("Restore Latest Nodes", chooseNodeRestoreFile, "cp-button cp-danger"),
-    )
-
-    const metadataActions = createActionGroup("Workflow Metadata", "Workflow metadata actions")
-    metadataActions.append(
-      createButton(
-        "Repair Metadata",
-        () => {
-          void fixCnrId()
-        },
-        "cp-button cp-button-wide",
-      ),
-    )
-
-    const actions = document.createElement("div")
-    actions.className = "cp-actions"
-    actions.append(
-      createButton("Show Environment", () => {
-        void showEnvironment()
-      }),
-      createButton(
-        "Restart",
-        () => {
-          void confirmRestart()
-        },
-        "cp-button cp-danger",
-      ),
-    )
-
-    restartNoticeEl = document.createElement("div")
-    restartNoticeEl.className = "cp-restart-notice"
-    restartNoticeEl.hidden = true
-    restartNoticeEl.textContent = "Restart required to finish applying updates."
-
-    const logWrap = document.createElement("div")
-    logWrap.className = "cp-log-wrap"
-
-    const logActions = document.createElement("div")
-    logActions.className = "cp-log-actions"
-    const showStatusButton = createButton(
-      "Show Status",
-      () => {
-        void showStatusJson()
-      },
-      "cp-button cp-log-action",
-    )
-    showStatusButton.setAttribute("aria-label", "Show status JSON")
-
-    const clearLogButton = createButton("Clear Log", clearLog, "cp-button cp-log-clear")
-    clearLogButton.setAttribute("aria-label", "Clear log")
-    logActions.append(showStatusButton, clearLogButton)
-
-    logEl = document.createElement("pre")
-    logEl.className = "cp-log"
-    logEl.textContent = "Ready.\n"
-    logWrap.append(logActions, logEl)
-    scrollLogToBottom()
-
-    const maintenanceColumn = document.createElement("div")
-    maintenanceColumn.className = "cp-panel-column"
-    maintenanceColumn.append(maintenanceActions, cacheActions)
-
-    const workflowColumn = document.createElement("div")
-    workflowColumn.className = "cp-panel-column"
-    workflowColumn.append(snapshotActions, nodeRestoreActions, metadataActions)
-
-    const statusColumn = document.createElement("div")
-    statusColumn.className = "cp-panel-column cp-panel-column-status"
-    statusColumn.append(actions, restartNoticeEl, logWrap)
-
-    const panelContent = document.createElement("div")
-    panelContent.className = "cp-panel-content"
-    panelContent.append(maintenanceColumn, workflowColumn, statusColumn)
-
-    panel.append(header, panelContent)
-    backdrop.append(panel)
-    return backdrop
-  }
-
-  function open(): void {
-    if (!panelEl) {
-      panelEl = createPanel()
-    }
-    if (!panelEl.isConnected) {
-      document.body.append(panelEl)
-    }
-    void refreshPanelStatus()
+  async function showUpdateCheck(): Promise<void> {
+    setViewState({ updateCheckOutput: "Preparing update check..." })
+    await startUpdateJob("Check for Updates", API_ROUTES.CHECK_UPDATES, {}, "update-check")
   }
 
   function close(): void {
+    panelGeneration += 1
+    snapshotRequestGeneration += 1
     stopPolling()
-    gitInstallModal.close()
-    closeSnapshotRestoreModal()
-    closeEnvironmentModal()
-    closeUpdateCheckModal()
-    panelEl?.remove()
+    setViewState({ isOpen: false })
+    host?.remove()
   }
 
-  return { open, close }
+  const actions: ControlPanelActions = {
+    getSnapshot: () => viewState,
+    subscribe,
+    close,
+    clearLog,
+    toast,
+    runOperation,
+    startUpdateJob: (label, route, body = {}) => startUpdateJob(label, route, body),
+    refreshPanelStatus,
+    showStatusJson,
+    repairMetadata,
+    listSnapshots,
+    restoreSnapshot,
+    backupInstalledNodes,
+    restoreNodesFromFile,
+    showEnvironment,
+    showUpdateCheck,
+    restart: confirmRestart,
+    rebuildManagerCache,
+  }
+
+  function open(): void {
+    if (!host) {
+      host = document.createElement("div")
+      host.dataset.templateTheme = ""
+      root = createRoot(host)
+      root.render(createElement(ControlPanelPage, { actions }))
+    }
+    if (!host.isConnected) document.body.append(host)
+    setViewState({ isOpen: true })
+    void refreshPanelStatus()
+  }
+
+  return { ...actions, open }
 }
