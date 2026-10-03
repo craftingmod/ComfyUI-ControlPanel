@@ -30,8 +30,6 @@ const child = Bun.spawn(
     "--asset-naming",
     naming.asset,
     "--sourcemap=linked",
-    "--banner",
-    buildConfig.banner,
     "--watch",
   ],
   {

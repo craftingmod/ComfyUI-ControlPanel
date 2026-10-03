@@ -1,48 +1,154 @@
 import fs from "node:fs/promises"
-import path from "node:path"
+import Path from "node:path"
 
-export async function validateRelease(
-  root = path.resolve(import.meta.dir, ".."),
-): Promise<string[]> {
-  const metadata = Bun.TOML.parse(await fs.readFile(path.join(root, "pyproject.toml"), "utf8")) as {
-    project: { name: string; urls: { Repository: string } }
-    tool: { comfy: { PublisherId: string; DisplayName: string; Icon: string } }
+type ReleaseMetadata = {
+  packageName: unknown
+  projectName: unknown
+  repository: unknown
+  publisherId: unknown
+  displayName: unknown
+  icon: unknown
+  frontendProjectId: unknown
+  frontendProjectName: unknown
+  githubRepository?: string
+}
+
+type ProjectConfig = {
+  project?: {
+    name?: unknown
+    urls?: { Repository?: unknown }
   }
-  const packageJson = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8"))
-  const project = metadata.project as { name: string; urls: { Repository: string } }
-  const comfy = (
-    metadata.tool as { comfy: { PublisherId: string; DisplayName: string; Icon: string } }
-  ).comfy
-  const errors: string[] = []
-  if (packageJson.name !== project.name)
-    errors.push("package.json and Python project names must match.")
-  for (const [field, value] of Object.entries({
-    name: project.name,
-    Repository: project.urls.Repository,
-    PublisherId: comfy.PublisherId,
-    DisplayName: comfy.DisplayName,
-    Icon: comfy.Icon,
-  })) {
-    if (
-      typeof value !== "string" ||
-      !value.trim() ||
-      /your-name|your-repo|your-username|comfyui-custom-node-template/i.test(value)
-    ) {
-      errors.push(`${field} must contain initialized project metadata.`)
+  tool?: {
+    comfy?: {
+      PublisherId?: unknown
+      DisplayName?: unknown
+      Icon?: unknown
     }
   }
-  if (
-    process.env.GITHUB_REPOSITORY &&
-    project.urls.Repository.toLowerCase() !==
-      `https://github.com/${process.env.GITHUB_REPOSITORY}`.toLowerCase()
-  ) {
-    errors.push("Repository metadata must match GITHUB_REPOSITORY.")
+}
+
+const TEMPLATE_VALUES = new Set([
+  "comfyui-custom-node-template",
+  "my custom node",
+  "your-name",
+  "your-repo",
+  "your-username",
+])
+
+const projectDir = Path.resolve(import.meta.dir, "../")
+
+function nonEmptyString(value: unknown, field: string, errors: string[]): string | undefined {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    errors.push(`${field} must be a non-empty string.`)
+    return undefined
   }
+  return value.trim()
+}
+
+function containsTemplateValue(value: string): boolean {
+  const normalized = value.toLowerCase()
+  return [...TEMPLATE_VALUES].some((templateValue) => normalized.includes(templateValue))
+}
+
+function readConstant(source: string, name: string, language: "typescript" | "python"): string {
+  const prefix = language === "typescript" ? `export\\s+const\\s+${name}` : name
+  const match = source.match(new RegExp(`^${prefix}\\s*=\\s*["']([^"']+)["']\\s*$`, "m"))
+  if (!match) {
+    throw new Error(`Could not read ${name} from ${language} source.`)
+  }
+  return match[1]!
+}
+
+export function validateReleaseMetadata(metadata: ReleaseMetadata): string[] {
+  const errors: string[] = []
+  const projectName = nonEmptyString(metadata.projectName, "pyproject project.name", errors)
+  const packageName = nonEmptyString(metadata.packageName, "package.json name", errors)
+  const repository = nonEmptyString(metadata.repository, "pyproject Repository", errors)
+  const publisherId = nonEmptyString(metadata.publisherId, "tool.comfy.PublisherId", errors)
+  const displayName = nonEmptyString(metadata.displayName, "tool.comfy.DisplayName", errors)
+  const icon = nonEmptyString(metadata.icon, "tool.comfy.Icon", errors)
+  const frontendProjectId = nonEmptyString(
+    metadata.frontendProjectId,
+    "frontend PROJECT_ID",
+    errors,
+  )
+  const frontendProjectName = nonEmptyString(
+    metadata.frontendProjectName,
+    "frontend PROJECT_NAME",
+    errors,
+  )
+
+  for (const [field, value] of [
+    ["pyproject project.name", projectName],
+    ["package.json name", packageName],
+    ["pyproject Repository", repository],
+    ["tool.comfy.PublisherId", publisherId],
+    ["tool.comfy.DisplayName", displayName],
+    ["tool.comfy.Icon", icon],
+    ["frontend PROJECT_ID", frontendProjectId],
+    ["frontend PROJECT_NAME", frontendProjectName],
+  ] as const) {
+    if (value && containsTemplateValue(value)) {
+      errors.push(`${field} still contains a template value: ${value}`)
+    }
+  }
+
+  if (projectName && packageName && projectName !== packageName) {
+    errors.push(
+      `package.json name (${packageName}) must match pyproject project.name (${projectName}).`,
+    )
+  }
+  if (projectName && frontendProjectId && projectName !== frontendProjectId) {
+    errors.push(
+      `frontend PROJECT_ID (${frontendProjectId}) must match project.name (${projectName}).`,
+    )
+  }
+  if (displayName && frontendProjectName && displayName !== frontendProjectName) {
+    errors.push(
+      `frontend PROJECT_NAME (${frontendProjectName}) must match DisplayName (${displayName}).`,
+    )
+  }
+  if (repository && metadata.githubRepository) {
+    const expectedRepository = `https://github.com/${metadata.githubRepository}`.toLowerCase()
+    if (repository.replace(/\/$/, "").toLowerCase() !== expectedRepository) {
+      errors.push(`Repository must be ${expectedRepository} for this GitHub repository.`)
+    }
+  }
+
   return errors
+}
+
+export async function validateRelease(projectRoot = projectDir): Promise<string[]> {
+  const [pyprojectSource, packageSource, frontendSource] = await Promise.all([
+    fs.readFile(Path.join(projectRoot, "pyproject.toml"), "utf8"),
+    fs.readFile(Path.join(projectRoot, "package.json"), "utf8"),
+    fs.readFile(Path.join(projectRoot, "frontend", "src", "constants.ts"), "utf8"),
+  ])
+  const pyproject = Bun.TOML.parse(pyprojectSource) as ProjectConfig
+  const packageJson = JSON.parse(packageSource) as { name?: unknown }
+
+  return validateReleaseMetadata({
+    packageName: packageJson.name,
+    projectName: pyproject.project?.name,
+    repository: pyproject.project?.urls?.Repository,
+    publisherId: pyproject.tool?.comfy?.PublisherId,
+    displayName: pyproject.tool?.comfy?.DisplayName,
+    icon: pyproject.tool?.comfy?.Icon,
+    frontendProjectId: readConstant(frontendSource, "PROJECT_ID", "typescript"),
+    frontendProjectName: readConstant(frontendSource, "PROJECT_NAME", "typescript"),
+    githubRepository: process.env.GITHUB_REPOSITORY,
+  })
 }
 
 if (import.meta.main) {
   const errors = await validateRelease()
-  if (errors.length) throw new Error(errors.join("\n"))
-  console.log("Release metadata is valid.")
+  if (errors.length > 0) {
+    console.error("Release metadata validation failed:")
+    for (const error of errors) {
+      console.error(`- ${error}`)
+    }
+    console.error("Run `bun run init:template` and fix the fields above before tagging a release.")
+    process.exit(1)
+  }
+  console.log("Release metadata is ready for publishing.")
 }

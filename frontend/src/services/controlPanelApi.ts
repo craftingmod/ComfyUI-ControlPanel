@@ -1,4 +1,5 @@
 import type { ComfyApp } from "@comfyorg/comfyui-frontend-types"
+
 import type { JsonObject, UpdateJob } from "../types.ts"
 
 export type ControlPanelApi = {
@@ -22,7 +23,7 @@ export function createControlPanelApi(app: ComfyApp): ControlPanelApi {
         throw new Error(`HTTP ${response.status} for ${route}: ${detail}`)
       }
       if (!response.ok || data.ok === false) {
-        throw new Error(String(data.error ?? response.statusText))
+        throw new Error(typeof data.error === "string" ? data.error : response.statusText)
       }
       return data
     },
@@ -31,10 +32,10 @@ export function createControlPanelApi(app: ComfyApp): ControlPanelApi {
 
 export function isUpdateJob(value: unknown): value is UpdateJob {
   return Boolean(
-    value
-    && typeof value === "object"
-    && typeof (value as UpdateJob).id === "string"
-    && typeof (value as UpdateJob).label === "string"
-    && typeof (value as UpdateJob).status === "string",
+    value &&
+    typeof value === "object" &&
+    typeof (value as UpdateJob).id === "string" &&
+    typeof (value as UpdateJob).label === "string" &&
+    typeof (value as UpdateJob).status === "string",
   )
 }

@@ -2,7 +2,16 @@
 name: comfyui-api
 description: Connect to a running ComfyUI instance, queue workflows, monitor execution, and retrieve results. Supports both online (REST API) and offline (JSON export) modes. Use when executing ComfyUI workflows or checking server status.
 user-invocable: true
-metadata: {"openclaw":{"emoji":"🔌","os":["darwin","linux","win32"],"requires":{"anyBins":["curl","wget"]},"primaryEnv":"COMFYUI_URL"}}
+metadata:
+  {
+    "openclaw":
+      {
+        "emoji": "🔌",
+        "os": ["darwin", "linux", "win32"],
+        "requires": { "anyBins": ["curl", "wget"] },
+        "primaryEnv": "COMFYUI_URL",
+      },
+  }
 ---
 
 # ComfyUI API Skill
@@ -44,6 +53,7 @@ curl http://127.0.0.1:8188/system_stats
 ```
 
 **Response fields:**
+
 - `system.os`: Operating system
 - `system.comfyui_version`: Version string
 - `devices[0].name`: GPU name
@@ -59,6 +69,7 @@ curl -X POST http://127.0.0.1:8188/prompt \
 ```
 
 **WORKFLOW_JSON format:**
+
 ```json
 {
   "1": {
@@ -80,8 +91,9 @@ curl -X POST http://127.0.0.1:8188/prompt \
 Each node is keyed by a string ID. Inputs reference other nodes as `["{node_id}", {output_index}]`.
 
 **Response:**
+
 ```json
-{"prompt_id": "abc-123-def", "number": 1}
+{ "prompt_id": "abc-123-def", "number": 1 }
 ```
 
 ### Poll for Completion
@@ -92,15 +104,16 @@ curl http://127.0.0.1:8188/history/abc-123-def
 
 **Incomplete**: Returns `{}` (empty object)
 **Complete**: Returns execution data with outputs:
+
 ```json
 {
   "abc-123-def": {
     "outputs": {
       "9": {
-        "images": [{"filename": "ComfyUI_00001.png", "subfolder": "", "type": "output"}]
+        "images": [{ "filename": "ComfyUI_00001.png", "subfolder": "", "type": "output" }]
       }
     },
-    "status": {"completed": true}
+    "status": { "completed": true }
   }
 }
 ```
@@ -161,12 +174,12 @@ Before queuing any workflow:
 
 ## Error Handling
 
-| Error | Cause | Action |
-|-------|-------|--------|
-| Connection refused | ComfyUI not running | Switch to offline mode, save JSON |
-| 400 Bad Request | Invalid workflow JSON | Validate node connections |
-| 500 Internal Error | ComfyUI crash | Suggest restart, check logs |
-| Timeout (no response) | Server overloaded | Wait and retry once |
+| Error                 | Cause                 | Action                            |
+| --------------------- | --------------------- | --------------------------------- |
+| Connection refused    | ComfyUI not running   | Switch to offline mode, save JSON |
+| 400 Bad Request       | Invalid workflow JSON | Validate node connections         |
+| 500 Internal Error    | ComfyUI crash         | Suggest restart, check logs       |
+| Timeout (no response) | Server overloaded     | Wait and retry once               |
 
 ## Reference
 

@@ -1,0 +1,128 @@
+import { afterEach, expect, it, mock, vi } from "bun:test"
+
+import type { ComfyApp } from "@comfyorg/comfyui-frontend-types"
+
+import { API_ROUTES, SETTINGS_IDS } from "../../src/constants.ts"
+import type { ManagerExtension } from "../../src/types.ts"
+
+const openPanel = vi.fn()
+
+await mock.module("../../src/components/controlPanel.ts", () => ({
+  createControlPanelController: () => ({ open: openPanel }),
+}))
+await mock.module("../../src/services/cnrMetadataController.ts", () => ({
+  createCnrMetadataController: () => ({ initialize: vi.fn(), fixActiveWorkflow: vi.fn() }),
+}))
+
+afterEach(() => {
+  mock.restore()
+})
+
+it("categorizes every setting and restores the flagged toggle before posting user changes", async () => {
+  // Isolate the virtual ComfyUI module from concurrent Bun.build() tests.
+  if (process.env.CONTROLPANEL_ENTRYPOINT_TEST !== "1") {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "test",
+        "--preload",
+        "./frontend/test/setup.ts",
+        "./frontend/test/loader/settings.test.ts",
+      ],
+      {
+        env: { ...process.env, CONTROLPANEL_ENTRYPOINT_TEST: "1" },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    )
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ])
+    if (exitCode !== 0) throw new Error(stdout + stderr)
+    expect(exitCode).toBe(0)
+    return
+  }
+  let extension: ManagerExtension | undefined
+  const fetchApi = vi.fn(async (route: string) => {
+    // A slow status response must not let ComfyUI finish loading before registration.
+    if (route === API_ROUTES.STATUS) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    return new Response(
+      JSON.stringify(
+        route === API_ROUTES.SETTINGS ? { allow_flagged_version_as_latest: true } : { ok: true },
+      ),
+    )
+  })
+  const set = vi.fn(async (id: string, value: unknown) => {
+    extension?.settings?.find((setting) => setting.id === id)?.onChange?.(value)
+  })
+  const app = {
+    api: { fetchApi },
+    extensionManager: { setting: { set }, toast: { add: vi.fn() } },
+    registerExtension: (registered: ManagerExtension) => {
+      extension = registered
+    },
+  } as unknown as ComfyApp
+  expect(Reflect.has(globalThis, "app")).toBeFalse()
+  Bun.plugin({
+    name: "comfyui-runtime-test",
+    setup(build) {
+      build.onResolve({ filter: /scripts\/app\.js$/ }, () => ({
+        path: "app",
+        namespace: "comfy-test",
+      }))
+      build.onLoad({ filter: /.*/, namespace: "comfy-test" }, () => ({
+        exports: { app },
+        loader: "object",
+      }))
+    },
+  })
+  await import("../../src/index.ts")
+  expect(extension).toBeDefined()
+  const panelButton = extension!.actionBarButtons?.find((button) => button.label === "Panel")
+  expect(panelButton).toBeDefined()
+  panelButton!.onClick()
+  expect(openPanel).toHaveBeenCalledTimes(1)
+  const command = extension!.commands?.find((item) => item.id === "control-panel.open")
+  expect(command).toBeDefined()
+  await command!.function()
+  expect(openPanel).toHaveBeenCalledTimes(2)
+  expect(
+    extension!.menuCommands?.some((group) => group.commands.includes("control-panel.open")),
+  ).toBeTrue()
+  const settings = extension!.settings!
+  expect(
+    settings.every(
+      (setting) => setting.category?.length === 3 && setting.category[0] === "ControlPanel",
+    ),
+  ).toBe(true)
+  const toggle = settings.find(
+    (setting) => String(setting.id) === SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST,
+  )!
+  expect(toggle.defaultValue).toBe(false)
+  toggle.onChange?.(false)
+  expect(fetchApi).not.toHaveBeenCalledWith(
+    API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST,
+    expect.anything(),
+  )
+
+  fetchApi.mockClear()
+  await extension!.setup?.(app)
+  expect(fetchApi.mock.calls.map(([route]) => route)).toEqual([API_ROUTES.SETTINGS])
+  expect(set).toHaveBeenCalledWith(SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST, true)
+  expect(fetchApi).not.toHaveBeenCalledWith(
+    API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST,
+    expect.anything(),
+  )
+  toggle.onChange?.(false)
+  expect(fetchApi).toHaveBeenCalledWith(
+    API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST,
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ enabled: false }),
+    }),
+  )
+})

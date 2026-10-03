@@ -70,9 +70,11 @@ export function normalizeMetadataString(value: unknown): string | undefined {
 }
 
 function pythonModuleForNode(node: MetadataNode): string | undefined {
-  const nodeConstructor = (node as unknown as {
-    constructor?: { nodeData?: { python_module?: unknown } }
-  }).constructor
+  const nodeConstructor = (
+    node as unknown as {
+      constructor?: { nodeData?: { python_module?: unknown } }
+    }
+  ).constructor
   return normalizeMetadataString(nodeConstructor?.nodeData?.python_module)
 }
 
@@ -209,8 +211,7 @@ export function planMetadataChange(
   const currentDesiredId = normalizeMetadataString(before[desiredKey])
   const currentOppositeId = normalizeMetadataString(before[oppositeKey])
   const conflict = Boolean(
-    currentOppositeId
-    || (currentDesiredId && currentDesiredId !== desiredId),
+    currentOppositeId || (currentDesiredId && currentDesiredId !== desiredId),
   )
   if (conflict) {
     return { node, resolved, changed: false, conflict: true, before, after }
@@ -254,7 +255,7 @@ async function fetchJson(app: ComfyApp, route: string): Promise<unknown> {
     error.status = response.status
     throw error
   }
-  return await response.json() as unknown
+  return (await response.json()) as unknown
 }
 
 export async function fetchInstalledPackages(app: ComfyApp): Promise<unknown> {
@@ -288,9 +289,8 @@ export class CnrMetadataService {
       fetchJson(this.app, "/system_stats"),
     ])
     const installed = installedResult.status === "fulfilled" ? installedResult.value : undefined
-    const coreVersion = systemResult.status === "fulfilled"
-      ? coreVersionFromResponse(systemResult.value)
-      : undefined
+    const coreVersion =
+      systemResult.status === "fulfilled" ? coreVersionFromResponse(systemResult.value) : undefined
 
     if (installedResult.status === "rejected") {
       this.lastErrors.push(`Manager installed-pack API: ${String(installedResult.reason)}`)
@@ -304,11 +304,8 @@ export class CnrMetadataService {
     this.cache = createMetadataCache(installed, coreVersion)
     const managerReady = installedResult.status === "fulfilled"
     const coreReady = Boolean(coreVersion)
-    this.state = managerReady && coreReady
-      ? "ready"
-      : managerReady || coreReady
-        ? "degraded"
-        : "unavailable"
+    this.state =
+      managerReady && coreReady ? "ready" : managerReady || coreReady ? "degraded" : "unavailable"
     return this.state
   }
 }

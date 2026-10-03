@@ -1,0 +1,26 @@
+.panel {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  color: var(--template-text);
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--template-heading-size);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.counterButton {
+  composes: controlBase from "../styles/controls.module.css";
+  font-weight: 600;
+}
+
+.resetButton {
+  composes: controlBase from "../styles/controls.module.css";
+}

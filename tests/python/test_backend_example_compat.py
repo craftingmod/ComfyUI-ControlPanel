@@ -1,6 +1,16 @@
-from backend import manager_api
+from pathlib import Path
+
+from conftest import load_package_from_path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_python_lane_can_exercise_control_panel_api_helpers():
-    assert manager_api.API_PREFIX == "/control-panel"
-    assert manager_api.repo_name_from_git_url("https://github.com/user/ComfyUI-Foo.git") == "ComfyUI-Foo"
+def test_entrypoint_loads_control_panel_backend():
+  module = load_package_from_path(
+    "control_panel_entrypoint", REPO_ROOT / "__init__.py", repo_root=REPO_ROOT
+  )
+  assert module.WEB_DIRECTORY == "./dist"
+  assert module.NODE_CLASS_MAPPINGS == {}
+  assert module.NODE_DISPLAY_NAME_MAPPINGS == {}
+  assert callable(module.register_routes)
+  assert not hasattr(module, "ExampleNormalizeTextNode")

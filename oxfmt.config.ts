@@ -1,7 +1,7 @@
 import { defineConfig } from "oxfmt"
 
 export default defineConfig({
-  ignorePatterns: [".agents/**"],
+  ignorePatterns: [".agents/**", "old/**"],
   tabWidth: 2,
   semi: false,
   singleQuote: false,

@@ -1,5 +1,14 @@
 {
   "extends": "../src/tsconfig.json",
-  "compilerOptions": { "types": ["bun", "node"] },
-  "include": ["**/*.ts", "../src/**/*.d.ts", "../vitest.config.ts"]
+  "compilerOptions": {
+    "types": ["bun", "@comfyorg/comfyui-frontend-types"],
+    "noEmit": true,
+    "paths": {
+      "@pages/*": ["../src/pages/*"],
+      "@components/*": ["../src/components/*"],
+      "@scripts/*": ["../../scripts/*"],
+      "@/*": ["../src/*", "../.generated/*"]
+    }
+  },
+  "include": ["./**/*.ts", "./**/*.tsx", "../src/**/*.d.ts", "../../scripts/types/**/*.d.ts"]
 }

@@ -1,6 +1,6 @@
 import { API_ROUTES } from "../constants.ts"
-import { createButton, ensureStyles } from "../ui/dom.ts"
 import type { ToastSeverity } from "../types.ts"
+import { createButton, ensureStyles } from "../ui/dom.ts"
 
 type GitInstallModalOptions = {
   runOperation: (label: string, route: string, body?: Record<string, unknown>) => void
@@ -12,7 +12,9 @@ export type GitInstallModalController = {
   close: () => void
 }
 
-export function createGitInstallModalController(options: GitInstallModalOptions): GitInstallModalController {
+export function createGitInstallModalController(
+  options: GitInstallModalOptions,
+): GitInstallModalController {
   let gitInstallModalEl: HTMLElement | undefined
   let gitUrlInputEl: HTMLInputElement | undefined
   let gitNameInputEl: HTMLInputElement | undefined
@@ -26,6 +28,7 @@ export function createGitInstallModalController(options: GitInstallModalOptions)
 
     const backdrop = document.createElement("div")
     backdrop.className = "cp-backdrop"
+    backdrop.dataset.templateTheme = ""
     backdrop.addEventListener("click", (event) => {
       if (event.target === backdrop) {
         close()
@@ -87,7 +90,10 @@ export function createGitInstallModalController(options: GitInstallModalOptions)
           return
         }
         close()
-        options.runOperation("Install via Git URL", API_ROUTES.INSTALL_GIT_URL, { url, ...(name ? { name } : {}) })
+        options.runOperation("Install via Git URL", API_ROUTES.INSTALL_GIT_URL, {
+          url,
+          ...(name ? { name } : {}),
+        })
       }),
     )
 

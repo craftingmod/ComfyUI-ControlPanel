@@ -1,0 +1,14 @@
+.controlBase {
+  padding: var(--space-sm) var(--space-md);
+  border: var(--template-border-width) solid var(--template-border);
+  border-radius: var(--template-radius);
+  background: var(--template-surface);
+  color: var(--template-text);
+  font: inherit;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: var(--template-focus-width) solid currentcolor;
+    outline-offset: var(--space-xs);
+  }
+}

@@ -1,39 +1,27 @@
 # Testing
 
-## Commands
+## Validation
 
-```bash
-pnpm test
-pnpm test:unit
-pnpm test:frontend
-pnpm test:backend
-pnpm test:watch
-pnpm test:coverage
+Run the full repository validation from the repository root:
+
+```shell
+bun validate:agent
 ```
 
-## Coverage
+Validation is normally run once after implementation is complete. Do not run the full validation suite repeatedly during development unless needed to diagnose a failure.
 
-- `pnpm test` and `pnpm test:unit` run the frontend and backend unit test suites.
-- `pnpm test:frontend` runs the Vitest frontend suite.
-- `pnpm test:backend` runs the pytest backend suite.
-- `pnpm test:watch` runs Vitest in watch mode.
-- `pnpm test:coverage` generates frontend unit-test coverage.
+`bun test:agent` runs the combined frontend/backend test suite.
 
-`pnpm test:unit` uses a unique repository-local temporary directory for both
-suites and disables pytest's cache provider. Tests remain sequential to preserve
-the existing backend fixtures and frontend mock isolation.
-It also runs the template tooling tests with Bun before the existing suites.
+## ComfyUI runtime testing
 
-## Migration checks
+Changes that depend on ComfyUI runtime behavior or native model integration may require manual verification in ComfyUI.
 
-Run `pnpm typecheck`, `pnpm lint`, `pnpm test:unit`, `pnpm build`, and
-`pnpm release:check`. Use `pnpm build:custom-node` to check the generated package.
-The frontend uses Bun build/watch and Vitest tests; `pnpm eslint` is a compatibility
-alias for Oxlint. `pnpm fmt` and `pnpm fmt:check` expose Oxfmt and Ruff formatting.
+Use the relevant workflow or fixture for the feature being changed and verify only the affected behavior. Automated tests should cover deterministic application logic where practical.
 
-## Live checks
+For ComfyUI API changes, verify behavior against the current official ComfyUI documentation.
 
-Automated checks do not prove live ComfyUI behavior. After installing the built
-package, verify extension registration, ControlPanel opening and styles, saved
-settings, Manager data replacement, and a browser reload after a watch rebuild.
-Manager operations should be checked in a disposable installation when needed.
+## Generated files
+
+`dist/` is generated from `frontend/`; edit the source files rather than generated output.
+
+Do not create task-specific cache or temporary directories.

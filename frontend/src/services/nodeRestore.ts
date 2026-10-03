@@ -3,14 +3,14 @@ import { createMetadataCache } from "./cnrMetadata.ts"
 
 export type NodeRestoreManifest = JsonObject & {
   format_version: 1
-  registry_nodes: Array<{ id: string, version?: string }>
-  git_nodes: Array<{ url: string, folder?: string, commit?: string }>
+  registry_nodes: Array<{ id: string; version?: string }>
+  git_nodes: Array<{ url: string; folder?: string; commit?: string }>
   unmanaged_nodes: Array<{ folder: string }>
 }
 
 function asRecord(value: unknown): JsonObject | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
-    ? value as JsonObject
+    ? (value as JsonObject)
     : undefined
 }
 
@@ -33,12 +33,15 @@ function inferredGitFolder(url: string): string | undefined {
   return rawName?.replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^[.-]+|[.-]+$/g, "") || undefined
 }
 
-export function buildNodeRestoreManifest(installedResponse: unknown, inventoryResponse: unknown): NodeRestoreManifest {
+export function buildNodeRestoreManifest(
+  installedResponse: unknown,
+  inventoryResponse: unknown,
+): NodeRestoreManifest {
   const metadata = createMetadataCache(installedResponse)
   const rawNodes = asRecord(inventoryResponse)?.nodes
   const nodes = Array.isArray(rawNodes) ? rawNodes : []
-  const registryNodes = new Map<string, { id: string, version?: string }>()
-  const gitNodes: Array<{ url: string, folder?: string, commit?: string }> = []
+  const registryNodes = new Map<string, { id: string; version?: string }>()
+  const gitNodes: Array<{ url: string; folder?: string; commit?: string }> = []
   const unmanagedNodes: Array<{ folder: string }> = []
 
   for (const rawNode of nodes) {
@@ -61,7 +64,7 @@ export function buildNodeRestoreManifest(installedResponse: unknown, inventoryRe
     const url = typeof node?.git_url === "string" ? node.git_url.trim() : ""
     if (url) {
       const commit = typeof node?.git_commit === "string" ? node.git_commit.trim() : ""
-      const gitNode: { url: string, folder?: string, commit?: string } = {
+      const gitNode: { url: string; folder?: string; commit?: string } = {
         url,
         ...(commit ? { commit } : {}),
       }
@@ -76,7 +79,9 @@ export function buildNodeRestoreManifest(installedResponse: unknown, inventoryRe
 
   return {
     format_version: 1,
-    registry_nodes: [...registryNodes.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    registry_nodes: [...registryNodes.values()].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    ),
     git_nodes: gitNodes.sort((left, right) => left.url.localeCompare(right.url)),
     unmanaged_nodes: unmanagedNodes.sort((left, right) => left.folder.localeCompare(right.folder)),
   }
@@ -86,19 +91,19 @@ export function parseNodeRestoreManifest(text: string): NodeRestoreManifest {
   const value: unknown = JSON.parse(text)
   const manifest = asRecord(value)
   if (
-    manifest?.format_version !== 1
-    || !Array.isArray(manifest.registry_nodes)
-    || !Array.isArray(manifest.git_nodes)
+    manifest?.format_version !== 1 ||
+    !Array.isArray(manifest.registry_nodes) ||
+    !Array.isArray(manifest.git_nodes)
   ) {
     throw new Error("This is not a supported node restore manifest.")
   }
   return {
     ...manifest,
     format_version: 1,
-    registry_nodes: manifest.registry_nodes as Array<{ id: string, version?: string }>,
-    git_nodes: manifest.git_nodes as Array<{ url: string, folder?: string, commit?: string }>,
+    registry_nodes: manifest.registry_nodes as Array<{ id: string; version?: string }>,
+    git_nodes: manifest.git_nodes as Array<{ url: string; folder?: string; commit?: string }>,
     unmanaged_nodes: Array.isArray(manifest.unmanaged_nodes)
-      ? manifest.unmanaged_nodes as Array<{ folder: string }>
+      ? (manifest.unmanaged_nodes as Array<{ folder: string }>)
       : [],
   }
 }
@@ -115,8 +120,7 @@ export function dependencySyncNotice(result: unknown): string | undefined {
   const command = Array.isArray(data.dependency_sync_command)
     ? data.dependency_sync_command.filter((part): part is string => typeof part === "string")
     : []
-  const commandText = command.length > 0
-    ? command.map(displayCommandArgument).join(" ")
-    : "comfy node uv-sync"
+  const commandText =
+    command.length > 0 ? command.map(displayCommandArgument).join(" ") : "comfy node uv-sync"
   return `Close ComfyUI, then run: ${commandText}`
 }

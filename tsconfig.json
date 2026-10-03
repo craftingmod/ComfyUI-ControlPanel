@@ -5,8 +5,7 @@
     "frontend/dev.ts",
     "scripts/**/*",
     "oxfmt.config.ts",
-    "oxlint.config.ts",
-    "tests/tooling/**/*.ts"
+    "oxlint.config.ts"
   ],
   "compilerOptions": {
     "types": ["bun"],

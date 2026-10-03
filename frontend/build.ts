@@ -12,7 +12,6 @@ export const buildConfig = {
   target: "browser",
   format: "esm",
   minify: true,
-  banner: 'import { app } from "/scripts/app.js";',
   define: { "process.env.NODE_ENV": '"production"' },
   external: ["*/scripts/app.js", "*/scripts/api.js"],
   naming: {

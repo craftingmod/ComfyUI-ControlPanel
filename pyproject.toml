@@ -4,25 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "comfyui-controlpanel"
-description = "A lightweight ComfyUI control panel that restores legacy local administration features no longer available in ComfyUI Manager."
+description = "A lightweight ComfyUI control panel for local administration and workflow metadata repair"
 dynamic = ["version"]
 requires-python = ">=3.12"
 readme = "README.md"
 license = { file = "LICENSE" }
-dependencies = []
-
-[dependency-groups]
-dev = ["aiohttp>=3.11", "pytest>=8.4.2", "ruff>=0.16.3"]
-
-[project.urls]
-Repository = "https://github.com/craftingmod/ComfyUI-ControlPanel"
-
-[tool.comfy]
-PublisherId = "alyac"
-DisplayName = "ComfyUI-ControlPanel"
-Icon = "https://cdn.jsdelivr.net/gh/craftingmod/ComfyUI-ControlPanel/assets/icon.svg"
-requires-comfyui = ">=0.28.0"
-includes = ["dist", "backend/_version.py"]
 
 [tool.hatch.version]
 source = "uv-dynamic-versioning"
@@ -33,8 +19,20 @@ packages = ["backend"]
 [tool.uv-dynamic-versioning]
 vcs = "git"
 strict = true
+# Keep named tag suffixes such as -react as local metadata, not prerelease stages.
 pattern = '(?i)^v(?P<base>\d+\.\d+\.\d+)(?:[-._]?(?P<stage>alpha|beta|preview|pre|rc|a|b|c|post|rev|r|dev)[-._]?(?P<revision>\d+)?)?(?:[-+](?P<tagged_metadata>[a-z0-9]+(?:[-._][a-z0-9]+)*))?$'
 tagged-metadata = true
 
+[project.urls]
+Repository = "https://github.com/craftingmod/ComfyUI-ControlPanel"
+[tool.comfy]
+PublisherId = "alyac"
+DisplayName = "ComfyUI-ControlPanel"
+Icon = "https://cdn.jsdelivr.net/gh/craftingmod/ComfyUI-ControlPanel/assets/icon.svg"
+includes = ["dist", "backend/_version.py"]
+
 [tool.comfy.version]
 path = "backend/_version.py"
+
+[dependency-groups]
+dev = ["aiohttp>=3.14.3", "pytest>=9.1.1", "pytest-xdist>=3.8.0", "ruff>=0.16.3"]

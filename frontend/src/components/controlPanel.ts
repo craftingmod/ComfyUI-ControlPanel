@@ -1,13 +1,18 @@
 import type { ComfyApp } from "@comfyorg/comfyui-frontend-types"
+
 import { API_ROUTES } from "../constants.ts"
 import { debugLog } from "../debug.ts"
+import { fetchInstalledPackages } from "../services/cnrMetadata.ts"
+import type { FixMetadataSummary } from "../services/cnrMetadataController.ts"
 import { createControlPanelApi, isUpdateJob } from "../services/controlPanelApi.ts"
+import {
+  buildNodeRestoreManifest,
+  dependencySyncNotice,
+  parseNodeRestoreManifest,
+} from "../services/nodeRestore.ts"
+import type { JsonObject, ToastSeverity, UpdateJob } from "../types.ts"
 import { createButton, ensureStyles } from "../ui/dom.ts"
 import { createGitInstallModalController } from "./gitInstallModal.ts"
-import type { FixMetadataSummary } from "../services/cnrMetadataController.ts"
-import { fetchInstalledPackages } from "../services/cnrMetadata.ts"
-import { buildNodeRestoreManifest, dependencySyncNotice, parseNodeRestoreManifest } from "../services/nodeRestore.ts"
-import type { JsonObject, ToastSeverity, UpdateJob } from "../types.ts"
 
 type ControlPanelOptions = {
   app: ComfyApp
@@ -122,7 +127,11 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     return lines.join("\n")
   }
 
-  function formatOperationResult(label: string, route: string, data: JsonObject): string | undefined {
+  function formatOperationResult(
+    label: string,
+    route: string,
+    data: JsonObject,
+  ): string | undefined {
     if (route === API_ROUTES.INSTALL_GIT_URL) {
       return formatGitInstallResult(data)
     }
@@ -161,7 +170,12 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     }
   }
 
-  async function runOperation(label: string, route: string, body?: JsonObject, operationOptions: OperationOptions = {}): Promise<JsonObject | undefined> {
+  async function runOperation(
+    label: string,
+    route: string,
+    body?: JsonObject,
+    operationOptions: OperationOptions = {},
+  ): Promise<JsonObject | undefined> {
     const { toastOnSuccess = true } = operationOptions
     writeLog(`${label} started.`)
     debugLog(readBooleanSetting, `${label} request`, { route, body })
@@ -247,7 +261,9 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     }
   }
 
-  async function refreshUpdateStatus(jobRenderer: (job: UpdateJob) => void = renderJob): Promise<UpdateJob | undefined> {
+  async function refreshUpdateStatus(
+    jobRenderer: (job: UpdateJob) => void = renderJob,
+  ): Promise<UpdateJob | undefined> {
     const data = await api.fetchJson(API_ROUTES.UPDATE_STATUS)
     const job = data.job
     if (!isUpdateJob(job)) {
@@ -267,7 +283,11 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
         .then((job) => {
           if (job && !["queued", "running"].includes(job.status)) {
             stopPolling()
-            toast(job.status === "succeeded" ? "success" : "error", "ComfyUI-ControlPanel", `${job.label} ${job.status}.`)
+            toast(
+              job.status === "succeeded" ? "success" : "error",
+              "ComfyUI-ControlPanel",
+              `${job.label} ${job.status}.`,
+            )
           }
         })
         .catch((error) => {
@@ -368,7 +388,10 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
   }
 
   function nodeRestoreFilename(): string {
-    const timestamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")
+    const timestamp = new Date()
+      .toISOString()
+      .replace(/[-:]/g, "")
+      .replace(/\.\d{3}Z$/, "Z")
     return `comfyui-node-restore-${timestamp}.json`
   }
 
@@ -523,7 +546,9 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     if (typeof value === "boolean") {
       return value ? "Yes" : "No"
     }
-    return String(value)
+    return typeof value === "string" || typeof value === "number" || typeof value === "bigint"
+      ? String(value)
+      : (JSON.stringify(value) ?? "Not set")
   }
 
   function renderEnvironmentOutput(data: JsonObject): void {
@@ -653,7 +678,10 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
 
     try {
       const data = await api.fetchJson(API_ROUTES.RESTART, body)
-      writeLog(formatOperationResult(label, API_ROUTES.RESTART, data) ?? `${label} completed.`, undefined)
+      writeLog(
+        formatOperationResult(label, API_ROUTES.RESTART, data) ?? `${label} completed.`,
+        undefined,
+      )
       toast("info", "ComfyUI-ControlPanel", "Restarting")
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -667,6 +695,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
 
     const backdrop = document.createElement("div")
     backdrop.className = "cp-backdrop"
+    backdrop.dataset.templateTheme = ""
     backdrop.addEventListener("click", (event) => {
       if (event.target === backdrop) {
         closeSnapshotRestoreModal()
@@ -710,9 +739,13 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     actions.className = "cp-modal-actions"
     actions.append(
       createButton("Cancel", closeSnapshotRestoreModal),
-      createButton("Restore", () => {
-        void confirmRestoreSnapshot()
-      }, "cp-button cp-danger"),
+      createButton(
+        "Restore",
+        () => {
+          void confirmRestoreSnapshot()
+        },
+        "cp-button cp-danger",
+      ),
     )
 
     panel.append(header, field, actions)
@@ -725,6 +758,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
 
     const backdrop = document.createElement("div")
     backdrop.className = "cp-backdrop"
+    backdrop.dataset.templateTheme = ""
     backdrop.addEventListener("click", (event) => {
       if (event.target === backdrop) {
         closeEnvironmentModal()
@@ -763,6 +797,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
 
     const backdrop = document.createElement("div")
     backdrop.className = "cp-backdrop"
+    backdrop.dataset.templateTheme = ""
     backdrop.addEventListener("click", (event) => {
       if (event.target === backdrop) {
         closeUpdateCheckModal()
@@ -801,6 +836,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
 
     const backdrop = document.createElement("div")
     backdrop.className = "cp-backdrop"
+    backdrop.dataset.templateTheme = ""
     backdrop.addEventListener("click", (event) => {
       if (event.target === backdrop) {
         close()
@@ -861,9 +897,13 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       createButton("Save Snapshot", () => {
         void startUpdateJob("Save Snapshot", API_ROUTES.SNAPSHOT_SAVE)
       }),
-      createButton("Restore Snapshot", () => {
-        void openSnapshotRestoreModal()
-      }, "cp-button cp-danger"),
+      createButton(
+        "Restore Snapshot",
+        () => {
+          void openSnapshotRestoreModal()
+        },
+        "cp-button cp-danger",
+      ),
       createButton("Open Snapshots Folder", () => {
         void runOperation("Open Snapshots Folder", API_ROUTES.OPEN_SNAPSHOTS, {})
       }),
@@ -872,7 +912,10 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       }),
     )
 
-    const nodeRestoreActions = createActionGroup("Node Restore", "Custom node backup and restore actions")
+    const nodeRestoreActions = createActionGroup(
+      "Node Restore",
+      "Custom node backup and restore actions",
+    )
     nodeRestoreFileInputEl = document.createElement("input")
     nodeRestoreFileInputEl.type = "file"
     nodeRestoreFileInputEl.accept = ".json,application/json"
@@ -893,9 +936,13 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
 
     const metadataActions = createActionGroup("Workflow Metadata", "Workflow metadata actions")
     metadataActions.append(
-      createButton("Repair Metadata", () => {
-        void fixCnrId()
-      }, "cp-button cp-button-wide"),
+      createButton(
+        "Repair Metadata",
+        () => {
+          void fixCnrId()
+        },
+        "cp-button cp-button-wide",
+      ),
     )
 
     const actions = document.createElement("div")
@@ -904,9 +951,13 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       createButton("Show Environment", () => {
         void showEnvironment()
       }),
-      createButton("Restart", () => {
-        void confirmRestart()
-      }, "cp-button cp-danger"),
+      createButton(
+        "Restart",
+        () => {
+          void confirmRestart()
+        },
+        "cp-button cp-danger",
+      ),
     )
 
     restartNoticeEl = document.createElement("div")
@@ -919,9 +970,13 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
 
     const logActions = document.createElement("div")
     logActions.className = "cp-log-actions"
-    const showStatusButton = createButton("Show Status", () => {
-      void showStatusJson()
-    }, "cp-button cp-log-action")
+    const showStatusButton = createButton(
+      "Show Status",
+      () => {
+        void showStatusJson()
+      },
+      "cp-button cp-log-action",
+    )
     showStatusButton.setAttribute("aria-label", "Show status JSON")
 
     const clearLogButton = createButton("Clear Log", clearLog, "cp-button cp-log-clear")

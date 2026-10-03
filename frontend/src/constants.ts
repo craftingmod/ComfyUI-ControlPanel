@@ -1,3 +1,6 @@
+export const PROJECT_ID = "comfyui-controlpanel"
+export const PROJECT_NAME = "ComfyUI-ControlPanel"
+
 export const SETTINGS_PREFIX = "ControlPanel"
 export const EXTENSION_NAME = "ComfyUI-ControlPanel"
 export const LOGGING_PREFIX = `[${SETTINGS_PREFIX}]`

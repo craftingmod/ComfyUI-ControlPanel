@@ -1,17 +1,9 @@
-import type { ComfyApp } from "@comfyorg/comfyui-frontend-types"
-import { API_ROUTES, EXTENSION_NAME, SETTINGS_IDS } from "./constants.ts"
+import { app } from "../../scripts/app.js"
 import { createControlPanelController } from "./components/controlPanel.ts"
-import { createCnrMetadataController } from "./services/cnrMetadataController.ts"
+import { API_ROUTES, EXTENSION_NAME, SETTINGS_IDS } from "./constants.ts"
 import type { MetadataNode } from "./services/cnrMetadata.ts"
+import { createCnrMetadataController } from "./services/cnrMetadataController.ts"
 import type { ComfySettingId, ManagerExtension } from "./types.ts"
-
-declare global {
-  const app: ComfyApp
-
-  interface Window {
-    app: ComfyApp
-  }
-}
 
 const ACTION_BAR_BUTTON_TOOLTIP = "Open ControlPanel"
 
@@ -52,7 +44,10 @@ const controlPanel = createControlPanelController({
   fixCnrId: cnrMetadata.fixActiveWorkflow,
 })
 
-async function fetchJson(route: string, body?: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function fetchJson(
+  route: string,
+  body?: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
   const response = await app.api.fetchApi(route, {
     method: body ? "POST" : "GET",
     headers: body ? { "Content-Type": "application/json" } : undefined,
@@ -63,10 +58,16 @@ async function fetchJson(route: string, body?: Record<string, unknown>): Promise
   try {
     data = (text ? JSON.parse(text) : {}) as Record<string, unknown>
   } catch {
-    throw new ControlPanelFetchError(`HTTP ${response.status} for ${route}: ${text.trim() || response.statusText}`, response.status)
+    throw new ControlPanelFetchError(
+      `HTTP ${response.status} for ${route}: ${text.trim() || response.statusText}`,
+      response.status,
+    )
   }
   if (!response.ok || data.ok === false) {
-    throw new ControlPanelFetchError(String(data.error ?? response.statusText), response.status)
+    throw new ControlPanelFetchError(
+      typeof data.error === "string" ? data.error : response.statusText,
+      response.status,
+    )
   }
   return data
 }
@@ -86,38 +87,43 @@ async function shouldRegisterControlPanel(): Promise<boolean> {
 
 async function syncManagerRepositoryDataOverrideSetting(): Promise<void> {
   const data = (await fetchJson(API_ROUTES.SETTINGS)) as ControlPanelSettingsResponse
-  app.extensionManager.setting.set(
-    settingId(SETTINGS_IDS.MANAGER_REPOSITORY_DATA_OVERRIDE),
-    data.manager_repository_data_override === true,
+  await Promise.resolve(
+    app.extensionManager.setting.set(
+      settingId(SETTINGS_IDS.MANAGER_REPOSITORY_DATA_OVERRIDE),
+      data.manager_repository_data_override === true,
+    ),
   )
-  app.extensionManager.setting.set(
-    settingId(SETTINGS_IDS.MANAGER_REPOSITORY_DATA_CHANNEL),
-    data.manager_repository_data_channel === "github" ? "github" : "jsdelivr",
+  await Promise.resolve(
+    app.extensionManager.setting.set(
+      settingId(SETTINGS_IDS.MANAGER_REPOSITORY_DATA_CHANNEL),
+      data.manager_repository_data_channel === "github" ? "github" : "jsdelivr",
+    ),
   )
-  await app.extensionManager.setting.set(
-    settingId(SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST),
-    data.allow_flagged_version_as_latest === true,
+  await Promise.resolve(
+    app.extensionManager.setting.set(
+      settingId(SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST),
+      data.allow_flagged_version_as_latest === true,
+    ),
   )
   managerSettingsSynced = true
 }
 
 function updateManagerBooleanSetting(route: string, enabled: boolean): void {
-  void fetchJson(route, { enabled })
-    .catch((error) => {
-      const message = error instanceof Error ? error.message : String(error)
-      app.extensionManager.toast.add({
-        severity: "error",
-        summary: "ComfyUI-ControlPanel",
-        detail: message,
-        life: 5000,
-      })
+  void fetchJson(route, { enabled }).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error)
+    app.extensionManager.toast.add({
+      severity: "error",
+      summary: "ComfyUI-ControlPanel",
+      detail: message,
+      life: 5000,
     })
+  })
 }
 
 function updateManagerRepositoryDataChannelSetting(channel: unknown): void {
   const normalizedChannel = channel === "github" ? "github" : "jsdelivr"
-  void fetchJson(API_ROUTES.MANAGER_REPOSITORY_DATA_CHANNEL, { channel: normalizedChannel })
-    .catch((error) => {
+  void fetchJson(API_ROUTES.MANAGER_REPOSITORY_DATA_CHANNEL, { channel: normalizedChannel }).catch(
+    (error) => {
       const message = error instanceof Error ? error.message : String(error)
       app.extensionManager.toast.add({
         severity: "error",
@@ -125,7 +131,8 @@ function updateManagerRepositoryDataChannelSetting(channel: unknown): void {
         detail: message,
         life: 5000,
       })
-    })
+    },
+  )
 }
 
 function createExtensionObject(): ManagerExtension {
@@ -163,7 +170,8 @@ function createExtensionObject(): ManagerExtension {
           linkEl.target = "_blank"
           linkEl.rel = "noopener noreferrer"
           linkEl.textContent = "Homepage"
-          linkEl.style.paddingRight = "12px"
+          spanEl.dataset.templateTheme = ""
+          linkEl.style.paddingRight = "var(--space-3sm)"
           spanEl.append(linkEl)
           return spanEl
         },
@@ -182,10 +190,13 @@ function createExtensionObject(): ManagerExtension {
         name: "Replace Manager Repository Data",
         category: ["ControlPanel", "Manager", "Replace Manager Repository Data"],
         type: "boolean",
-        tooltip: "Use ControlPanel cached Manager repository data and force ComfyUI Manager offline channel settings",
+        tooltip:
+          "Use ControlPanel cached Manager repository data and force ComfyUI Manager offline channel settings",
         defaultValue: false,
         onChange: (value) => {
-          updateManagerBooleanSetting(API_ROUTES.MANAGER_REPOSITORY_DATA_OVERRIDE, value === true)
+          if (managerSettingsSynced) {
+            updateManagerBooleanSetting(API_ROUTES.MANAGER_REPOSITORY_DATA_OVERRIDE, value === true)
+          }
         },
       },
       {
@@ -199,14 +210,19 @@ function createExtensionObject(): ManagerExtension {
         ],
         tooltip: "Choose where ControlPanel fetches ComfyUI Manager repository data",
         defaultValue: "jsdelivr",
-        onChange: updateManagerRepositoryDataChannelSetting,
+        onChange: (value) => {
+          if (managerSettingsSynced) {
+            updateManagerRepositoryDataChannelSetting(value)
+          }
+        },
       },
       {
         id: settingId(SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST),
         name: "Allow flagged version as latest",
         category: ["ControlPanel", "Manager", "Allow flagged version as latest"],
         type: "boolean",
-        tooltip: "Use a newer cached Flagged version as latest in Manager exports, preserving its Registry status",
+        tooltip:
+          "Use a newer cached Flagged version as latest in Manager exports, preserving its Registry status",
         defaultValue: false,
         onChange: (value) => {
           if (managerSettingsSynced) {
@@ -253,4 +269,4 @@ async function registerControlPanelExtension(): Promise<void> {
   }
 }
 
-void registerControlPanelExtension()
+await registerControlPanelExtension()

@@ -2,7 +2,16 @@
 name: comfyui-inventory
 description: Discover and cache all installed ComfyUI models, custom nodes, and system capabilities. Works online (API queries) and offline (directory scanning). Use before generating workflows to verify available resources.
 user-invocable: true
-metadata: {"openclaw":{"emoji":"📦","os":["darwin","linux","win32"],"requires":{"bins":["pwsh"]},"primaryEnv":"COMFYUI_PATH"}}
+metadata:
+  {
+    "openclaw":
+      {
+        "emoji": "📦",
+        "os": ["darwin", "linux", "win32"],
+        "requires": { "bins": ["pwsh"] },
+        "primaryEnv": "COMFYUI_PATH",
+      },
+  }
 ---
 
 # ComfyUI Inventory Skill
@@ -12,6 +21,7 @@ Discovers what's installed in the user's ComfyUI instance and caches results for
 ## Purpose
 
 Every workflow generation MUST be preceded by an inventory check. This prevents:
+
 - Referencing models that aren't downloaded
 - Using nodes that aren't installed
 - Exceeding VRAM limits
@@ -23,18 +33,23 @@ Every workflow generation MUST be preceded by an inventory check. This prevents:
 Query the live server for authoritative information.
 
 **1. System info:**
+
 ```bash
 curl http://127.0.0.1:8188/system_stats
 ```
+
 Extracts: GPU name, total VRAM, free VRAM, ComfyUI version.
 
 **2. Installed nodes:**
+
 ```bash
 curl http://127.0.0.1:8188/object_info
 ```
+
 Returns all registered node classes with their input/output specifications.
 
 **3. Installed models (per type):**
+
 ```bash
 curl http://127.0.0.1:8188/models/checkpoints
 curl http://127.0.0.1:8188/models/loras
@@ -53,6 +68,7 @@ When ComfyUI isn't running, scan the filesystem directly.
 **Requires**: ComfyUI installation path (e.g., `C:\ComfyUI`)
 
 **Scan directories:**
+
 ```
 {ComfyUI}/models/checkpoints/    → .safetensors, .ckpt
 {ComfyUI}/models/loras/          → .safetensors
@@ -130,18 +146,18 @@ For each model reference:
 
 ## Common Node-to-Package Mapping
 
-| Node Class | Package |
-|-----------|---------|
-| ApplyInstantID | ComfyUI_InstantID |
-| IPAdapterUnifiedLoader | ComfyUI_IPAdapter_plus |
-| FaceDetailer | ComfyUI-Impact-Pack |
-| ReactorFaceSwap | ComfyUI-ReActor |
+| Node Class                   | Package                     |
+| ---------------------------- | --------------------------- |
+| ApplyInstantID               | ComfyUI_InstantID           |
+| IPAdapterUnifiedLoader       | ComfyUI_IPAdapter_plus      |
+| FaceDetailer                 | ComfyUI-Impact-Pack         |
+| ReactorFaceSwap              | ComfyUI-ReActor             |
 | AnimateDiffLoaderWithContext | ComfyUI-AnimateDiff-Evolved |
-| VideoHelper* | ComfyUI-VideoHelperSuite |
-| ControlNetApply* | comfyui_controlnet_aux |
-| UltimateSDUpscale | ComfyUI_UltimateSDUpscale |
-| VHS_* | ComfyUI-VideoHelperSuite |
-| RIFE* | ComfyUI-Frame-Interpolation |
+| VideoHelper*                 | ComfyUI-VideoHelperSuite    |
+| ControlNetApply*             | comfyui_controlnet_aux      |
+| UltimateSDUpscale            | ComfyUI_UltimateSDUpscale   |
+| VHS_*                        | ComfyUI-VideoHelperSuite    |
+| RIFE*                        | ComfyUI-Frame-Interpolation |
 
 ## Cache Freshness
 

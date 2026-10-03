@@ -1,19 +1,31 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "target": "es2025",
+    "useDefineForClassFields": true,
+    "lib": ["DOM", "DOM.Iterable", "ES2025"],
     "module": "ESNext",
-    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "types": ["@comfyorg/comfyui-frontend-types"],
+
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
+    "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
+    "allowArbitraryExtensions": true,
+    "rootDirs": [".", "../.generated"],
+    "paths": {
+      "@pages/*": ["./pages/*"],
+      "@components/*": ["./components/*"],
+      "@/*": ["./*", "../.generated/*"]
+    },
     "resolveJsonModule": true,
     "isolatedModules": true,
+
     "noEmit": true,
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["**/*.ts"]
+  "include": ["**/*.ts", "**/*.tsx", "../.generated/**/*.ts"]
 }

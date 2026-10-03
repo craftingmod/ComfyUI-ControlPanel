@@ -1,4 +1,5 @@
 import controlPanelStyles from "../styles.css" with { type: "text" }
+import sharedStyles from "../styles/globals.css" with { type: "text" }
 
 export function createButton(
   label: string,
@@ -20,6 +21,6 @@ export function ensureStyles(): void {
 
   const style = document.createElement("style")
   style.id = "control-panel-styles"
-  style.textContent = controlPanelStyles
+  style.textContent = sharedStyles + controlPanelStyles
   document.head.append(style)
 }

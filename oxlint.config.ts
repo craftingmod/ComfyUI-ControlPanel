@@ -8,7 +8,7 @@ export default defineConfig({
     typeAware: true,
     typeCheck: true,
   },
-  ignorePatterns: [".agents/**", "docs/**"],
+  ignorePatterns: [".agents/**", "docs/**", "old/**"],
   plugins: ["import", "typescript", "oxc", "react"],
   // https://oxc.rs/docs/guide/usage/linter/rules.html
   rules: {

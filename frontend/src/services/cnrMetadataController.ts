@@ -1,5 +1,5 @@
 import type { ComfyApp } from "@comfyorg/comfyui-frontend-types"
-import { collectGraphNodes, type MetadataGraph } from "./graphWalker.ts"
+
 import {
   applyMetadataChange,
   CnrMetadataService,
@@ -8,6 +8,7 @@ import {
   type MetadataNode,
   type MetadataReason,
 } from "./cnrMetadata.ts"
+import { collectGraphNodes, type MetadataGraph } from "./graphWalker.ts"
 
 export type UnresolvedNode = {
   id?: number | string
@@ -76,7 +77,10 @@ export function createCnrMetadataController(app: ComfyApp): CnrMetadataControlle
     const state = await service.refresh()
     if (state !== "ready" && !warnedAboutInitialization) {
       warnedAboutInitialization = true
-      console.warn("[ComfyUI-ControlPanel] CNR metadata injection is running with incomplete API data.", service.lastErrors)
+      console.warn(
+        "[ComfyUI-ControlPanel] CNR metadata injection is running with incomplete API data.",
+        service.lastErrors,
+      )
     }
     for (const node of pendingNodes) {
       fillNode(node)

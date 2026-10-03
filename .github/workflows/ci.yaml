@@ -32,31 +32,20 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Use Node.js 24
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.2
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Install Bun dependencies
+        run: bun ci
 
       - name: Sync Python dependencies
         run: uv sync --locked --group dev
 
       - name: Run validate
-        run: pnpm validate:ci
+        run: bun run validate:ci
 
       - name: Build frontend
-        run: pnpm build
+        run: bun run build
 
       - name: Build Registry package
-        run: pnpm build:custom-node
+        run: bun run build:custom-node
