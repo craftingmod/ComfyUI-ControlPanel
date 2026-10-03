@@ -55,26 +55,27 @@ version tag, not from GitHub's automatic source archive. The release zip
 includes the built frontend file at `dist/index.js`, which ComfyUI needs at
 runtime.
 
-For example, for `v1.1.0`, download the attached release asset named like:
+For new releases, download the attached asset named like:
 
 ```text
-ComfyUI-ControlPanel-v1.1.0.zip
+ComfyUI-ControlPanel-1.2.6.zip
 ```
 
-Extract the `ComfyUI-ControlPanel/` folder from the zip into:
+Create the following directory and extract the package files into it:
 
 ```text
-ComfyUI/custom_nodes/
+ComfyUI/custom_nodes/ComfyUI-ControlPanel/
 ```
 
-Then restart ComfyUI.
+Then restart ComfyUI. Older releases contain a top-level `ComfyUI-ControlPanel/`
+folder; extract that folder under `custom_nodes/` instead.
 
 ### From Source
 
 Install the development dependencies before building or testing from source:
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 uv sync --locked --group dev
 ```
 
@@ -154,6 +155,9 @@ The backend is split by responsibility:
 - `backend/manager_cli.py` formats Comfy CLI responses.
 - `backend/manager_runtime.py` handles runtime paths and restart helpers.
 
+See [DEV.md](DEV.md) for the Bun build, template deployment tooling, and Git
+version requirements.
+
 ## Release
 
 Version tags publish the same built extension to the Comfy Registry and to a
@@ -161,38 +165,25 @@ GitHub Release zip. Add a repository Actions secret named
 `REGISTRY_ACCESS_TOKEN` containing the publishing key for the `alyac` Registry
 publisher before creating a release tag.
 
-Use uv to update the version in `pyproject.toml` and `uv.lock` together:
+Versions are derived from Git tags using Hatchling and uv-dynamic-versioning.
+Clone with Git history and tags; source archives alone cannot resolve the version.
+The private frontend package has no independent version. From a clean stable
+release commit, `pnpm version:bump` creates the next patch tag; with a dirty
+working tree it prints instructions instead. Push the intended tag to publish.
 
 ```bash
-uv version --bump patch
+pnpm release:check
+pnpm build:custom-node
 ```
 
-The private frontend `package.json` intentionally has no independent version.
-After committing the version change, create and push a matching tag:
+The template ZIP is written to `build/ComfyUI-ControlPanel-<version>.zip`.
+Create a `ComfyUI-ControlPanel/` directory under `custom_nodes/` and extract its
+contents there. The existing PowerShell archive command remains available for
+users who need the older ZIP with a top-level directory.
 
-```bash
-git tag vX.Y.Z
-git push origin vX.Y.Z
-```
-
-To create the same installable archive locally after `pnpm build`:
-
-```powershell
-./scripts/New-CustomNodesZip.ps1 -Version v1.1.0
-```
-
-The archive is written to `release/` and contains a single
-`ComfyUI-ControlPanel/` folder ready to extract under `custom_nodes/`.
-
-The release workflow:
-
-1. Checks out the tagged source.
-2. Installs frontend dependencies with Node.js 24 and pnpm.
-3. Builds the frontend, including its TypeScript check.
-4. Verifies that the tag matches the version in `pyproject.toml`.
-5. Verifies that `dist/index.js` exists and publishes the package to the Comfy Registry.
-6. Runs `scripts/New-CustomNodesZip.ps1` and uploads
-   `ComfyUI-ControlPanel-vX.Y.Z.zip` to the GitHub Release.
+The release workflow first runs CI validation, then publishes to the Registry
+and creates a GitHub Release with the built ZIP. CI checks out all Git history,
+installs system pnpm, Bun and uv, validates the project, and builds the package.
 
 ### About `dist/index.js` in tag releases
 
@@ -201,8 +192,7 @@ publishing, and `[tool.comfy].includes` forces it into the Registry package. The
 GitHub automatic source archives still omit `dist/index.js`, so manual installs
 must use the attached release zip instead.
 
-The separate `CI` workflow is manual-only and can be run when an extra validation
-pass is useful before tagging.
+CI runs on main-branch pushes and pull requests, and is reused by releases.
 
 ### v1.1.0 notes
 

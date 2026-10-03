@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vitest"
 import type { ComfyApp } from "@comfyorg/comfyui-frontend-types"
-import { createControlPanelApi } from "../src/services/controlPanelApi"
+import { describe, expect, it, vi } from "vitest"
+
+import { createControlPanelApi } from "../src/services/controlPanelApi.ts"
 
 function createAppWithResponse(response: Response): ComfyApp {
   return {

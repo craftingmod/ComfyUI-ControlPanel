@@ -1,0 +1,15 @@
+{
+  "extends": "@tsconfig/bun/tsconfig.json",
+  "include": [
+    "frontend/build.ts",
+    "frontend/dev.ts",
+    "scripts/**/*",
+    "oxfmt.config.ts",
+    "oxlint.config.ts",
+    "tests/tooling/**/*.ts"
+  ],
+  "compilerOptions": {
+    "types": ["bun"],
+    "allowImportingTsExtensions": true
+  }
+}

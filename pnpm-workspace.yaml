@@ -1,4 +1,4 @@
 packages:
   - .
 
-verifyDepsBeforeRun: "warn"
+verifyDepsBeforeRun: false

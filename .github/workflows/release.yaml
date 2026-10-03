@@ -1,26 +1,26 @@
-name: Release
-
+name: Publish to Comfy registry
 on:
+  workflow_dispatch:
   push:
     tags:
-      - "v*.*.*"
+      - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
-    name: Publish release
-    runs-on: ubuntu-latest
+  validate:
+    uses: ./.github/workflows/ci.yaml
 
+  publish-node:
+    name: Publish Custom Node to registry
+    needs: validate
+    runs-on: ubuntu-latest
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Use Python from .python-version
-        uses: actions/setup-python@v6
+        uses: actions/checkout@v6
         with:
-          python-version-file: ".python-version"
+          fetch-depth: 0
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -29,44 +29,72 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: "pnpm"
+          cache: pnpm
 
-      - name: Install Node dependencies
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Validate release metadata
+        run: pnpm release:check
 
       - name: Build frontend
         run: pnpm build
 
-      - name: Verify tag and project version
-        env:
-          RELEASE_VERSION: ${{ github.ref_name }}
-        run: >-
-          python -c "import os, pathlib, tomllib;
-          expected = os.environ['RELEASE_VERSION'].removeprefix('v');
-          project = tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'];
-          assert project == expected, f'version mismatch: tag={expected}, pyproject={project}'"
-
-      - name: Verify required release files
-        run: |
-          test -f __init__.py
-          test -f backend/__init__.py
-          test -f dist/index.js
-          test -f pyproject.toml
-
-      - name: Publish to Comfy Registry
+      - name: Publish Custom Node
         uses: Comfy-Org/publish-node-action@main
         with:
           personal_access_token: ${{ secrets.REGISTRY_ACCESS_TOKEN }}
-          skip_checkout: "true"
 
-      - name: Create installable zip
-        shell: pwsh
-        env:
-          RELEASE_VERSION: ${{ github.ref_name }}
-        run: ./scripts/New-CustomNodesZip.ps1 -Version $env:RELEASE_VERSION -OutputDirectory release -Force
-
-      - name: Upload release asset
-        uses: softprops/action-gh-release@v2
+  github-release:
+    if: github.event_name == 'push'
+    name: Build and publish GitHub Release
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
         with:
-          files: release/ComfyUI-ControlPanel-${{ github.ref_name }}.zip
-          generate_release_notes: true
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate tag and build Registry ZIP
+        id: build
+        run: pnpm release:github
+
+      - name: Create GitHub Release and upload ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE_PATH: ${{ steps.build.outputs.archive }}
+        run: |
+          gh release create \
+            "$GITHUB_REF_NAME" \
+            "$ARCHIVE_PATH" \
+            --verify-tag \
+            --generate-notes \
+            --title "$GITHUB_REF_NAME"

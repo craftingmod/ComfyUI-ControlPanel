@@ -41,19 +41,20 @@ def test_root_package_surface_matches_frontend_backend_split():
     package_json = json.loads(PACKAGE_JSON_PATH.read_text(encoding="utf-8"))
     scripts = package_json["scripts"]
 
-    assert scripts["dev"] == (
-        "tsc --noEmit -p frontend/tsconfig.json && "
-        "vite build --watch --config frontend/vite.config.ts"
-    )
-    assert scripts["build"] == (
-        "tsc --noEmit -p frontend/tsconfig.json && "
-        "vite build --config frontend/vite.config.ts"
-    )
-    assert scripts["typecheck"] == "tsc --noEmit -p frontend/tsconfig.json"
+    assert scripts["dev"] == "pnpm typecheck && bun frontend/dev.ts"
+    assert scripts["build"] == "pnpm typecheck && bun frontend/build.ts"
+    assert "frontend/src/tsconfig.json" in scripts["typecheck"]
+    assert "frontend/test/tsconfig.json" in scripts["typecheck"]
     assert scripts["test"] == "pnpm test:unit"
-    assert scripts["test:frontend"] == "vitest run --config frontend/vitest.config.ts"
-    assert scripts["test:backend"] == "uv run pytest tests/python tests/backend -q"
-    assert scripts["test:unit"] == "pnpm test:frontend && pnpm test:backend"
+    assert (
+        scripts["test:frontend"]
+        == "vitest run --config frontend/vitest.config.ts --configLoader runner"
+    )
+    assert (
+        scripts["test:backend"]
+        == "uv run pytest -p no:cacheprovider tests/python tests/backend -q"
+    )
+    assert scripts["test:unit"] == "bun scripts/ci-test.ts"
 
 
 def test_root_packaging_metadata_matches_layout():
@@ -69,7 +70,9 @@ def test_root_packaging_metadata_matches_layout():
     assert package_json["description"] == pyproject["project"]["description"]
     assert pyproject["project"]["dependencies"] == []
     assert tool_comfy["DisplayName"] == "ComfyUI-ControlPanel"
-    assert tool_comfy["includes"] == ["dist"]
+    assert tool_comfy["includes"] == ["dist", "backend/_version.py"]
+    assert pyproject["project"]["dynamic"] == ["version"]
+    assert tool_comfy["version"]["path"] == "backend/_version.py"
     assert tool_comfy["requires-comfyui"] == ">=0.28.0"
 
 
@@ -78,7 +81,7 @@ def test_root_workspace_surface_matches_expectations():
 
     assert PNPM_WORKSPACE_PATH.exists()
     assert "packages:\n  - ." in pnpm_workspace
-    assert 'verifyDepsBeforeRun: "warn"' in pnpm_workspace
+    assert "verifyDepsBeforeRun: false" in pnpm_workspace
 
 
 def test_release_packaging_script_defines_installable_custom_nodes_archive():
@@ -99,20 +102,16 @@ def test_ci_workflows_use_repo_command_surface():
 
     assert "pnpm install --frozen-lockfile" in ci_workflow
     assert "uv sync --locked --group dev" in ci_workflow
-    assert "pnpm typecheck" in ci_workflow
-    assert "pnpm test:unit" in ci_workflow
-
-    assert "v*.*.*" in release_workflow
-    assert "node-version: 24" in release_workflow
+    assert "pnpm validate:ci" in ci_workflow
+    assert "pnpm build:custom-node" in ci_workflow
+    assert "fetch-depth: 0" in ci_workflow
+    assert '"v*"' in release_workflow
     assert "pnpm install --frozen-lockfile" in release_workflow
-    assert "pnpm build" in release_workflow
-    assert "test -f dist/index.js" in release_workflow
-    assert "shell: pwsh" in release_workflow
-    assert "./scripts/New-CustomNodesZip.ps1" in release_workflow
-    assert "softprops/action-gh-release@v2" in release_workflow
+    assert "pnpm release:github" in release_workflow
+    assert "gh release create" in release_workflow
+    assert "needs: validate" in release_workflow
     assert "Comfy-Org/publish-node-action" in release_workflow
     assert "REGISTRY_ACCESS_TOKEN" in release_workflow
-    assert 'skip_checkout: "true"' in release_workflow
 
 
 def test_docs_explain_the_slim_command_surface():

@@ -1,6 +1,10 @@
-import controlPanelStyles from "../styles.css?inline"
+import controlPanelStyles from "../styles.css" with { type: "text" }
 
-export function createButton(label: string, onClick: () => void, className = "cp-button"): HTMLButtonElement {
+export function createButton(
+  label: string,
+  onClick: () => void,
+  className = "cp-button",
+): HTMLButtonElement {
   const button = document.createElement("button")
   button.className = className
   button.type = "button"

@@ -1,15 +1,25 @@
 name: CI
 
 on:
-  workflow_dispatch:
+  workflow_call:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   validate:
     name: Validate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Use Python from .python-version
         uses: actions/setup-python@v6
@@ -17,9 +27,10 @@ jobs:
           python-version-file: ".python-version"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -28,16 +39,24 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: "pnpm"
+          cache: pnpm
 
-      - name: Install Node dependencies
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Sync Python dependencies
         run: uv sync --locked --group dev
 
-      - name: Typecheck
-        run: pnpm typecheck
+      - name: Run validate
+        run: pnpm validate:ci
 
-      - name: Run unit tests
-        run: pnpm test:unit
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Build Registry package
+        run: pnpm build:custom-node

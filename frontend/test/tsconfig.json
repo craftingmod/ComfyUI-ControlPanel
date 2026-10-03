@@ -1,0 +1,5 @@
+{
+  "extends": "../src/tsconfig.json",
+  "compilerOptions": { "types": ["bun", "node"] },
+  "include": ["**/*.ts", "../src/**/*.d.ts", "../vitest.config.ts"]
+}

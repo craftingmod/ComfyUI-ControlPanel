@@ -9,32 +9,42 @@ Single publishable ComfyUI custom node pack.
 - Use `uv` for Python dependency sync and Python execution outside repo scripts
 
 For testing details, see `docs/TESTING.md`.
+Template development and deployment commands are documented in `DEV.md`.
+System pnpm runs repository commands; Bun supplies build/watch and tooling scripts.
+Keep existing ControlPanel runtime ownership and Vitest mock isolation.
 For ComfyUI API changes, verify current official docs before changing architecture or advanced frontend hooks.
 
 ## pnpm warning
+
 Use system pnpm, NOT codex built-in pnpm!
 Turn off `verifyDepsBeforeRun` while using pnpm.
 
 ## About CSS
+
 ComfyUI supports tailwindcss so tailwindcss style is preferred.
 
 ## Useful Commands
 
 1. Check type in typescript
+
 ```sh
 pnpm run typecheck
 ```
 
 2. Lint frontend code
+
 ```sh
 pnpm run eslint
 ```
- * Lint with fix
- ```sh
+
+- Lint with fix
+
+```sh
 pnpm run eslint:fix
- ```
+```
 
 3. Build frontend
+
 ```sh
 pnpm run build
 ```

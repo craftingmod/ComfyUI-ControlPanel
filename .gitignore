@@ -21,3 +21,11 @@ node.zip
 .changeset/
 docs/superpowers/
 .pnpm-store
+
+build/
+backend/_version.py
+.ci-cache/
+.ci-test-tmp/
+.test-tmp/
+.uv-cache/
+.pytest_cache/

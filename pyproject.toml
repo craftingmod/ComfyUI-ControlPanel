@@ -1,16 +1,18 @@
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning"]
+build-backend = "hatchling.build"
+
 [project]
 name = "comfyui-controlpanel"
 description = "A lightweight ComfyUI control panel that restores legacy local administration features no longer available in ComfyUI Manager."
-version = "1.2.5"
+dynamic = ["version"]
 requires-python = ">=3.12"
 readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = []
 
 [dependency-groups]
-dev = [
-  "pytest>=8.4.2",
-]
+dev = ["aiohttp>=3.11", "pytest>=8.4.2", "ruff>=0.16.3"]
 
 [project.urls]
 Repository = "https://github.com/craftingmod/ComfyUI-ControlPanel"
@@ -20,4 +22,19 @@ PublisherId = "alyac"
 DisplayName = "ComfyUI-ControlPanel"
 Icon = "https://cdn.jsdelivr.net/gh/craftingmod/ComfyUI-ControlPanel/assets/icon.svg"
 requires-comfyui = ">=0.28.0"
-includes = ['dist']
+includes = ["dist", "backend/_version.py"]
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend"]
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+strict = true
+pattern = '(?i)^v(?P<base>\d+\.\d+\.\d+)(?:[-._]?(?P<stage>alpha|beta|preview|pre|rc|a|b|c|post|rev|r|dev)[-._]?(?P<revision>\d+)?)?(?:[-+](?P<tagged_metadata>[a-z0-9]+(?:[-._][a-z0-9]+)*))?$'
+tagged-metadata = true
+
+[tool.comfy.version]
+path = "backend/_version.py"

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { debugLog, isDebugEnabled } from "../src/debug"
-import { LOGGING_PREFIX, SETTINGS_IDS } from "../src/constants"
+
+import { LOGGING_PREFIX, SETTINGS_IDS } from "../src/constants.ts"
+import { debugLog, isDebugEnabled } from "../src/debug.ts"
 
 describe("debug helpers", () => {
   afterEach(() => {
@@ -14,7 +15,9 @@ describe("debug helpers", () => {
   it("uses stable ComfyUI setting ids", () => {
     expect(SETTINGS_IDS.VERSION).toBe("ControlPanel.Version")
     expect(SETTINGS_IDS.DEBUG_LOGGING).toBe("ControlPanel.Debug_Logging")
-    expect(SETTINGS_IDS.MANAGER_REPOSITORY_DATA_OVERRIDE).toBe("ControlPanel.Manager_Repository_Data_Override")
+    expect(SETTINGS_IDS.MANAGER_REPOSITORY_DATA_OVERRIDE).toBe(
+      "ControlPanel.Manager_Repository_Data_Override",
+    )
   })
 
   it("reads the debug logging setting from the provided reader", () => {
@@ -29,10 +32,7 @@ describe("debug helpers", () => {
 
     debugLog(() => true, "hello", { scope: "test" })
 
-    expect(consoleLog).toHaveBeenCalledWith(
-      `${LOGGING_PREFIX} hello`,
-      { scope: "test" },
-    )
+    expect(consoleLog).toHaveBeenCalledWith(`${LOGGING_PREFIX} hello`, { scope: "test" })
   })
 
   it("does not write debug logs when debug logging is disabled", () => {

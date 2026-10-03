@@ -1,32 +1,17 @@
-# Development environments and caches
-.agents/
-.codex/
-.git/
-.github/
-.pytest_cache/
-.test-tmp/
-.uv-cache/
-.venv/
-coverage/
-node_modules/
-release/
+# Runtime allowlist from the upstream template.
+/*
+!/__init__.py
+!/assets/
+!/assets/**
+!/backend/
+!/backend/**
+!/dist/
+!/dist/**
+!/LICENSE
+!/pyproject.toml
+!/README.md
 
-# Development source and tooling
-docs/
-frontend/
-scripts/
-tests/
-.python-version
-AGENTS.md
-CLAUDE.md
-PLAN.md
-cnr-id-injection-spec.md
-conftest.py
-eslint.config.ts
-package.json
-pnpm-lock.yaml
-pnpm-workspace.yaml
-skills-lock.json
-uv.lock
-
-# The built frontend remains included through tool.comfy.includes.
+# Keep Python bytecode out of runtime directories.
+**/__pycache__/
+**/*.pyc
+**/*.pyo
