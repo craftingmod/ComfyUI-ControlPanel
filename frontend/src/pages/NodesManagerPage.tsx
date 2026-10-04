@@ -99,6 +99,7 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
   const [sort, setSort] = useState<NodesManagerSort>("downloads")
   const [search, setSearch] = useState("")
   const [columnCount, setColumnCount] = useState(1)
+  const [fixedItemHeight, setFixedItemHeight] = useState<number>()
   const [selectedVersions, setSelectedVersions] = useState<Record<string, string>>({})
   const [dismissedTaskIds, setDismissedTaskIds] = useState<Set<string>>(() => new Set())
   const searchRef = useRef<HTMLInputElement>(null)
@@ -212,6 +213,12 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
     const observer = new ResizeObserver(([entry]) => {
       if (!entry) return
       const style = getComputedStyle(element)
+      // Resolve the CSS row height once per viewport resize, including its bottom padding.
+      const row = element.querySelector<HTMLElement>(`.${styles.cardGrid}`)
+      const rowHeight = row ? Number.parseFloat(getComputedStyle(row).height) : 0
+      if (rowHeight > 0) {
+        setFixedItemHeight((current) => (current === rowHeight ? current : rowHeight))
+      }
       const minCardWidth =
         Number.parseFloat(style.getPropertyValue("--nodes-manager-card-min-width")) || 300
       const gap = Number.parseFloat(style.getPropertyValue("--space-md")) || 0
@@ -558,6 +565,7 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
                 ref={virtuosoRef}
                 components={VIRTUOSO_COMPONENTS}
                 data={packRows}
+                fixedItemHeight={fixedItemHeight}
                 style={{ height: "100%" }}
                 scrollerRef={observeScroller}
                 computeItemKey={(_index, row) => row.map((pack) => pack.key).join("\0")}

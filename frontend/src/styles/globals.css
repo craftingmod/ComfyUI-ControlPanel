@@ -9,6 +9,7 @@
   --space-lg: 24px;
   --space-xl: 32px;
   --space-2xl: 48px;
+  --space-3xl: 60px;
 
   /* color preset */
   --cp-bg: var(--base-background, var(--comfy-menu-bg, #17191f));
@@ -33,6 +34,12 @@
   --nodes-manager-card-min-width: 300px;
   --nodes-manager-description-line-height: 18px;
   --nodes-manager-metadata-height: 16px;
+  --nodes-manager-card-height: calc(
+    var(--space-3xl) + var(--nodes-manager-description-line-height) * 2 + var(--space-xs) +
+      var(--nodes-manager-metadata-height) + var(--space-xl) + var(--space-sm) * 2 +
+      var(--space-3sm) * 2 + var(--cp-border-width) * 2
+  );
+  --nodes-manager-row-height: calc(var(--nodes-manager-card-height) + var(--space-md));
   --nodes-manager-task-summary-height: 160px;
 }
 

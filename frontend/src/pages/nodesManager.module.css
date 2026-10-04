@@ -292,8 +292,10 @@
 }
 
 .cardGrid {
+  box-sizing: border-box;
   display: grid;
   width: 100%;
+  height: var(--nodes-manager-row-height);
   align-content: start;
   gap: var(--space-md);
   padding-bottom: var(--space-md);

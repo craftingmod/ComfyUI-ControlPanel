@@ -1,9 +1,11 @@
 .card {
+  box-sizing: border-box;
   position: relative;
   display: flex;
   min-width: 0;
+  height: var(--nodes-manager-card-height);
   flex-direction: column;
-  gap: var(--space-xs);
+  gap: var(--space-sm);
   padding: var(--space-3sm);
   border: var(--cp-border-width) solid var(--cp-border);
   border-radius: var(--cp-radius);
@@ -12,17 +14,21 @@
 }
 
 .cardHead {
+  box-sizing: border-box;
   display: flex;
   min-width: 0;
+  height: var(--space-3xl);
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--space-sm);
 }
 
 .icon {
+  box-sizing: border-box;
   display: grid;
-  width: 52px;
-  height: 52px;
-  flex: 0 0 52px;
+  width: var(--space-3xl);
+  height: var(--space-3xl);
+  flex: 0 0 var(--space-3xl);
   place-items: center;
   overflow: hidden;
   border: var(--cp-border-width) solid var(--cp-border);
@@ -36,8 +42,8 @@
 .icon img {
   display: block;
   grid-area: 1 / 1;
-  width: 52px;
-  height: 52px;
+  width: var(--space-3xl);
+  height: var(--space-3xl);
   object-fit: cover;
 }
 
@@ -56,6 +62,7 @@
   color: var(--cp-text);
   font-size: 15px;
   font-weight: 720;
+  line-height: 20px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -65,6 +72,7 @@
   margin: var(--space-2xs) 0 0;
   color: color-mix(in srgb, var(--cp-muted) 65%, var(--cp-panel));
   font-size: 11px;
+  line-height: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -241,15 +249,17 @@
 }
 
 .actions {
+  box-sizing: border-box;
   display: flex;
-  flex-wrap: wrap;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
   gap: var(--space-xs);
-  padding-top: var(--space-sm);
+  height: var(--space-xl);
 }
 
 .actionsEnd {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   gap: var(--space-xs);
   margin-inline-start: auto;
