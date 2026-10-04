@@ -16,6 +16,7 @@ import { SnapshotRestoreModal } from "../components/snapshotRestoreModal.tsx"
 import { UpdateCheckModal } from "../components/updateCheckModal.tsx"
 import { API_ROUTES } from "../constants.ts"
 import type { ToastSeverity } from "../types.ts"
+import { NodesManagerPage } from "./NodesManagerPage.tsx"
 
 import styles from "../components/controlPanel.module.css"
 
@@ -25,6 +26,11 @@ type ControlPanelPageProps = {
 
 export function ControlPanelPage({ actions }: ControlPanelPageProps) {
   const view = useSyncExternalStore(actions.subscribe, actions.getSnapshot, actions.getSnapshot)
+  const nodesManagerView = useSyncExternalStore(
+    actions.nodesManager.subscribe,
+    actions.nodesManager.getSnapshot,
+    actions.nodesManager.getSnapshot,
+  )
   const [gitInstallOpen, setGitInstallOpen] = useState(false)
   const [gitUrl, setGitUrl] = useState("")
   const [gitFolderName, setGitFolderName] = useState("")
@@ -144,7 +150,12 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
     actions.toast(severity, summary, detail)
   }
 
-  const hasSubdialog = gitInstallOpen || snapshotRestoreOpen || environmentOpen || updateCheckOpen
+  const hasSubdialog =
+    gitInstallOpen ||
+    snapshotRestoreOpen ||
+    environmentOpen ||
+    updateCheckOpen ||
+    nodesManagerView.isOpen
 
   return (
     <>
@@ -183,6 +194,13 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
                 </button>
                 <button className={styles.button} type="button" onClick={openUpdateCheck}>
                   Check for Updates
+                </button>
+                <button
+                  className={`${styles.button} ${styles.buttonWide}`}
+                  type="button"
+                  onClick={() => void actions.nodesManager.open()}
+                >
+                  Nodes Manager
                 </button>
                 <button
                   className={styles.button}
@@ -383,6 +401,7 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
         output={view.updateCheckOutput}
         onClose={() => setUpdateCheckOpen(false)}
       />
+      <NodesManagerPage controller={actions.nodesManager} />
     </>
   )
 }

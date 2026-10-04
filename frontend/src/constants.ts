@@ -27,6 +27,8 @@ export const API_ROUTES = {
   SNAPSHOT_RESTORE: `${API_PREFIX}/snapshot/restore`,
   NODE_RESTORE_INVENTORY: `${API_PREFIX}/node-restore/inventory`,
   NODE_RESTORE_RESTORE: `${API_PREFIX}/node-restore/restore`,
+  NODES_MANAGER_CATALOG: `${API_PREFIX}/nodes-manager/catalog`,
+  NODES_MANAGER_VERSIONS: `${API_PREFIX}/nodes-manager/versions`,
   UPDATE_CUSTOM_NODES: `${API_PREFIX}/update/custom-nodes`,
   REFRESH_MANAGER_CACHE: `${API_PREFIX}/manager-cache/refresh`,
   REBUILD_MANAGER_CACHE: `${API_PREFIX}/manager-cache/rebuild`,

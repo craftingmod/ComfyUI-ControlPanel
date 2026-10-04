@@ -1,0 +1,374 @@
+.managerDialog {
+  display: flex;
+  width: min(1440px, calc(100vw - 32px));
+  height: min(900px, calc(100vh - 24px));
+  max-height: calc(100vh - 24px);
+  flex-direction: column;
+  overflow: hidden;
+  padding: var(--space-lg);
+  background: #171a20;
+}
+
+.managerBody {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  gap: var(--space-lg);
+}
+
+.sidebar {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-radius: 8px;
+  background: #1c2027;
+}
+
+.sidebarLabel {
+  margin: 0;
+  padding: var(--space-xs) var(--space-sm);
+  color: #929baa;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.filterList {
+  display: grid;
+  gap: var(--space-2xs);
+}
+
+.filterButton {
+  composes: controlBase from "../styles/controls.module.css";
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  border-color: transparent;
+  background: transparent;
+  color: #c3cad5;
+  text-align: left;
+}
+
+.filterButton:hover {
+  background: rgb(255 255 255 / 6%);
+}
+
+.filterSelected,
+.filterSelected:hover {
+  border-color: rgb(99 168 255 / 24%);
+  background: rgb(48 113 188 / 22%);
+  color: #e9f3ff;
+}
+
+.filterCount {
+  flex: 0 0 auto;
+  color: #a0a8b5;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebarHelp {
+  margin-top: auto;
+  padding: var(--space-sm);
+  border-top: 1px solid rgb(255 255 255 / 9%);
+  color: #9da6b4;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 210px) auto;
+  gap: var(--space-sm);
+}
+
+.searchField,
+.sortField {
+  display: block;
+  min-width: 0;
+}
+
+.searchField input,
+.sortField select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 42px;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 6px;
+  background: #222630;
+  color: #eef1f5;
+  color-scheme: dark;
+  font: inherit;
+}
+
+.searchField input:focus-visible,
+.sortField select:focus-visible {
+  outline: var(--template-focus-width) solid currentcolor;
+  outline-offset: var(--space-xs);
+}
+
+.refreshButton {
+  composes: controlBase from "../styles/controls.module.css";
+  min-height: 42px;
+  padding: var(--space-sm) var(--space-md);
+  background: #2a303a;
+  color: #eff3f7;
+  font-weight: 650;
+}
+
+.pageButton {
+  composes: controlBase from "../styles/controls.module.css";
+  min-height: 34px;
+  padding: var(--space-xs) var(--space-sm);
+  background: #2a303a;
+  color: #eff3f7;
+  font-weight: 650;
+  font-size: 12px;
+}
+
+.refreshButton:disabled,
+.pageButton:disabled {
+  color: #7d8794;
+  cursor: not-allowed;
+}
+
+.refreshButton:hover,
+.pageButton:hover:not(:disabled) {
+  background: #3b4553;
+}
+
+.sourceNotice,
+.notice,
+.managerReady,
+.errorNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin: var(--space-sm) 0 0;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 6px;
+  color: #bdc6d3;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.sourceNotice {
+  flex-direction: column;
+  border-color: rgb(87 158 221 / 25%);
+  background: rgb(34 87 137 / 12%);
+}
+
+.sourceNotice strong {
+  color: #d9e9fb;
+}
+
+.managerReady {
+  border-color: rgb(94 182 119 / 25%);
+  background: rgb(40 105 60 / 12%);
+  color: #c2e5ca;
+}
+
+.taskSummary {
+  display: grid;
+  gap: var(--space-xs);
+  max-height: 180px;
+  overflow: auto;
+  margin-top: var(--space-sm);
+  padding: var(--space-sm);
+  border: 1px solid rgb(231 178 86 / 24%);
+  border-radius: 6px;
+  background: rgb(142 91 23 / 10%);
+  overscroll-behavior: contain;
+}
+
+.taskSummary h3 {
+  margin: 0;
+  color: #f0d8a8;
+  font-size: 12px;
+}
+
+.taskSummaryItem {
+  display: grid;
+  gap: var(--space-2xs);
+  padding-top: var(--space-xs);
+  border-top: 1px solid rgb(255 255 255 / 8%);
+  color: #e7d8b9;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.taskSummaryRetryButton {
+  composes: controlBase from "../styles/controls.module.css";
+  justify-self: start;
+  padding: var(--space-xs) var(--space-sm);
+  border-color: rgb(255 255 255 / 16%);
+  background: #414958;
+  color: #f1f3f7;
+}
+
+.taskSummaryRetryButton:disabled {
+  color: #7f8995;
+  cursor: not-allowed;
+}
+
+.errorNotice {
+  align-items: center;
+  justify-content: space-between;
+  border-color: rgb(239 103 94 / 32%);
+  background: rgb(128 38 33 / 18%);
+  color: #ffd0cc;
+}
+
+.noticeRetryButton {
+  composes: controlBase from "../styles/controls.module.css";
+  flex: 0 0 auto;
+  padding: var(--space-xs) var(--space-sm);
+  border-color: rgb(255 255 255 / 18%);
+  background: #303642;
+  color: #f2f4f7;
+}
+
+.resultsHeader {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+  color: #aab3c0;
+}
+
+.resultsHeader h3 {
+  margin: 0;
+  color: #eff2f7;
+  font-size: 15px;
+  font-weight: 700;
+  text-wrap: balance;
+}
+
+.resultsHeader span,
+.pagination {
+  font-variant-numeric: tabular-nums;
+}
+
+.cardViewport {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-xs) var(--space-xs) var(--space-sm) 0;
+}
+
+.cardGrid {
+  display: grid;
+  align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: var(--space-md);
+}
+
+.emptyState {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+  padding: var(--space-lg);
+  color: #aeb7c4;
+  text-align: center;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding-top: var(--space-sm);
+  border-top: 1px solid rgb(255 255 255 / 9%);
+  color: #a9b2bf;
+  font-size: 12px;
+}
+
+.pagination > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (width <= 880px) {
+  .managerDialog {
+    padding: var(--space-md);
+  }
+
+  .managerBody {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-sm);
+  }
+
+  .sidebar {
+    min-height: auto;
+    padding: var(--space-xs);
+  }
+
+  .sidebarLabel,
+  .sidebarHelp {
+    display: none;
+  }
+
+  .filterList {
+    display: flex;
+    overflow-x: auto;
+    gap: var(--space-xs);
+  }
+
+  .filterButton {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+}
+
+@media (width <= 620px) {
+  .toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .searchField {
+    grid-column: 1 / -1;
+  }
+
+  .sortField {
+    grid-column: 1;
+  }
+
+  .refreshButton {
+    grid-column: 2;
+  }
+
+  .pagination {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

@@ -10,6 +10,10 @@ import type {
 } from "../../src/components/controlPanelTypes.ts"
 import { API_ROUTES } from "../../src/constants.ts"
 import { ControlPanelPage } from "../../src/pages/ControlPanelPage.tsx"
+import type {
+  NodesManagerController,
+  NodesManagerSnapshot,
+} from "../../src/services/nodesManagerController.ts"
 import type { JsonObject } from "../../src/types.ts"
 
 function deferred<T>() {
@@ -38,6 +42,38 @@ function setInputValue(input: HTMLInputElement | HTMLSelectElement, value: strin
   )
 }
 
+function createManagerControllerMock() {
+  let snapshot: NodesManagerSnapshot = {
+    isOpen: false,
+    catalogStatus: "idle",
+    installedStatus: "idle",
+    installed: [],
+    packs: [],
+    operations: {},
+    versions: {},
+    checking: false,
+  }
+  const listeners = new Set<() => void>()
+  const update = (patch: Partial<NodesManagerSnapshot>) => {
+    snapshot = { ...snapshot, ...patch }
+    for (const listener of listeners) listener()
+  }
+  const controller: NodesManagerController = {
+    getSnapshot: () => snapshot,
+    subscribe: (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    open: vi.fn(async () => update({ isOpen: true })),
+    close: vi.fn(() => update({ isOpen: false })),
+    refresh: vi.fn(async () => undefined),
+    loadVersions: vi.fn(async () => undefined),
+    submit: vi.fn(async () => false),
+    retryQueueStart: vi.fn(async () => false),
+  }
+  return { controller, update }
+}
+
 async function mountControlPanel(overrides: Partial<ControlPanelActions> = {}) {
   let view: ControlPanelViewState = {
     isOpen: true,
@@ -51,13 +87,18 @@ async function mountControlPanel(overrides: Partial<ControlPanelActions> = {}) {
     view = { ...view, ...update }
     for (const listener of listeners) listener()
   }
+  const manager = createManagerControllerMock()
   const actions: ControlPanelActions = {
     getSnapshot: () => view,
     subscribe: (listener) => {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
-    close: vi.fn(() => updateView({ isOpen: false })),
+    nodesManager: manager.controller,
+    close: vi.fn(() => {
+      manager.controller.close()
+      updateView({ isOpen: false })
+    }),
     clearLog: vi.fn(() => updateView({ log: "" })),
     toast: vi.fn(),
     runOperation: vi.fn(async () => undefined),

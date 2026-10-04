@@ -3,6 +3,8 @@ from __future__ import annotations
 from functools import wraps
 from typing import Any
 
+from . import nodes_manager
+
 
 def register_routes(api: Any) -> bool:
   try:
@@ -70,6 +72,41 @@ def register_routes(api: Any) -> bool:
         "manager_channel_url": api.read_manager_channel_url(manager_dir),
       }
     )
+
+  @routes.get(f"{api.API_PREFIX}/nodes-manager/catalog")
+  @control_route
+  async def nodes_manager_catalog(_request):
+    source_dir = api.controlpanel_manager_cache_source_dir()
+    try:
+      data = nodes_manager.read_local_catalog(
+        api.registry_cache_path(source_dir),
+        source_dir / nodes_manager.LEGACY_CATALOG_FILENAME,
+        allow_flagged=api.is_allow_flagged_version_as_latest_enabled(),
+        manager_json_path=(
+          api.manager_user_dir()
+          / "cache"
+          / api.manager_url_cache_filename(nodes_manager.REGISTRY_NODES_URL)
+        ),
+      )
+      return api._json_response({"ok": True, **data})
+    except nodes_manager.CatalogUnavailableError as error:
+      return api._error_response(str(error), status=503)
+
+  @routes.get(f"{api.API_PREFIX}/nodes-manager/versions")
+  @control_route
+  async def nodes_manager_versions(request):
+    node_id = request.query.get("node_id", "")
+    try:
+      versions = await nodes_manager.fetch_registry_versions(node_id)
+      return api._json_response({"ok": True, "node_id": node_id, "versions": versions})
+    except ValueError as error:
+      return api._error_response(str(error), status=400)
+    except nodes_manager.RegistryVersionsError as error:
+      return api._error_response(str(error), status=502)
+    except Exception as error:
+      return api._error_response(
+        f"Comfy Registry versions are unavailable: {error}", status=502
+      )
 
   @routes.post(f"{api.API_PREFIX}/settings/manager-repository-data-override")
   @control_route

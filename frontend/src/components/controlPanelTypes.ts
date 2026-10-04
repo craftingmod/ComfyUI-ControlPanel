@@ -1,3 +1,4 @@
+import type { NodesManagerController } from "../services/nodesManagerController.ts"
 import type { JsonObject, ToastSeverity } from "../types.ts"
 
 export type ControlPanelViewState = {
@@ -15,6 +16,7 @@ export type ControlPanelViewStore = {
 }
 
 export type ControlPanelActions = ControlPanelViewStore & {
+  nodesManager: NodesManagerController
   close: () => void
   clearLog: () => void
   toast: (severity: ToastSeverity, summary: string, detail: string) => void

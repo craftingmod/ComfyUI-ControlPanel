@@ -1,0 +1,320 @@
+import { useId } from "react"
+
+import {
+  safeImageUrl,
+  type ManagedPack,
+  type ManagerOperation,
+  type RegistryVersion,
+} from "../services/nodesManager.ts"
+import type { NodesManagerOperationState } from "../services/nodesManagerController.ts"
+
+import styles from "./nodesManagerCard.module.css"
+
+type VersionState = {
+  loading: boolean
+  error?: string
+  values?: RegistryVersion[]
+}
+
+type NodesManagerCardProps = {
+  pack: ManagedPack
+  operation?: NodesManagerOperationState
+  versionState?: VersionState
+  selectedVersion: string
+  actionsEnabled: boolean
+  onLoadVersions: () => void
+  onRetryVersions: () => void
+  onSelectVersion: (version: string) => void
+  onSubmit: (operation: ManagerOperation, version?: string) => void
+  onRetryQueueStart: () => void
+}
+
+function isFlagged(version: RegistryVersion | undefined): boolean {
+  return version?.status?.toLocaleLowerCase().includes("flagged") ?? false
+}
+
+function statusReason(version: RegistryVersion | undefined): string | undefined {
+  const reason = version?.status_reason
+  if (typeof reason === "string") return reason.trim() || undefined
+  if (reason && typeof reason === "object") {
+    try {
+      return JSON.stringify(reason)
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
+function formatCount(value: number | undefined): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? new Intl.NumberFormat().format(value)
+    : "—"
+}
+
+function formatDate(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const date = new Date(value)
+  return Number.isNaN(date.valueOf())
+    ? undefined
+    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date)
+}
+
+function operationLabel(operation: NodesManagerOperationState): string {
+  switch (operation.status) {
+    case "starting":
+      return "Starting…"
+    case "pending":
+      return "In progress"
+    case "unknown":
+      return "Outcome unknown"
+    case "succeeded":
+      return "Completed"
+    case "failed":
+      return "Failed"
+    case "skipped":
+      return "Skipped, no changes applied"
+  }
+}
+
+function isOperationActive(operation: NodesManagerOperationState | undefined): boolean {
+  return Boolean(operation && ["starting", "pending", "unknown"].includes(operation.status))
+}
+
+export function NodesManagerCard({
+  pack,
+  operation,
+  versionState,
+  selectedVersion,
+  actionsEnabled,
+  onLoadVersions,
+  onRetryVersions,
+  onSelectVersion,
+  onSubmit,
+  onRetryQueueStart,
+}: NodesManagerCardProps) {
+  const titleId = useId()
+  const versionId = useId()
+  const versionLabelId = useId()
+  const iconUrl = safeImageUrl(pack.icon)
+  const loadedVersions = versionState?.values ?? []
+  const versions =
+    pack.latestVersion &&
+    !loadedVersions.some((version) => version.version === pack.latestVersion?.version)
+      ? [pack.latestVersion, ...loadedVersions]
+      : loadedVersions
+  const hasLoadedVersions = versionState?.values !== undefined
+  const selected = versions.find((version) => version.version === selectedVersion)
+  const flagged = isFlagged(selected)
+  const flaggedReason = statusReason(selected)
+  const installed = pack.installed
+  const busy = isOperationActive(operation)
+  const canInstall = !installed && pack.source === "Registry" && Boolean(selectedVersion)
+  const canSwitch = Boolean(installed && pack.source === "Registry" && selectedVersion)
+  const updated = formatDate(pack.updatedAt)
+  const repositoryUrl = safeImageUrl(pack.repository)
+
+  return (
+    <article className={styles.card} aria-labelledby={titleId}>
+      <div className={styles.cardHead}>
+        <div className={styles.icon} aria-hidden="true">
+          <span>{(pack.name.trim()[0] ?? "?").toLocaleUpperCase()}</span>
+          {iconUrl ? (
+            <img
+              src={iconUrl}
+              alt=""
+              width={52}
+              height={52}
+              loading="lazy"
+              onError={(event) => {
+                event.currentTarget.hidden = true
+              }}
+            />
+          ) : null}
+        </div>
+        <div className={styles.heading}>
+          <h4 id={titleId} title={pack.name} translate="no">
+            {pack.name}
+          </h4>
+          <p title={pack.id} translate="no">
+            {pack.id}
+          </p>
+        </div>
+        <span className={styles.sourceBadge}>{pack.source}</span>
+      </div>
+
+      <p className={styles.description}>{pack.description || "No description provided."}</p>
+
+      <div className={styles.metadata}>
+        <span title="GitHub stars">★ {formatCount(pack.stars)}</span>
+        <span title="Downloads">↓ {formatCount(pack.downloads)}</span>
+        {updated && <span>Updated {updated}</span>}
+      </div>
+      <p className={styles.author}>By {pack.author || "Unknown author"}</p>
+
+      {repositoryUrl ? (
+        <a className={styles.repository} href={repositoryUrl} target="_blank" rel="noreferrer">
+          View source ↗
+        </a>
+      ) : pack.repository ? (
+        <p className={styles.repositoryText} title={pack.repository}>
+          Source: {pack.repository}
+        </p>
+      ) : null}
+
+      <div className={styles.installDetails}>
+        <span>
+          {installed ? `Installed: ${installed.version || "version unavailable"}` : "Not installed"}
+        </span>
+        {installed && (
+          <span
+            className={installed.enabled === false ? styles.disabledState : styles.enabledState}
+          >
+            {installed.enabled === false ? "Disabled" : "Enabled"}
+          </span>
+        )}
+        {pack.latestVersion?.version && <span>Latest: {pack.latestVersion.version}</span>}
+        {pack.updateAvailable && <span className={styles.updateBadge}>Update available</span>}
+      </div>
+
+      {(pack.source === "Registry" || (!installed && pack.latestVersion)) && (
+        <div className={styles.versionField}>
+          <span id={versionLabelId}>Registry version</span>
+          {hasLoadedVersions ? (
+            <select
+              id={versionId}
+              name={`version-${pack.id}`}
+              aria-labelledby={versionLabelId}
+              value={selectedVersion}
+              disabled={!actionsEnabled || busy}
+              onChange={(event) => onSelectVersion(event.currentTarget.value)}
+            >
+              <option value="">Choose a version…</option>
+              {versions.map((version) => {
+                const flaggedVersion = isFlagged(version)
+                const status = version.status && !flaggedVersion ? ` — ${version.status}` : ""
+                return (
+                  <option key={version.id ?? version.version} value={version.version}>
+                    {version.version}
+                    {flaggedVersion ? " — Flagged" : status}
+                  </option>
+                )
+              })}
+            </select>
+          ) : (
+            <button
+              className={styles.button}
+              type="button"
+              aria-busy={versionState?.loading ?? false}
+              disabled={!actionsEnabled || busy || versionState?.loading}
+              onClick={onLoadVersions}
+            >
+              {versionState?.loading ? "Loading versions…" : "Choose a version…"}
+            </button>
+          )}
+          {versionState?.error && (
+            <div className={styles.inlineError}>
+              <span>Could not load versions: {versionState.error}</span>
+              <button
+                className={styles.inlineRetryButton}
+                type="button"
+                disabled={!actionsEnabled || busy}
+                onClick={onRetryVersions}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          {flagged && (
+            <p className={styles.flaggedNote} role="note">
+              Flagged Registry version{flaggedReason ? `: ${flaggedReason}` : "."} ComfyUI-Manager
+              policy still controls whether it can be installed.
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className={styles.actions}>
+        {!installed && (
+          <button
+            className={styles.primaryButton}
+            type="button"
+            disabled={!actionsEnabled || busy || !canInstall}
+            onClick={() => onSubmit("install", selectedVersion)}
+          >
+            Install
+          </button>
+        )}
+        {installed && (
+          <>
+            <button
+              className={styles.primaryButton}
+              type="button"
+              disabled={!actionsEnabled || busy}
+              onClick={() => onSubmit("update")}
+            >
+              Update
+            </button>
+            {pack.source === "Registry" && (
+              <button
+                className={styles.button}
+                type="button"
+                disabled={!actionsEnabled || busy || !canSwitch}
+                onClick={() => onSubmit("switch", selectedVersion)}
+              >
+                Install selected version
+              </button>
+            )}
+            <button
+              className={styles.button}
+              type="button"
+              disabled={!actionsEnabled || busy}
+              onClick={() => onSubmit(installed.enabled === true ? "disable" : "enable")}
+            >
+              {installed.enabled === true ? "Disable" : "Enable"}
+            </button>
+            <button
+              className={styles.dangerButton}
+              type="button"
+              disabled={!actionsEnabled || busy}
+              onClick={() => onSubmit("uninstall")}
+            >
+              Uninstall
+            </button>
+          </>
+        )}
+      </div>
+
+      {!actionsEnabled && (
+        <p className={styles.managerUnavailable}>
+          Actions are unavailable until ComfyUI-Manager installed-node data loads.
+        </p>
+      )}
+      {operation && (
+        <div
+          className={`${styles.operation} ${operation.status === "failed" ? styles.operationFailed : ""} ${operation.status === "unknown" ? styles.operationUnknown : ""}`}
+          role={operation.status === "failed" ? "alert" : "status"}
+          aria-live="polite"
+        >
+          <strong>{operationLabel(operation)}</strong>
+          {operation.message && <span>{operation.message}</span>}
+          {operation.queueStartFailed && (
+            <button
+              className={styles.retryQueueButton}
+              type="button"
+              disabled={
+                !actionsEnabled || operation.status === "starting" || operation.status === "pending"
+              }
+              onClick={onRetryQueueStart}
+            >
+              Retry Queue Start
+            </button>
+          )}
+          {operation.restartRequired && (
+            <span className={styles.restartNote}>Restart ComfyUI to load this change.</span>
+          )}
+        </div>
+      )}
+    </article>
+  )
+}

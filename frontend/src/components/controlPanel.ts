@@ -13,6 +13,7 @@ import {
   dependencySyncNotice,
   parseNodeRestoreManifest,
 } from "../services/nodeRestore.ts"
+import { createNodesManagerController } from "../services/nodesManagerController.ts"
 import type { JsonObject, ToastSeverity, UpdateJob } from "../types.ts"
 import type { ControlPanelActions, ControlPanelViewState } from "./controlPanelTypes.ts"
 
@@ -31,6 +32,7 @@ export type ControlPanelController = ControlPanelActions & {
 export function createControlPanelController(options: ControlPanelOptions): ControlPanelController {
   const { app, readBooleanSetting } = options
   const api = createControlPanelApi(app)
+  const nodesManager = createNodesManagerController(app)
   const listeners = new Set<() => void>()
   const dependencySyncNotifiedJobs = new Set<string>()
   let viewState: ControlPanelViewState = {
@@ -440,6 +442,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     panelGeneration += 1
     snapshotRequestGeneration += 1
     stopPolling()
+    nodesManager.close()
     setViewState({ isOpen: false })
     host?.remove()
   }
@@ -447,6 +450,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
   const actions: ControlPanelActions = {
     getSnapshot: () => viewState,
     subscribe,
+    nodesManager,
     close,
     clearLog,
     toast,
