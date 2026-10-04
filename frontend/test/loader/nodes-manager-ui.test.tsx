@@ -246,6 +246,56 @@ it("shows bulk actions only in their toolbar categories and disables unavailable
   }
 })
 
+it("shows Install missing only in its workflow category and disables it without an installable Registry target", async () => {
+  const registryPack = managedPack("missing-registry")
+  const readOnlyPack = managedPack("https://github.com/example/read-only", {
+    id: "read-only",
+    source: "Unknown",
+    readOnly: true,
+    isUnknown: true,
+  })
+  const mounted = await mountNodesManager(
+    managerSnapshot([registryPack, readOnlyPack], {
+      workflowPacks: [registryPack, readOnlyPack],
+      workflowMissingPacks: [readOnlyPack, registryPack],
+    }),
+  )
+  try {
+    expect(document.querySelector('[data-bulk="true"]')).toBeNull()
+    await act(async () => findButtonContaining("Missing").click())
+    const installMissing = findButton("Install missing")
+    expect(installMissing.parentElement?.dataset.bulk).toBe("true")
+    expect(installMissing.disabled).toBe(false)
+
+    await act(async () =>
+      setValue(
+        document.querySelector<HTMLInputElement>('input[name="nodes-manager-search"]')!,
+        "no matching workflow pack",
+      ),
+    )
+    expect(installMissing.disabled).toBe(false)
+    await act(async () => installMissing.click())
+    expect(mounted.controller.submitAll).toHaveBeenCalledWith("workflow-missing", {})
+
+    await act(async () => mounted.update({ bulkOperation: "workflow-missing" }))
+    expect(findButton("Install missing").disabled).toBe(true)
+    await act(async () =>
+      mounted.update({ bulkOperation: undefined, workflowAvailabilityKnown: false }),
+    )
+    expect(findButton("Install missing").disabled).toBe(true)
+    await act(async () =>
+      mounted.update({ workflowAvailabilityKnown: true, installedStatus: "error" }),
+    )
+    expect(findButton("Install missing").disabled).toBe(true)
+    await act(async () =>
+      mounted.update({ installedStatus: "ready", workflowMissingPacks: [readOnlyPack] }),
+    )
+    expect(findButton("Install missing").disabled).toBe(true)
+  } finally {
+    await mounted.destroy()
+  }
+})
+
 it("shows workflow pack categories and reports node diagnostics separately from extension counts", async () => {
   const registryPack = managedPack("registry-pack")
   const readOnlyPack = managedPack("https://github.com/example/unregistered-pack", {
@@ -259,7 +309,7 @@ it("shows workflow pack categories and reports node diagnostics separately from 
   const mounted = await mountNodesManager(
     managerSnapshot([registryPack, readOnlyPack], {
       workflowPacks: [registryPack, readOnlyPack],
-      workflowMissingPacks: [readOnlyPack],
+      workflowMissingPacks: [registryPack],
       workflowDiagnostics: [{ type: "UnknownNode", kind: "unresolved", occurrences: 2 }],
     }),
   )
@@ -272,9 +322,10 @@ it("shows workflow pack categories and reports node diagnostics separately from 
 
     await act(async () => findButtonContaining("Missing").click())
     expect(document.querySelectorAll("article")).toHaveLength(1)
-    expect(document.body.textContent).toContain("Unregistered Pack")
+    expect(document.body.textContent).not.toContain("Unregistered Pack")
+    expect(document.body.textContent).toContain("Pack registry-pack")
     expect(document.querySelector<HTMLButtonElement>('[data-action="install"]')?.disabled).toBe(
-      true,
+      false,
     )
   } finally {
     await mounted.destroy()
@@ -554,7 +605,37 @@ it("keeps task details and queue retry outside cards for represented and removed
   }
 })
 
-it("virtually scrolls past 48 results and keeps selection while cards unmount", async () => {
+it("closes the version panel when switching categories or reopening the manager", async () => {
+  const mounted = await mountNodesManager(managerSnapshot([managedPack("example-pack")]))
+  const selector = 'select[name="version-example-pack"]'
+  const openVersion = async () => {
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-action="load-version"]')!.click(),
+    )
+    expect(document.querySelector(selector)).not.toBeNull()
+  }
+  try {
+    await openVersion()
+    await act(async () => findButtonContaining("Not Installed").click())
+    expect(document.querySelector(selector)).toBeNull()
+    await openVersion()
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-action="cancel-version"]')!.click(),
+    )
+    await act(async () => findButtonContaining("All Extensions").click())
+    await act(async () => findButtonContaining("Not Installed").click())
+    expect(document.querySelector(selector)).toBeNull()
+    await openVersion()
+    await act(async () => mounted.update({ isOpen: false }))
+    await act(async () => mounted.update({ isOpen: true }))
+    expect(document.querySelector(selector)).toBeNull()
+    expect(mounted.controller.loadVersions).toHaveBeenCalledTimes(1)
+  } finally {
+    await mounted.destroy()
+  }
+})
+
+it("virtually scrolls past 48 results and keeps selection with the version panel closed on remount", async () => {
   const packs = Array.from({ length: 60 }, (_, index) =>
     managedPack(`pack-${index + 1}`, { downloads: 1_000 - index }),
   )
@@ -608,6 +689,10 @@ it("virtually scrolls past 48 results and keeps selection while cards unmount", 
       scrollVirtualListTo(0, packs.length)
       await settleVirtualScroll()
     })
+    expect(document.querySelector('select[name="version-pack-1"]')).toBeNull()
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-action="load-version"]')!.click(),
+    )
     expect(document.querySelector<HTMLSelectElement>('select[name="version-pack-1"]')?.value).toBe(
       "0.9.0",
     )

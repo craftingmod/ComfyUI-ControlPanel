@@ -38,7 +38,7 @@ type FixtureOptions = {
   installedRead?: (read: number) => Promise<Response> | Response
   onEnqueue?: (payload: ManagerQueuePayload) => void
   catalogAvailable?: boolean
-  loadVersions?: () => Promise<Response>
+  loadVersions?: (nodeId: string) => Promise<Response>
   workflowGraph?: MetadataGraph
   mappings?: unknown
   mappingResponse?: (route: string, read: number) => Promise<Response> | Response
@@ -82,9 +82,10 @@ function createFixture(options: FixtureOptions = {}) {
             }),
           )
         }
-        if (route === "/control-panel/nodes-manager/versions?node_id=pack-id") {
+        if (route.startsWith("/control-panel/nodes-manager/versions?")) {
+          const nodeId = new URLSearchParams(route.split("?")[1]).get("node_id") ?? ""
           return (
-            options.loadVersions?.() ??
+            options.loadVersions?.(nodeId) ??
             new Response(JSON.stringify({ versions: [{ version: "1.2.3" }] }))
           )
         }
@@ -273,6 +274,206 @@ describe("Nodes Manager controller", () => {
       },
     ])
     fixture.controller.close()
+  })
+
+  it("installs only missing Registry workflow packs with exact selected, latest, or resolved versions", async () => {
+    const originalInstalled = {
+      installed: { cnr_id: "installed-pack", ver: "0.5.0", enabled: true },
+    }
+    let installedState = originalInstalled
+    let fixture: ReturnType<typeof createFixture>
+    fixture = createFixture({
+      catalog: [
+        { id: "selected-pack", latest_version: { version: "1.0.0", status: "Active" } },
+        { id: "default-pack", latest_version: { version: "2.0.0", status: "Active" } },
+      ],
+      installed: originalInstalled,
+      workflowGraph: {
+        nodes: [
+          workflowNode("SelectedNode"),
+          workflowNode("DefaultNode"),
+          workflowNode("WorkflowOnlyNode"),
+          workflowNode("InstalledNode"),
+          workflowNode("ReadOnlyNode"),
+        ],
+      },
+      mappings: {
+        "selected-pack": [["SelectedNode"], {}],
+        "default-pack": [["DefaultNode"], {}],
+        "workflow-only": [["WorkflowOnlyNode"], {}],
+        "installed-pack": [["InstalledNode"], {}],
+        "https://github.com/example/read-only": [["ReadOnlyNode"], {}],
+      },
+      loadVersions: async (nodeId) =>
+        new Response(
+          JSON.stringify({
+            versions:
+              nodeId === "selected-pack"
+                ? [{ version: "0.9.0", status: "Active" }]
+                : [
+                    { version: "5.0.0", status: "Flagged" },
+                    { version: "4.0.0", status: "NodeVersionStatusActive" },
+                    { version: "3.0.0", status: "Banned" },
+                  ],
+          }),
+        ),
+      history: (ui_id, client_id) => ({
+        history: { ui_id, client_id, status: { completed: true, status_str: "success" } },
+      }),
+      onEnqueue: (payload) => {
+        const id = payload.params.id as string
+        installedState = {
+          ...installedState,
+          [`installed-${id}`]: {
+            cnr_id: id,
+            ver: payload.params.version,
+            enabled: true,
+          },
+        }
+        fixture.setInstalled(installedState)
+      },
+    })
+    await fixture.controller.open()
+    const missing = fixture.controller.getSnapshot().workflowMissingPacks
+    const readOnly = fixture.controller.getSnapshot().workflowPacks.find((pack) => pack.readOnly)
+    expect(readOnly).toBeDefined()
+    expect(missing.some((pack) => pack.readOnly)).toBe(false)
+    expect(fixture.controller.getSnapshot().workflowPacks.map((pack) => pack.id)).toContain(
+      "installed-pack",
+    )
+    expect(missing.map((pack) => pack.id)).not.toContain("installed-pack")
+
+    await fixture.controller.submitAll("workflow-missing", {
+      "registry:selected-pack": "0.9.0",
+    })
+
+    const tasks = fixture.requests
+      .filter((request) => request.route === "/v2/manager/queue/task")
+      .map((request) => (request.body as ManagerQueuePayload).params)
+    expect(tasks).toEqual([
+      expect.objectContaining({ id: "selected-pack", version: "0.9.0", selected_version: "0.9.0" }),
+      expect.objectContaining({ id: "default-pack", version: "2.0.0", selected_version: "2.0.0" }),
+      expect.objectContaining({ id: "workflow-only", version: "4.0.0", selected_version: "4.0.0" }),
+    ])
+    expect(fixture.controller.getSnapshot().installedStatus).toBe("ready")
+    expect(fixture.controller.getSnapshot().workflowMissingPacks).toEqual([])
+    fixture.controller.close()
+  })
+
+  it("skips workflow packs when version lookup returns only banned versions", async () => {
+    const fixture = createFixture({
+      workflowGraph: { nodes: [workflowNode("NoAvailableVersionNode")] },
+      mappings: { "no-version-pack": [["NoAvailableVersionNode"], {}] },
+      loadVersions: async () =>
+        new Response(JSON.stringify({ versions: [{ version: "1.0.0", status: "Banned" }] })),
+    })
+    await fixture.controller.open()
+    await fixture.controller.submitAll("workflow-missing", {
+      "workflow:registry:no-version-pack": "1.0.0",
+    })
+
+    expect(fixture.counts().enqueueCount).toBe(0)
+    expect(fixture.toasts).toContainEqual({
+      severity: "warn",
+      summary: "Nodes Manager",
+      detail: "Skipped 1 workflow extensions because no available version could be resolved.",
+      life: 5000,
+    })
+    fixture.controller.close()
+  })
+
+  it("waits for an in-flight card version read and ignores it after the dialog closes", async () => {
+    const versionResponse = deferred<Response>()
+    const fixture = createFixture({
+      workflowGraph: { nodes: [workflowNode("WorkflowOnlyNode")] },
+      mappings: { "workflow-only": [["WorkflowOnlyNode"], {}] },
+      loadVersions: () => versionResponse.promise,
+    })
+    await fixture.controller.open()
+    const pack = fixture.controller.getSnapshot().workflowMissingPacks[0]!
+    const cardVersionLoad = fixture.controller.loadVersions(pack)
+    const batch = fixture.controller.submitAll("workflow-missing")
+    expect(fixture.controller.getSnapshot().bulkOperation).toBe("workflow-missing")
+
+    fixture.controller.close()
+    versionResponse.resolve(
+      new Response(JSON.stringify({ versions: [{ version: "1.0.0", status: "Active" }] })),
+    )
+    await Promise.all([cardVersionLoad, batch])
+
+    expect(fixture.counts().enqueueCount).toBe(0)
+  })
+
+  it("does not queue a version resolved against installed data from before a refresh", async () => {
+    const versionResponse = deferred<Response>()
+    const fixture = createFixture({
+      workflowGraph: { nodes: [workflowNode("WorkflowOnlyNode")] },
+      mappings: { "workflow-only": [["WorkflowOnlyNode"], {}] },
+      loadVersions: () => versionResponse.promise,
+    })
+    await fixture.controller.open()
+    const pack = fixture.controller.getSnapshot().workflowMissingPacks[0]!
+    const cardVersionLoad = fixture.controller.loadVersions(pack)
+    const batch = fixture.controller.submitAll("workflow-missing")
+    await fixture.controller.refresh()
+    versionResponse.resolve(
+      new Response(JSON.stringify({ versions: [{ version: "1.0.0", status: "Active" }] })),
+    )
+    await Promise.all([cardVersionLoad, batch])
+
+    expect(fixture.counts().enqueueCount).toBe(0)
+    fixture.controller.close()
+  })
+
+  it("reports a failed workflow version lookup and stops the batch", async () => {
+    const fixture = createFixture({
+      workflowGraph: { nodes: [workflowNode("WorkflowOnlyNode")] },
+      mappings: { "workflow-only": [["WorkflowOnlyNode"], {}] },
+      loadVersions: async () =>
+        new Response(JSON.stringify({ error: "Registry unavailable" }), { status: 503 }),
+    })
+    await fixture.controller.open()
+    await fixture.controller.submitAll("workflow-missing")
+
+    expect(fixture.counts().enqueueCount).toBe(0)
+    expect(fixture.toasts).toContainEqual(
+      expect.objectContaining({
+        severity: "error",
+        detail: expect.stringContaining("Could not load versions:"),
+      }),
+    )
+    fixture.controller.close()
+  })
+
+  it("stops workflow installs after a Manager failure or uncertain queue start", async () => {
+    for (const outcome of ["failed", "unknown"] as const) {
+      const fixture = createFixture({
+        failStarts: outcome === "unknown" ? 1 : 0,
+        workflowGraph: { nodes: [workflowNode("FirstNode"), workflowNode("SecondNode")] },
+        mappings: {
+          first: [["FirstNode"], {}],
+          second: [["SecondNode"], {}],
+        },
+        history: (ui_id, client_id) =>
+          outcome === "failed"
+            ? {
+                history: {
+                  ui_id,
+                  client_id,
+                  status: { completed: true, status_str: "error" },
+                },
+              }
+            : { history: {} },
+      })
+      await fixture.controller.open()
+      await fixture.controller.submitAll("workflow-missing")
+
+      expect(fixture.counts().enqueueCount).toBe(1)
+      expect(
+        fixture.requests.filter((request) => request.route === "/v2/manager/queue/task"),
+      ).toHaveLength(1)
+      fixture.controller.close()
+    }
   })
 
   it("does not announce bulk success for failed, skipped, uncertain, empty, or closed batches", async () => {

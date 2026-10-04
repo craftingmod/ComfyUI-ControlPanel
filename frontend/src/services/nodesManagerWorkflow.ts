@@ -501,7 +501,9 @@ export function analyzeWorkflow(
   const packs = [...resolvedPacks.values()]
   return {
     packs,
-    missingPacks: installedKnown ? packs.filter((pack) => !pack.installed) : [],
+    missingPacks: installedKnown
+      ? packs.filter((pack) => !pack.installed && pack.source === "Registry")
+      : [],
     diagnostics: [...diagnostics.values()].toSorted(
       (left, right) =>
         left.type.localeCompare(right.type, undefined, { sensitivity: "base" }) ||

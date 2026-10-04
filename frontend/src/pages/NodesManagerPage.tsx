@@ -18,6 +18,7 @@ import { Button } from "../components/ui/button.tsx"
 import { useI18n, type TranslationKey } from "../i18n/index.tsx"
 import {
   filterAndSortManagedPacks,
+  findInstalledPack,
   type ManagerOperation,
   type NodesManagerFilter,
   type NodesManagerSort,
@@ -113,6 +114,18 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
       : filter === "workflow-missing"
         ? snapshot.workflowMissingPacks
         : snapshot.packs
+  const installableMissingPacks = useMemo(
+    () =>
+      snapshot.workflowMissingPacks.filter(
+        (pack) =>
+          pack.source === "Registry" &&
+          !pack.installed &&
+          !pack.readOnly &&
+          Boolean(pack.id) &&
+          !findInstalledPack(snapshot.installed, pack),
+      ),
+    [snapshot.installed, snapshot.workflowMissingPacks],
+  )
 
   const filteredPacks = useMemo(
     () => filterAndSortManagedPacks(categoryPacks, filter, deferredSearch, sort),
@@ -292,7 +305,10 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
         </aside>
 
         <main className={styles.main}>
-          <div className={styles.toolbar} data-bulk={filter === "git" || filter === "updates"}>
+          <div
+            className={styles.toolbar}
+            data-bulk={filter === "git" || filter === "updates" || filter === "workflow-missing"}
+          >
             <label className={styles.searchField}>
               <span className={styles.visuallyHidden}>
                 {t(workflowFilter ? "nodes.workflow.searchLabel" : "nodes.searchLabel")}
@@ -347,6 +363,26 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
                   <Download size={24} aria-hidden="true" />
                 )}
                 {t(filter === "git" ? "nodes.fetchAll" : "nodes.updateAll")}
+              </Button>
+            )}
+            {filter === "workflow-missing" && (
+              <Button
+                type="button"
+                variant="primary"
+                busy={Boolean(snapshot.bulkOperation)}
+                disabled={
+                  snapshot.checking ||
+                  snapshot.installedStatus !== "ready" ||
+                  !snapshot.workflowAvailabilityKnown ||
+                  installableMissingPacks.length === 0 ||
+                  taskOperations.some((operation) =>
+                    ["starting", "pending", "unknown"].includes(operation.status),
+                  )
+                }
+                onClick={() => void controller.submitAll("workflow-missing", selectedVersions)}
+              >
+                <Download size={24} aria-hidden="true" />
+                {t("nodes.installMissing")}
               </Button>
             )}
             <Button
@@ -576,7 +612,7 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
                   >
                     {row.map((pack) => (
                       <NodesManagerCard
-                        key={pack.key}
+                        key={`${filter}:${pack.key}`}
                         pack={pack}
                         operation={findOperationForPack(snapshot.operations, pack)}
                         versionState={snapshot.versions[pack.key]}

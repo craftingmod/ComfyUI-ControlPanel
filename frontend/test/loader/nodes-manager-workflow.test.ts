@@ -349,8 +349,31 @@ describe("workflow Nodes Manager analysis", () => {
       source: "Unknown",
       readOnly: true,
     })
-    expect(known.missingPacks).toEqual(known.packs)
+    expect(known.missingPacks).toEqual([])
     expect(unknown.missingPacks).toEqual([])
+  })
+
+  it("lists only absent Registry packs as missing while retaining Git and repository packs in workflow", () => {
+    const installed = [installedPack("git-folder", "git-pack", "example/git-pack")]
+    const managed = packs(
+      [
+        { id: "registry-pack" },
+        { id: "git-pack", repository: "https://github.com/example/git-pack" },
+      ],
+      installed,
+    )
+    const result = analyze(
+      { nodes: [node("RegistryNode"), node("GitNode"), node("RepositoryNode")] },
+      {
+        "registry-pack": [["RegistryNode"], {}],
+        "git-pack": [["GitNode"], {}],
+        "https://github.com/example/repository-only": [["RepositoryNode"], {}],
+      },
+      managed,
+      installed,
+    )
+    expect(result.packs.map((pack) => pack.source)).toEqual(["Registry", "Git", "Unknown"])
+    expect(result.missingPacks.map((pack) => pack.id)).toEqual(["registry-pack"])
   })
 
   it("handles nested, shared, and cyclic graphs while ignoring malformed entries and regexes", () => {

@@ -135,7 +135,7 @@ export function NodesManagerCard({
     : pack.latestVersion
       ? [pack.latestVersion]
       : []
-  const [versionsOpen, setVersionsOpen] = useState(hasLoadedVersions)
+  const [versionsOpen, setVersionsOpen] = useState(false)
   const showVersionField = versionsOpen && hasLoadedVersions
   const hasVersionField =
     pack.source === "Registry" ||

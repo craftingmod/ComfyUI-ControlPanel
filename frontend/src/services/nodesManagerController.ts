@@ -71,7 +71,7 @@ export type NodesManagerSnapshot = {
     }
   >
   checking: boolean
-  bulkOperation?: "git" | "updates"
+  bulkOperation?: "git" | "updates" | "workflow-missing"
 }
 
 type ConfirmOptions = { title: string; message: string }
@@ -89,7 +89,10 @@ export type NodesManagerController = {
     selectedVersion?: string,
   ) => Promise<boolean>
   retryQueueStart: (packKey: string) => Promise<boolean>
-  submitAll: (filter: "git" | "updates") => Promise<void>
+  submitAll: (
+    filter: "git" | "updates" | "workflow-missing",
+    selectedVersions?: Record<string, string>,
+  ) => Promise<void>
   browseLocalFolder: (pack: ManagedPack) => Promise<void>
 }
 
@@ -642,9 +645,23 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
     update({ isOpen: false, checking: false, versions, bulkOperation: undefined })
   }
 
-  async function loadVersions(pack: ManagedPack): Promise<void> {
-    if (pack.readOnly || pack.source === "Git" || !pack.id || snapshot.versions[pack.key]?.loading)
-      return
+  async function loadPackVersions(pack: ManagedPack): Promise<RegistryVersion[] | undefined> {
+    if (pack.readOnly || pack.source === "Git" || !pack.id) return undefined
+    if (snapshot.versions[pack.key]?.loading) {
+      const generation = dialogGeneration
+      return new Promise((resolve) => {
+        let unsubscribe: () => void = () => {}
+        const check = () => {
+          const state = snapshot.versions[pack.key]
+          if (!snapshot.isOpen || generation !== dialogGeneration || !state?.loading) {
+            unsubscribe()
+            resolve(state?.error || state?.errorKey ? undefined : state?.values)
+          }
+        }
+        unsubscribe = subscribe(check)
+        check()
+      })
+    }
     const generation = dialogGeneration
     const versionGeneration = (versionGenerations.get(pack.key) ?? 0) + 1
     versionGenerations.set(pack.key, versionGeneration)
@@ -667,15 +684,16 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
         generation !== dialogGeneration ||
         versionGenerations.get(pack.key) !== versionGeneration
       )
-        return
+        return undefined
       update({ versions: { ...snapshot.versions, [pack.key]: { loading: false, values } } })
+      return values
     } catch (error) {
       if (
         !snapshot.isOpen ||
         generation !== dialogGeneration ||
         versionGenerations.get(pack.key) !== versionGeneration
       )
-        return
+        return undefined
       const details = errorDetails(error)
       update({
         versions: {
@@ -688,7 +706,12 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
           },
         },
       })
+      return undefined
     }
+  }
+
+  async function loadVersions(pack: ManagedPack): Promise<void> {
+    await loadPackVersions(pack)
   }
 
   async function confirm(
@@ -879,28 +902,118 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
     }
   }
 
-  async function submitAll(filter: "git" | "updates"): Promise<void> {
+  async function submitAll(
+    filter: "git" | "updates" | "workflow-missing",
+    selectedVersions: Record<string, string> = {},
+  ): Promise<void> {
+    const workflowMissing = filter === "workflow-missing"
     if (
       !snapshot.isOpen ||
       snapshot.bulkOperation ||
       snapshot.checking ||
       snapshot.installedStatus !== "ready" ||
+      (workflowMissing && !snapshot.workflowAvailabilityKnown) ||
       Object.values(snapshot.operations).some(isActive)
     )
       return
-    const targets = snapshot.packs.filter(
-      (pack) =>
-        pack.installed &&
-        !pack.readOnly &&
-        (filter === "git" ? pack.source === "Git" : pack.updateAvailable),
-    )
+    const targets = workflowMissing
+      ? snapshot.workflowMissingPacks.filter(
+          (pack) => pack.source === "Registry" && !pack.installed && !pack.readOnly && pack.id,
+        )
+      : snapshot.packs.filter(
+          (pack) =>
+            pack.installed &&
+            !pack.readOnly &&
+            (filter === "git" ? pack.source === "Git" : pack.updateAvailable),
+        )
     const session = dialogGeneration
     let succeeded = 0
+    let skippedWithoutVersion = 0
     update({ bulkOperation: filter })
     try {
       for (const pack of targets) {
         if (!snapshot.isOpen || session !== dialogGeneration) break
-        if (!(await submit(pack, "update"))) break
+        let selectedVersion: string | undefined
+        if (workflowMissing) {
+          const installedGeneration = installedReadGeneration
+          const isCurrentMissing = () =>
+            snapshot.isOpen &&
+            session === dialogGeneration &&
+            installedGeneration === installedReadGeneration &&
+            snapshot.installedStatus === "ready" &&
+            snapshot.workflowAvailabilityKnown &&
+            snapshot.workflowMissingPacks.some((candidate) =>
+              sameManagedPackTarget(candidate, pack),
+            ) &&
+            !findInstalledPack(snapshot.installed, pack)
+          if (!isCurrentMissing()) break
+
+          const requestedVersion = selectedVersions[pack.key]
+          const versionState = snapshot.versions[pack.key]
+          const availableVersions = versionState?.loading ? undefined : versionState?.values
+          if (requestedVersion) {
+            const versions = availableVersions ?? (await loadPackVersions(pack))
+            if (!isCurrentMissing()) break
+            if (
+              !versions &&
+              (snapshot.versions[pack.key]?.error || snapshot.versions[pack.key]?.errorKey)
+            ) {
+              const versionState = snapshot.versions[pack.key]
+              showToast(
+                "error",
+                t("toast.nodesManager"),
+                t("card.couldNotLoadVersions", {
+                  error: versionState.errorKey
+                    ? t(versionState.errorKey, versionState.errorValues)
+                    : (versionState.error ?? t("nodes.unknownError")),
+                }),
+              )
+              break
+            }
+            selectedVersion = versions?.find(
+              (version) =>
+                version.version === requestedVersion &&
+                !version.status?.toLocaleLowerCase().includes("banned"),
+            )?.version
+          } else if (pack.latestVersion?.version) {
+            if (!pack.latestVersion.status?.toLocaleLowerCase().includes("banned")) {
+              selectedVersion = pack.latestVersion.version
+            }
+          } else {
+            const versions = availableVersions ?? (await loadPackVersions(pack))
+            if (!isCurrentMissing()) break
+            selectedVersion =
+              versions?.find((version) =>
+                ["active", "nodeversionstatusactive"].includes(
+                  version.status?.toLocaleLowerCase() ?? "",
+                ),
+              )?.version ??
+              versions?.find((version) => !version.status?.toLocaleLowerCase().includes("banned"))
+                ?.version
+            if (
+              !versions &&
+              (snapshot.versions[pack.key]?.error || snapshot.versions[pack.key]?.errorKey)
+            ) {
+              const versionState = snapshot.versions[pack.key]
+              showToast(
+                "error",
+                t("toast.nodesManager"),
+                t("card.couldNotLoadVersions", {
+                  error: versionState.errorKey
+                    ? t(versionState.errorKey, versionState.errorValues)
+                    : (versionState.error ?? t("nodes.unknownError")),
+                }),
+              )
+              break
+            }
+          }
+          if (!selectedVersion) {
+            skippedWithoutVersion += 1
+            continue
+          }
+          if (!isCurrentMissing()) break
+        }
+        if (!(await submit(pack, workflowMissing ? "install" : "update", selectedVersion))) break
         await new Promise<void>((resolve) => {
           const check = () => {
             const operation = findOperationForPack(snapshot.operations, pack)
@@ -918,7 +1031,7 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
         })
         const status = findOperationForPack(snapshot.operations, pack)?.status
         if (status === "succeeded") succeeded += 1
-        if (status === "unknown") break
+        if (workflowMissing ? status !== "succeeded" : status === "unknown") break
       }
       if (
         filter === "updates" &&
@@ -933,6 +1046,18 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
           t("toast.operationComplete", {
             operation: t("nodes.updateAll"),
           }),
+        )
+      }
+      if (
+        workflowMissing &&
+        snapshot.isOpen &&
+        session === dialogGeneration &&
+        skippedWithoutVersion > 0
+      ) {
+        showToast(
+          "warn",
+          t("toast.nodesManager"),
+          t("nodes.workflow.noAvailableVersion", { count: skippedWithoutVersion }),
         )
       }
     } finally {
