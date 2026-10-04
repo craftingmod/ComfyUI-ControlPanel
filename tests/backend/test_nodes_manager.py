@@ -4,6 +4,7 @@ import sqlite3
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -134,14 +135,18 @@ def test_manager_json_fallback_normalizes_legacy_node_map(tmp_path):
   assert result["nodes"] == [{"name": "Mapped", "status": "active", "id": "map-key"}]
 
 
-def test_registry_versions_validate_id_and_keep_status_reasons():
+def test_registry_versions_validate_id_without_requesting_scanner_histories():
   calls = []
 
   async def fetch(url):
     calls.append(url)
+    # Easy Use's two Flagged versions exceed 4 MB when reasons are requested.
+    assert parse_qs(urlparse(url).query)["include_status_reason"] == ["false"]
+    if "NodeVersionStatusActive" in url:
+      return {"page": 1, "pageSize": 5, "totalPages": 0, "versions": []}
     return {
       "page": 1,
-      "pageSize": 100,
+      "pageSize": 5,
       "total": 1,
       "totalPages": 1,
       "versions": [
@@ -161,43 +166,64 @@ def test_registry_versions_validate_id_and_keep_status_reasons():
   assert result[0]["status"] == "NodeVersionStatusFlagged"
   assert result[0]["status_reason"] == {"scanner": "registry", "reason": "review"}
   assert "nodeId=example-pack" in calls[0]
-  assert "include_status_reason=true" in calls[0]
-  assert "pageSize=100" in calls[0]
+  assert "include_status_reason=false" in calls[0]
+  assert "pageSize=5" in calls[0]
+  assert len(calls) == 2
   with pytest.raises(ValueError, match="Registry node ID"):
     asyncio.run(nodes_manager.fetch_registry_versions("../outside", fetch_json=fetch))
 
 
-def test_registry_versions_fetches_only_bounded_pages():
+def test_registry_versions_fetches_five_active_and_five_review_versions():
   calls = []
 
   async def fetch(url):
     calls.append(url)
-    page = int(url.split("page=")[1].split("&")[0])
+    query = parse_qs(urlparse(url).query)
+    assert query["page"] == ["1"]
+    assert query["pageSize"] == ["5"]
+    statuses = query["statuses"]
+    review = "NodeVersionStatusFlagged" in statuses
+    assert statuses == (
+      ["NodeVersionStatusFlagged", "NodeVersionStatusPending"]
+      if review
+      else ["NodeVersionStatusActive"]
+    )
     return {
-      "page": page,
-      "pageSize": 100,
-      "total": 101,
-      "totalPages": 2,
-      "versions": [{"version": f"1.0.{page}", "node_id": "example-pack"}]
-      if page == 2
-      else [
-        {"version": f"1.0.{index}", "node_id": "example-pack"} for index in range(100)
+      "page": 1,
+      "pageSize": 5,
+      "totalPages": 1000,
+      "versions": [
+        {
+          "version": f"1.{int(review)}.{index}",
+          "node_id": "example-pack",
+          "status": "NodeVersionStatusPending" if review and index % 2 else statuses[0],
+        }
+        for index in range(5)
       ],
     }
 
   result = asyncio.run(
     nodes_manager.fetch_registry_versions("example-pack", fetch_json=fetch)
   )
-  assert len(result) == 101
+  assert len(result) == 10
   assert len(calls) == 2
+  assert sum(version["status"] == "NodeVersionStatusActive" for version in result) == 5
+  assert result[0]["version"] == "1.1.4"
 
-  async def too_many_pages(_url):
-    return {"page": 1, "pageSize": 100, "totalPages": 21, "versions": []}
 
-  with pytest.raises(nodes_manager.RegistryVersionsError, match="page limit"):
-    asyncio.run(
-      nodes_manager.fetch_registry_versions("example-pack", fetch_json=too_many_pages)
-    )
+def test_registry_versions_excludes_banned_and_deduplicates():
+  async def fetch(_url):
+    return [
+      {"version": "3.0.0", "status": "NodeVersionStatusBanned"},
+      {"version": "2.0.0", "status": "NodeVersionStatusDeleted"},
+      {"version": "1.0.0", "status": "NodeVersionStatusActive"},
+      {"version": "1.0.0", "status": "NodeVersionStatusActive"},
+    ]
+
+  result = asyncio.run(
+    nodes_manager.fetch_registry_versions("example-pack", fetch_json=fetch)
+  )
+  assert result == [{"version": "1.0.0", "status": "NodeVersionStatusActive"}]
 
 
 def test_registry_json_reader_collects_streamed_chunks_and_enforces_limit():

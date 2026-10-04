@@ -28,6 +28,7 @@ import type {
 import { findOperationForPack } from "../services/nodesManagerController.ts"
 
 import styles from "./nodesManager.module.css"
+import { RefreshCcwDot, RefreshCw } from "lucide-react";
 
 const FILTERS: { id: NodesManagerFilter; key: TranslationKey }[] = [
   { id: "all", key: "nodes.filter.all" },
@@ -229,6 +230,18 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
             ))}
           </nav>
           <div className={styles.sidebarHelp}>{t("nodes.sidebarHelp")}</div>
+          <div className={styles.sidebarStatus}>
+            {snapshot.catalogSource && (
+              <div className={styles.sourceNotice} role="status">
+                <strong>{t("nodes.catalogSource", { source: snapshot.catalogSource })}</strong>
+              </div>
+            )}
+            {snapshot.installedStatus === "ready" && (
+              <p className={styles.managerReady} role="status">
+                {t("nodes.managerReady")}
+              </p>
+            )}
+          </div>
         </aside>
 
         <main className={styles.main}>
@@ -268,18 +281,14 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
               busyLabel={t("nodes.refreshing")}
               onClick={() => void controller.refresh()}
             >
+              <RefreshCw size={24} aria-hidden="true" />
               {t("nodes.refresh")}
             </Button>
           </div>
 
-          {(snapshot.catalogSource || snapshot.catalogWarning) && (
+          {snapshot.catalogWarning && (
             <div className={styles.sourceNotice} role="status">
-              <strong>
-                {t("nodes.catalogSource", {
-                  source: snapshot.catalogSource ?? t("nodes.unknown"),
-                })}
-              </strong>
-              {snapshot.catalogWarning && <span>{snapshot.catalogWarning}</span>}
+              <span>{snapshot.catalogWarning}</span>
             </div>
           )}
           {snapshot.catalogStatus === "loading" && (
@@ -322,12 +331,6 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
               </Button>
             </div>
           )}
-          {snapshot.installedStatus === "ready" && (
-            <p className={styles.managerReady} role="status">
-              {t("nodes.managerReady")}
-            </p>
-          )}
-
           {orphanedOperations.length > 0 && (
             <section className={styles.taskSummary} aria-label={t("nodes.recentResults")}>
               <h3>{t("nodes.recentResults")}</h3>

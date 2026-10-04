@@ -15,8 +15,7 @@ from . import registry_cache
 REGISTRY_VERSIONS_URL = "https://api.comfy.org/versions"
 REGISTRY_NODES_URL = "https://api.comfy.org/nodes"
 LEGACY_CATALOG_FILENAME = "registry-node-list.json"
-VERSION_PAGE_SIZE = 100
-MAX_VERSION_PAGES = 20
+VERSION_PAGE_SIZE = 5
 MAX_VERSION_RESPONSE_BYTES = 2 * 1024 * 1024
 NODE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$")
 
@@ -176,10 +175,6 @@ def _validate_versions_page(
       raise RegistryVersionsError(
         "Comfy Registry returned an unexpected version page size."
       )
-    if total_pages > MAX_VERSION_PAGES:
-      raise RegistryVersionsError(
-        "This node has more versions than the supported page limit."
-      )
   else:
     raise RegistryVersionsError(
       "Comfy Registry response did not contain a version list."
@@ -215,23 +210,26 @@ async def fetch_registry_versions(
       return await fetch_registry_versions(normalized_id, fetch_json=request)
 
   versions: list[dict[str, Any]] = []
-  page = 1
-  while page <= MAX_VERSION_PAGES:
+  for statuses in (
+    ["NodeVersionStatusActive"],
+    ["NodeVersionStatusFlagged", "NodeVersionStatusPending"],
+  ):
     query = urlencode(
       {
         "nodeId": normalized_id,
-        "include_status_reason": "true",
-        "page": page,
+        # Scanner histories can exceed the response limit even for one version.
+        "include_status_reason": "false",
+        "statuses": statuses,
+        "page": 1,
         "pageSize": VERSION_PAGE_SIZE,
-      }
+      },
+      doseq=True,
     )
     data = await fetch_json(f"{REGISTRY_VERSIONS_URL}?{query}")
-    page_versions, total_pages = _validate_versions_page(data, normalized_id, page)
-    versions.extend(page_versions)
-    if total_pages is None or page >= total_pages:
-      return versions
-    page += 1
-
-  raise RegistryVersionsError(
-    "Comfy Registry version pagination exceeded the page limit."
-  )
+    page_versions, _ = _validate_versions_page(data, normalized_id, 1)
+    for version in page_versions:
+      if registry_cache._status(version) in {
+        status.removeprefix("NodeVersionStatus").lower() for status in statuses
+      } and not any(item["version"] == version["version"] for item in versions):
+        versions.append(version)
+  return sorted(versions, key=registry_cache._semver_key, reverse=True)

@@ -7,9 +7,29 @@ import {
   findHistoryItem,
   findInstalledPack,
   normalizeManagedPacks,
+  safeImageUrl,
+  safeHttpsUrl,
 } from "../../src/services/nodesManager.ts"
 
 describe("Nodes Manager service contracts", () => {
+  it("uses jsDelivr for GitHub raw images while preserving repository URLs", () => {
+    const raw =
+      "https://raw.githubusercontent.com/crystian/ComfyUI-Crystools/main/docs/screwdriver.png"
+    expect(safeImageUrl(raw)).toBe(
+      "https://cdn.jsdelivr.net/gh/crystian/ComfyUI-Crystools@main/docs/screwdriver.png",
+    )
+    expect(
+      safeImageUrl(
+        "https://raw.githubusercontent.com/owner/repo/v1.2.0/image%20file.png?x=1#preview",
+      ),
+    ).toBe("https://cdn.jsdelivr.net/gh/owner/repo@v1.2.0/image%20file.png?x=1#preview")
+    expect(safeHttpsUrl(raw)).toBe(raw)
+    expect(safeImageUrl("https://example.com/image.png")).toBe("https://example.com/image.png")
+    expect(
+      safeImageUrl("http://raw.githubusercontent.com/owner/repo/main/image.png"),
+    ).toBeUndefined()
+    expect(safeImageUrl("invalid")).toBeUndefined()
+  })
   it("prefers enabled copies and groups duplicate installed CNR identities", () => {
     const packs = normalizeManagedPacks(
       {

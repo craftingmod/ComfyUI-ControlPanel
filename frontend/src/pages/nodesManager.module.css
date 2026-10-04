@@ -1,7 +1,7 @@
 .managerDialog {
   display: flex;
-  width: min(1440px, calc(100vw - var(--space-xl)));
-  height: min(900px, calc(100vh - var(--space-lg)));
+  width: min(1800px, calc(100vw - var(--space-xl)));
+  height: min(1000px, calc(100vh - var(--space-lg)));
   max-height: calc(100vh - var(--space-lg));
   flex-direction: column;
   overflow: hidden;
@@ -132,6 +132,20 @@
   color: var(--cp-text);
 }
 
+.sidebarStatus {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.sidebarStatus > .sourceNotice,
+.sidebarStatus > .managerReady {
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-sm);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .taskSummary {
   display: grid;
   gap: var(--space-xs);
@@ -247,6 +261,7 @@
 
   .managerBody {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     gap: var(--space-sm);
   }
 
@@ -264,6 +279,16 @@
     display: flex;
     overflow-x: auto;
     gap: var(--space-xs);
+  }
+
+  .sidebarStatus {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .sidebarStatus > .sourceNotice,
+  .sidebarStatus > .managerReady {
+    flex: 1 1 180px;
   }
 
   .filterButton {

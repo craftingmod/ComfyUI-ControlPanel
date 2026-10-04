@@ -3,8 +3,8 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: var(--space-sm);
-  padding: var(--space-md);
+  gap: var(--space-xs);
+  padding: var(--space-3sm);
   border: var(--cp-border-width) solid var(--cp-border);
   border-radius: var(--cp-radius);
   background: var(--cp-panel);
@@ -71,7 +71,6 @@
 
 .description {
   display: -webkit-box;
-  min-height: 3em;
   overflow: hidden;
   margin: 0;
   color: var(--cp-text);
@@ -79,14 +78,16 @@
   line-height: 1.5;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  line-clamp: 3;
 }
 
 .metadata {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-sm);
   color: var(--cp-muted);
+  margin-top: auto;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -109,10 +110,12 @@
   flex: 0 0 auto;
 }
 
-.author,
-.repositoryText {
+.author {
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   margin: 0;
+  margin-inline-start: auto;
   color: var(--cp-muted);
   font-size: 11px;
   text-overflow: ellipsis;
@@ -141,36 +144,29 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-xs) var(--space-sm);
-  padding-top: var(--space-xs);
-  border-top: var(--cp-border-width) solid var(--cp-border);
   color: var(--cp-text);
   font-size: 11px;
 }
 
-.enabledState {
-  color: var(--cp-success);
-}
-
-.disabledState {
-  color: var(--cp-warning);
+.installDetails > span {
+  gap: var(--space-2xs);
 }
 
 .versionField {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
   gap: var(--space-xs);
 }
 
-.versionField label,
-.versionField > span {
-  color: var(--cp-muted);
-  font-size: 11px;
-  font-weight: 650;
+.versionField[data-has-switch="true"] {
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 .versionField select {
   box-sizing: border-box;
   width: 100%;
-  min-height: 36px;
+  height: var(--cp-combo-height);
   padding: var(--space-xs) var(--space-sm);
   border: var(--cp-border-width) solid var(--cp-border);
   border-radius: var(--cp-radius);
@@ -180,10 +176,12 @@
   font-size: 12px;
 }
 
-.versionField > button {
+.versionField > [data-action="switch-version"],
+.versionField > [data-action="cancel-version"] {
   box-sizing: border-box;
-  width: 100%;
-  text-align: left;
+  height: var(--cp-combo-height);
+  min-height: var(--cp-combo-height);
+  max-height: var(--cp-combo-height);
 }
 
 .versionField select:focus-visible {
@@ -198,6 +196,7 @@
 
 .inlineError {
   display: flex;
+  grid-column: 1 / -1;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-sm);
@@ -206,22 +205,30 @@
   overflow-wrap: anywhere;
 }
 
-.flaggedNote {
-  margin: 0;
-  padding: var(--space-xs) var(--space-sm);
-  border-inline-start: var(--cp-focus-width) solid var(--cp-warning);
-  background: color-mix(in srgb, var(--cp-warning) 12%, var(--cp-panel));
-  color: var(--cp-text);
-  font-size: 11px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-
 .actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-xs);
-  margin-top: auto;
+  padding-top: var(--space-sm);
+}
+
+.actionsEnd {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+  margin-inline-start: auto;
+}
+
+.card .actions > [data-action="load-version"]:not(:disabled) {
+  border-color: color-mix(in srgb, var(--cp-warning) 40%, var(--cp-border));
+  background: color-mix(in srgb, var(--cp-warning) 12%, var(--cp-panel));
+  color: var(--cp-warning);
+}
+
+.card .actions > [data-action="load-version"]:hover:not(:disabled) {
+  border-color: var(--cp-warning);
+  background: color-mix(in srgb, var(--cp-warning) 20%, var(--cp-panel));
 }
 
 .retryQueueButton {

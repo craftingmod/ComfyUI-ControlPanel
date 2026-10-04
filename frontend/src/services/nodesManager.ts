@@ -385,7 +385,7 @@ export function filterAndSortManagedPacks(
   })
 }
 
-export function safeImageUrl(value: string | undefined): string | undefined {
+export function safeHttpsUrl(value: string | undefined): string | undefined {
   if (!value) return undefined
   try {
     const url = new URL(value)
@@ -393,6 +393,20 @@ export function safeImageUrl(value: string | undefined): string | undefined {
   } catch {
     return undefined
   }
+}
+
+export function safeImageUrl(value: string | undefined): string | undefined {
+  const safeUrl = safeHttpsUrl(value)
+  if (!safeUrl) return undefined
+  const url = new URL(safeUrl)
+  if (url.hostname === "raw.githubusercontent.com") {
+    const match = /^\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/.exec(url.pathname)
+    if (match) {
+      url.hostname = "cdn.jsdelivr.net"
+      url.pathname = `/gh/${match[1]}/${match[2]}@${match[3]}/${match[4]}`
+    }
+  }
+  return url.href
 }
 
 export function buildManagerQueuePayload(

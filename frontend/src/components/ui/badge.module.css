@@ -17,6 +17,12 @@
     font-size: 9px;
   }
 
+  &[data-tone="success"] {
+    border-color: color-mix(in srgb, var(--cp-success) 40%, var(--cp-border));
+    background: color-mix(in srgb, var(--cp-success) 12%, var(--cp-panel));
+    color: var(--cp-success);
+  }
+
   &[data-tone="warning"] {
     border-color: color-mix(in srgb, var(--cp-warning) 40%, var(--cp-border));
     background: color-mix(in srgb, var(--cp-warning) 12%, var(--cp-panel));

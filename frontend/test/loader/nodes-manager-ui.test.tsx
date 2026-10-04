@@ -221,7 +221,7 @@ it("keeps latest as the install default and reveals version choices after fetch"
     await act(async () => findButton("Install").click())
     expect(mounted.controller.submit).toHaveBeenCalledWith(pack, "install", "1.0.0")
 
-    const chooseVersion = findButton("Choose a version…")
+    const chooseVersion = document.querySelector<HTMLButtonElement>('[data-action="load-version"]')!
     await act(async () => chooseVersion.focus())
     expect(requestCount).toBe(0)
     await act(async () => chooseVersion.click())
@@ -239,7 +239,7 @@ it("keeps latest as the install default and reveals version choices after fetch"
     expect(document.body.textContent).toContain(
       "Could not load versions: Registry temporarily unavailable.",
     )
-    expect(findButton("Choose a version…").disabled).toBe(false)
+    expect(chooseVersion.disabled).toBe(false)
 
     await act(async () => findButton("Retry").click())
     expect(requestedPacks).toEqual([pack, pack])
@@ -251,15 +251,34 @@ it("keeps latest as the install default and reveals version choices after fetch"
       retryRequest.resolve([
         { version: "1.0.0", status: "Active" },
         { version: "0.9.0", status: "Flagged", status_reason: "Known security issue" },
+        { version: "0.8.0", status: "NodeVersionStatusPending" },
+        { version: "0.7.0", status: "NodeVersionStatusBanned" },
       ])
       await retryRequest.promise
     })
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[data-action="cancel-version"]')!.click()
+    })
+    expect(document.querySelector('select[name="version-example-pack"]')).toBeNull()
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[data-action="load-version"]')!.click()
+    })
+    expect(requestCount).toBe(2)
     const selector = document.querySelector<HTMLSelectElement>(
       'select[name="version-example-pack"]',
     )!
 
+    expect(document.querySelector('[data-action="load-version"]')).toBeNull()
+    expect(Array.from(selector.options).map((option) => option.textContent)).toEqual([
+      "Choose a version…",
+      "1.0.0",
+      "0.9.0 (Flagged)",
+      "0.8.0 (Pending)",
+    ])
+
     await act(async () => setValue(selector, "0.9.0"))
-    expect(document.body.textContent).toContain("Known security issue")
+    expect(selector.selectedOptions[0]?.textContent).toBe("0.9.0 (Flagged)")
+    expect(document.body.textContent).not.toContain("Known security issue")
     await act(async () => findButton("Install").click())
 
     expect(mounted.controller.submit).toHaveBeenCalledWith(pack, "install", "0.9.0")
@@ -286,7 +305,9 @@ it("virtually scrolls past 48 results and keeps selection while cards unmount", 
     expect(scroller.getAttribute("aria-label")).toBe("Extensions")
     expect(document.querySelectorAll("article").length).toBeLessThan(packs.length)
 
-    await act(async () => findButton("Choose a version…").click())
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-action="load-version"]')!.click(),
+    )
     const firstPackVersions = document.querySelector<HTMLSelectElement>(
       'select[name="version-pack-1"]',
     )!

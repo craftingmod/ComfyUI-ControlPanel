@@ -4,7 +4,7 @@ import { cx } from "../../styles/cx.ts"
 
 import styles from "./badge.module.css"
 
-export type BadgeTone = "accent" | "warning" | "muted"
+export type BadgeTone = "accent" | "success" | "warning" | "muted"
 export type BadgeSize = "sm" | "md"
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
