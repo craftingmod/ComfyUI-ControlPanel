@@ -48,24 +48,25 @@
   }
 
   &[data-variant="primary"] {
-    background: color-mix(in srgb, var(--cp-accent) 72%, #162239);
-    border-color: color-mix(in srgb, var(--cp-accent) 80%, white);
-    color: white;
+    background: color-mix(in srgb, var(--cp-accent) 20%, var(--cp-panel));
+    border-color: color-mix(in srgb, var(--cp-accent) 65%, var(--cp-border));
+    color: var(--cp-text);
   }
 
   &[data-variant="primary"]:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--cp-accent) 80%, white);
+    background: color-mix(in srgb, var(--cp-accent) 30%, var(--cp-panel));
+    border-color: var(--cp-accent);
   }
 
   &[data-variant="danger"] {
     border-color: color-mix(in srgb, var(--cp-danger) 65%, var(--cp-border));
-    color: var(--cp-danger);
+    color: color-mix(in srgb, var(--cp-danger) 65%, var(--cp-text));
   }
 
   &[data-variant="danger"]:hover:not(:disabled) {
     border-color: var(--cp-danger);
     background: color-mix(in srgb, var(--cp-danger) 38%, var(--cp-panel));
-    color: white;
+    color: var(--cp-text);
   }
 
   &[data-variant="ghost"] {
@@ -78,12 +79,12 @@
   }
 
   &[data-variant="ghost"]:hover:not(:disabled) {
-    background: rgb(255 255 255 / 6%);
+    background: color-mix(in srgb, var(--cp-panel) 90%, var(--cp-text));
   }
 
   &[data-variant="ghost"][aria-pressed="true"] {
-    border-color: rgb(99 168 255 / 24%);
-    background: rgb(48 113 188 / 22%);
-    color: #e9f3ff;
+    border-color: color-mix(in srgb, var(--cp-accent) 40%, var(--cp-border));
+    background: color-mix(in srgb, var(--cp-accent) 20%, var(--cp-panel));
+    color: var(--cp-text);
   }
 }

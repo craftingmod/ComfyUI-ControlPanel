@@ -8,7 +8,7 @@
     color-mix(in srgb, var(--cp-accent) 50%, var(--cp-border));
   border-radius: 999px;
   background: color-mix(in srgb, var(--cp-accent) 10%, var(--cp-panel));
-  color: var(--cp-accent);
+  color: color-mix(in srgb, var(--cp-accent) 65%, var(--cp-text));
   font-size: 10px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -19,9 +19,9 @@
   }
 
   &[data-tone="warning"] {
-    border-color: rgb(233 177 79 / 25%);
-    background: rgb(172 114 32 / 16%);
-    color: #f1ca85;
+    border-color: color-mix(in srgb, var(--cp-warning) 40%, var(--cp-border));
+    background: color-mix(in srgb, var(--cp-warning) 12%, var(--cp-panel));
+    color: var(--cp-warning);
   }
 
   &[data-tone="muted"] {
