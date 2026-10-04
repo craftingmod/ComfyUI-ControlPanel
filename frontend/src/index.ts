@@ -1,6 +1,7 @@
 import { app } from "../../scripts/app.js"
 import { createControlPanelController } from "./components/controlPanel.ts"
 import { API_ROUTES, EXTENSION_NAME, SETTINGS_IDS } from "./constants.ts"
+import { createTranslator } from "./i18n/messages.ts"
 import type { MetadataNode } from "./services/cnrMetadata.ts"
 import { createCnrMetadataController } from "./services/cnrMetadataController.ts"
 import { installStylesheet } from "./stylesheet.ts"
@@ -10,7 +11,16 @@ import { ensureGlobalStyles } from "./ui/dom.ts"
 installStylesheet(import.meta.url)
 ensureGlobalStyles()
 
-const ACTION_BAR_BUTTON_TOOLTIP = "Open ControlPanel"
+const translateHostLocale = createTranslator(() =>
+  app.extensionManager.setting?.get?.("Comfy.Locale"),
+)
+
+function translateCurrent(
+  key: Parameters<typeof translateHostLocale>[0],
+  values?: Parameters<typeof translateHostLocale>[1],
+): string {
+  return translateHostLocale(key, values)
+}
 
 type ControlPanelSettingsResponse = {
   manager_repository_data_override?: boolean
@@ -146,13 +156,13 @@ function createExtensionObject(): ManagerExtension {
     commands: [
       {
         id: "control-panel.open",
-        label: "ComfyUI-ControlPanel",
+        label: () => translateCurrent("command.open"),
         icon: "pi pi-wrench",
         function: controlPanel.open,
       },
       {
         id: "control-panel.fix-cnr-id",
-        label: "Repair Metadata",
+        label: () => translateCurrent("command.repairMetadata"),
         icon: "icon-[lucide--tags]",
         function: cnrMetadata.fixActiveWorkflow,
       },
@@ -174,7 +184,7 @@ function createExtensionObject(): ManagerExtension {
           linkEl.href = "https://github.com/craftingmod/comfyui-controlpanel"
           linkEl.target = "_blank"
           linkEl.rel = "noopener noreferrer"
-          linkEl.textContent = "Homepage"
+          linkEl.textContent = translateCurrent("settings.homepage")
           spanEl.dataset.templateTheme = ""
           linkEl.style.paddingRight = "var(--space-3sm)"
           spanEl.append(linkEl)
@@ -184,19 +194,18 @@ function createExtensionObject(): ManagerExtension {
       },
       {
         id: settingId(SETTINGS_IDS.DEBUG_LOGGING),
-        name: "Enable Debug Logging",
+        name: translateCurrent("settings.debugLogging"),
         category: ["ControlPanel", "General", "Enable Debug Logging"],
         type: "boolean",
-        tooltip: "Show detailed debug logs in browser console during manager operations",
+        tooltip: translateCurrent("settings.debugLoggingTooltip"),
         defaultValue: false,
       },
       {
         id: settingId(SETTINGS_IDS.MANAGER_REPOSITORY_DATA_OVERRIDE),
-        name: "Replace Manager Repository Data",
+        name: translateCurrent("settings.repositoryOverride"),
         category: ["ControlPanel", "Manager", "Replace Manager Repository Data"],
         type: "boolean",
-        tooltip:
-          "Use ControlPanel cached Manager repository data and force ComfyUI Manager offline channel settings",
+        tooltip: translateCurrent("settings.repositoryOverrideTooltip"),
         defaultValue: false,
         onChange: (value) => {
           if (managerSettingsSynced) {
@@ -206,14 +215,14 @@ function createExtensionObject(): ManagerExtension {
       },
       {
         id: settingId(SETTINGS_IDS.MANAGER_REPOSITORY_DATA_CHANNEL),
-        name: "Manager Repository Data Source",
+        name: translateCurrent("settings.repositoryDataSource"),
         category: ["ControlPanel", "Manager", "Manager Repository Data Source"],
         type: "combo",
         options: [
           { value: "jsdelivr", text: "jsDelivr" },
           { value: "github", text: "GitHub Raw" },
         ],
-        tooltip: "Choose where ControlPanel fetches ComfyUI Manager repository data",
+        tooltip: translateCurrent("settings.repositoryDataSourceTooltip"),
         defaultValue: "jsdelivr",
         onChange: (value) => {
           if (managerSettingsSynced) {
@@ -223,11 +232,10 @@ function createExtensionObject(): ManagerExtension {
       },
       {
         id: settingId(SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST),
-        name: "Allow flagged version as latest",
+        name: translateCurrent("settings.allowFlaggedLatest"),
         category: ["ControlPanel", "Manager", "Allow flagged version as latest"],
         type: "boolean",
-        tooltip:
-          "Use a newer cached Flagged version as latest in Manager exports, preserving its Registry status",
+        tooltip: translateCurrent("settings.allowFlaggedLatestTooltip"),
         defaultValue: false,
         onChange: (value) => {
           if (managerSettingsSynced) {
@@ -259,8 +267,8 @@ function createExtensionObject(): ManagerExtension {
     actionBarButtons: [
       {
         icon: "icon-[lucide--wrench]",
-        label: "Panel",
-        tooltip: ACTION_BAR_BUTTON_TOOLTIP,
+        label: translateCurrent("actionBar.panel"),
+        tooltip: translateCurrent("actionBar.tooltip"),
         onClick: controlPanel.open,
       },
     ],

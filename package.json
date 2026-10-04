@@ -9,6 +9,7 @@
   ],
   "files": [
     "frontend/",
+    "locales/",
     "./*.config.ts",
     "scripts/"
   ],

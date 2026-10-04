@@ -1,6 +1,8 @@
 import type { ComfyApp } from "@comfyorg/comfyui-frontend-types"
 
 import { API_ROUTES } from "../constants.ts"
+import { createTranslator } from "../i18n/messages.ts"
+import type { TranslationKey, TranslationValues } from "../i18n/messages.ts"
 
 export type RegistryVersion = {
   id?: string
@@ -43,8 +45,8 @@ export type ManagedPack = {
   key: string
   id: string
   name: string
-  description: string
-  author: string
+  description?: string
+  author?: string
   repository?: string
   icon?: string
   stars?: number
@@ -95,6 +97,8 @@ export class ManagerRequestError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    readonly translationKey?: TranslationKey,
+    readonly translationValues?: TranslationValues,
   ) {
     super(message)
     this.name = "ManagerRequestError"
@@ -287,11 +291,8 @@ function makeManagedPack(
     key: node ? `registry:${id}` : `installed:${installed!.key}`,
     id,
     name: nonEmptyString(node?.name) ?? id,
-    description: nonEmptyString(node?.description) ?? "No description is available.",
-    author:
-      nonEmptyString(node?.author) ??
-      nonEmptyString(node?.publisher?.name) ??
-      (installed ? "Local installation" : "Unknown author"),
+    description: nonEmptyString(node?.description),
+    author: nonEmptyString(node?.author) ?? nonEmptyString(node?.publisher?.name),
     repository: nonEmptyString(node?.repository),
     icon: nonEmptyString(node?.icon),
     stars:
@@ -362,7 +363,7 @@ export function filterAndSortManagedPacks(
     if (filter === "disabled" && (!pack.installed || pack.installed.enabled !== false)) return false
     if (!query) return true
     return [pack.name, pack.id, pack.author, pack.description].some((value) =>
-      value.toLocaleLowerCase().includes(query),
+      value?.toLocaleLowerCase().includes(query),
     )
   })
 
@@ -483,6 +484,16 @@ export function findHistoryItem(
 }
 
 export function createNodesManagerService(app: ComfyApp) {
+  const t = createTranslator(() => app.extensionManager.setting?.get?.("Comfy.Locale"))
+
+  function translatedError(
+    key: TranslationKey,
+    values?: TranslationValues,
+    status?: number,
+  ): ManagerRequestError {
+    return new ManagerRequestError(t(key, values), status, key, values)
+  }
+
   async function request(route: string, method = "GET", body?: unknown): Promise<JsonRecord> {
     let response: Response
     try {
@@ -507,11 +518,12 @@ export function createNodesManagerService(app: ComfyApp) {
       }
     }
     if (!response.ok || data.ok === false) {
-      const message =
-        nonEmptyString(data.error) ??
-        nonEmptyString(data.message) ??
-        (response.status === 404 ? "ComfyUI-Manager v2 API is unavailable." : response.statusText)
-      throw new ManagerRequestError(message, response.status)
+      const detail = nonEmptyString(data.error) ?? nonEmptyString(data.message)
+      if (detail) throw new ManagerRequestError(detail, response.status)
+      if (response.status === 404) {
+        throw translatedError("nodes.error.managerApiUnavailable", undefined, response.status)
+      }
+      throw new ManagerRequestError(response.statusText, response.status)
     }
     return data
   }
@@ -519,17 +531,22 @@ export function createNodesManagerService(app: ComfyApp) {
   return {
     async loadCatalog() {
       const data = await request(API_ROUTES.NODES_MANAGER_CATALOG)
-      if (!Array.isArray(data.nodes)) throw new Error("Nodes Manager catalog response was invalid.")
+      if (!Array.isArray(data.nodes)) throw translatedError("nodes.error.invalidCatalogResponse")
       return data as JsonRecord & { nodes: RegistryNode[]; source?: string; warning?: string }
     },
     async loadInstalled() {
       const data = await request("/v2/customnode/installed")
-      return normalizeInstalledPacks(data)
+      try {
+        return normalizeInstalledPacks(data)
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        throw translatedError("nodes.error.invalidInstalledPackResponseDetail", { error: detail })
+      }
     },
     async loadVersions(nodeId: string) {
       const query = new URLSearchParams({ node_id: nodeId })
       const data = await request(`${API_ROUTES.NODES_MANAGER_VERSIONS}?${query.toString()}`)
-      if (!Array.isArray(data.versions)) throw new Error("Registry version response was invalid.")
+      if (!Array.isArray(data.versions)) throw translatedError("nodes.error.invalidVersionResponse")
       return data.versions.filter((value): value is RegistryVersion => {
         const version = asRecord(value)
         return Boolean(version && nonEmptyString(version.version))

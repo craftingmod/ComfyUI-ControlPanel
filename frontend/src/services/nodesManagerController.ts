@@ -1,10 +1,12 @@
 import type { ComfyApp } from "@comfyorg/comfyui-frontend-types"
 
+import { createTranslator, type TranslationKey, type TranslationValues } from "../i18n/messages.ts"
 import {
   buildManagerQueuePayload,
   createNodesManagerService,
   findHistoryItem,
   findInstalledPack,
+  ManagerRequestError,
   normalizeManagedPacks,
   type InstalledPack,
   type ManagerOperation,
@@ -23,6 +25,8 @@ export type NodesManagerOperationState = {
   operation: ManagerOperation
   status: "starting" | "pending" | "unknown" | "succeeded" | "failed" | "skipped"
   message?: string
+  messageKey?: TranslationKey
+  messageValues?: TranslationValues
   selectedVersion?: string
   managerStatus?: "success" | "error" | "skip"
   accepted?: boolean
@@ -34,10 +38,14 @@ export type NodesManagerSnapshot = {
   isOpen: boolean
   catalogStatus: "idle" | "loading" | "ready" | "error"
   catalogError?: string
+  catalogErrorKey?: TranslationKey
+  catalogErrorValues?: TranslationValues
   catalogSource?: string
   catalogWarning?: string
   installedStatus: "idle" | "loading" | "ready" | "error"
   installedError?: string
+  installedErrorKey?: TranslationKey
+  installedErrorValues?: TranslationValues
   installed: InstalledPack[]
   packs: ManagedPack[]
   operations: Record<string, NodesManagerOperationState>
@@ -46,6 +54,8 @@ export type NodesManagerSnapshot = {
     {
       loading: boolean
       error?: string
+      errorKey?: TranslationKey
+      errorValues?: TranslationValues
       values?: RegistryVersion[]
     }
   >
@@ -71,6 +81,17 @@ export type NodesManagerController = {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function errorDetails(error: unknown): {
+  message?: string
+  key?: TranslationKey
+  values?: TranslationValues
+} {
+  if (error instanceof ManagerRequestError && error.translationKey) {
+    return { key: error.translationKey, values: error.translationValues }
+  }
+  return { message: errorMessage(error) }
 }
 
 function newTaskId(): string {
@@ -133,6 +154,7 @@ function terminalStatus(item: ManagerTaskHistory): "success" | "error" | "skip" 
 
 export function createNodesManagerController(app: ComfyApp): NodesManagerController {
   const service = createNodesManagerService(app)
+  const t = createTranslator(() => app.extensionManager.setting?.get?.("Comfy.Locale"))
   const listeners = new Set<() => void>()
   let snapshot: NodesManagerSnapshot = {
     isOpen: false,
@@ -171,6 +193,21 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
     update({ operations: { ...snapshot.operations, [operation.packKey]: operation } })
   }
 
+  function withMessageKey(
+    operation: NodesManagerOperationState,
+    messageKey: TranslationKey,
+    messageValues?: TranslationValues,
+  ): NodesManagerOperationState {
+    return { ...operation, message: undefined, messageKey, messageValues }
+  }
+
+  function withRawMessage(
+    operation: NodesManagerOperationState,
+    message: string,
+  ): NodesManagerOperationState {
+    return { ...operation, message, messageKey: undefined, messageValues: undefined }
+  }
+
   function showToast(
     severity: "success" | "warn" | "error",
     summary: string,
@@ -185,8 +222,12 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
     update({
       catalogStatus: "loading",
       catalogError: undefined,
+      catalogErrorKey: undefined,
+      catalogErrorValues: undefined,
       installedStatus: "loading",
       installedError: undefined,
+      installedErrorKey: undefined,
+      installedErrorValues: undefined,
     })
     const [catalogResult, installedResult] = await Promise.allSettled([
       service.loadCatalog(),
@@ -196,29 +237,43 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
 
     let catalogStatus = snapshot.catalogStatus
     let catalogError: string | undefined
+    let catalogErrorKey: TranslationKey | undefined
+    let catalogErrorValues: TranslationValues | undefined
     let catalogSource = snapshot.catalogSource
     let catalogWarning = snapshot.catalogWarning
     if (catalogResult.status === "fulfilled") {
       catalogNodes = catalogResult.value.nodes
       catalogStatus = "ready"
+      catalogErrorKey = undefined
+      catalogErrorValues = undefined
       catalogSource = catalogResult.value.source
       catalogWarning = catalogResult.value.warning
     } else {
       catalogStatus = "error"
-      catalogError = errorMessage(catalogResult.reason)
+      const error = errorDetails(catalogResult.reason)
+      catalogError = error.message
+      catalogErrorKey = error.key
+      catalogErrorValues = error.values
     }
 
     let installedStatus = snapshot.installedStatus
     let installedError = snapshot.installedError
+    let installedErrorKey = snapshot.installedErrorKey
+    let installedErrorValues = snapshot.installedErrorValues
     let installed = snapshot.installed
     if (installedGeneration === installedReadGeneration) {
       if (installedResult.status === "fulfilled") {
         installed = installedResult.value
         installedStatus = "ready"
         installedError = undefined
+        installedErrorKey = undefined
+        installedErrorValues = undefined
       } else {
         installedStatus = "error"
-        installedError = errorMessage(installedResult.reason)
+        const error = errorDetails(installedResult.reason)
+        installedError = error.message
+        installedErrorKey = error.key
+        installedErrorValues = error.values
       }
     }
 
@@ -227,10 +282,14 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
       ...snapshot,
       catalogStatus,
       catalogError,
+      catalogErrorKey,
+      catalogErrorValues,
       catalogSource,
       catalogWarning,
       installedStatus,
       installedError,
+      installedErrorKey,
+      installedErrorValues,
       installed,
       packs,
     })
@@ -252,21 +311,17 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
     const satisfied = effectIsPresent(operation, packFor(operation), installed)
     if (!satisfied) {
       replaceOperation({
-        ...operation,
+        ...withMessageKey(operation, "nodes.operationUnconfirmed"),
         status: "unknown",
-        message:
-          "Manager reported completion, but the installed-pack list does not confirm the requested change. Refresh to check again.",
       })
       return
     }
     replaceOperation({
-      ...operation,
+      ...withMessageKey(operation, "nodes.operationConfirmed"),
       status: "succeeded",
       restartRequired: true,
-      message:
-        "Completed and confirmed from the installed-pack list. Restart ComfyUI to load the change.",
     })
-    showToast("warn", "Restart required", "Restart ComfyUI to load the node changes.")
+    showToast("warn", t("toast.restartRequired"), t("toast.restartForNodes"))
   }
 
   async function reconcileManagerSuccesses(installed: InstalledPack[]): Promise<void> {
@@ -293,62 +348,84 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
         const installed = await service.loadInstalled().catch(() => undefined)
         if (!isCurrent()) return
         if (installed && installedGeneration === installedReadGeneration) {
-          update({ installed, installedStatus: "ready", installedError: undefined })
+          update({
+            installed,
+            installedStatus: "ready",
+            installedError: undefined,
+            installedErrorKey: undefined,
+            installedErrorValues: undefined,
+          })
           update({ packs: normalizeManagedPacks({ nodes: catalogNodes }, installed) })
         } else if (installedGeneration === installedReadGeneration) {
           update({
             installedStatus: "error",
-            installedError: "Manager installed nodes could not be refreshed.",
+            installedError: undefined,
+            installedErrorKey: "nodes.installedRefreshFailed",
+            installedErrorValues: undefined,
           })
         }
+        const historyMessage = item.status?.messages?.filter(Boolean).join("\n")
         replaceOperation({
-          ...operation,
+          ...(historyMessage
+            ? withRawMessage(operation, historyMessage)
+            : withMessageKey(
+                operation,
+                status === "skip" ? "nodes.taskSkipped" : "nodes.managerError",
+              )),
           status: status === "skip" ? "skipped" : "failed",
           managerStatus: status,
-          message:
-            status === "skip"
-              ? item.status?.messages?.filter(Boolean).join("\n") ||
-                "Manager skipped this task; no change was confirmed."
-              : item.status?.messages?.filter(Boolean).join("\n") || "Manager reported an error.",
         })
         showToast(
           status === "skip" ? "warn" : "error",
-          status === "skip" ? "Nodes Manager task skipped" : "Nodes Manager task failed",
-          status === "skip" ? "No change was confirmed." : "Manager reported an error.",
+          status === "skip"
+            ? t("toast.nodesManagerTaskSkipped")
+            : t("toast.nodesManagerTaskFailed"),
+          status === "skip" ? t("toast.noChangeConfirmed") : t("toast.managerReportedError"),
         )
         return
       }
 
       const terminal = { ...operation, managerStatus: "success" as const }
       replaceOperation({
-        ...terminal,
+        ...withMessageKey(terminal, "nodes.taskCompletedRefreshing"),
         status: "unknown",
-        message: "Task completed. Refreshing installed nodes…",
       })
       try {
         const installedGeneration = ++installedReadGeneration
         const installed = await service.loadInstalled()
         if (!isCurrent()) return
         if (installedGeneration !== installedReadGeneration) return
-        update({ installed, installedStatus: "ready", installedError: undefined })
+        update({
+          installed,
+          installedStatus: "ready",
+          installedError: undefined,
+          installedErrorKey: undefined,
+          installedErrorValues: undefined,
+        })
         const packs = normalizeManagedPacks({ nodes: catalogNodes }, installed)
         update({ packs })
         await reconcileOperation(terminal, installed)
       } catch (error) {
         if (!isCurrent()) return
         replaceOperation({
-          ...terminal,
+          ...withMessageKey(terminal, "nodes.taskRefreshError", { error: errorMessage(error) }),
           status: "unknown",
-          message: `Manager completed the task, but installed nodes could not be refreshed: ${errorMessage(error)}`,
         })
-        update({ installedStatus: "error", installedError: errorMessage(error) })
+        const details = errorDetails(error)
+        update({
+          installedStatus: "error",
+          installedError: details.message,
+          installedErrorKey: details.key,
+          installedErrorValues: details.values,
+        })
       }
     } catch (error) {
       if (!isCurrent()) return
       replaceOperation({
-        ...operation,
+        ...withMessageKey(operation, "nodes.taskHistoryError", {
+          error: errorMessage(error),
+        }),
         status: "unknown",
-        message: `Waiting for Manager task history: ${errorMessage(error)}`,
       })
     }
   }
@@ -412,7 +489,13 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
     update({
       versions: {
         ...snapshot.versions,
-        [pack.key]: { ...snapshot.versions[pack.key], loading: true, error: undefined },
+        [pack.key]: {
+          ...snapshot.versions[pack.key],
+          loading: true,
+          error: undefined,
+          errorKey: undefined,
+          errorValues: undefined,
+        },
       },
     })
     try {
@@ -431,10 +514,16 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
         versionGenerations.get(pack.key) !== versionGeneration
       )
         return
+      const details = errorDetails(error)
       update({
         versions: {
           ...snapshot.versions,
-          [pack.key]: { loading: false, error: errorMessage(error) },
+          [pack.key]: {
+            loading: false,
+            error: details.message,
+            errorKey: details.key,
+            errorValues: details.values,
+          },
         },
       })
     }
@@ -447,11 +536,17 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
   ): Promise<boolean> {
     const options: ConfirmOptions | undefined =
       operation === "uninstall"
-        ? { title: "Uninstall node pack", message: `Remove ${pack.name} through ComfyUI-Manager?` }
+        ? {
+            title: t("nodes.confirm.uninstallTitle"),
+            message: t("nodes.confirm.uninstall", { name: pack.name }),
+          }
         : operation === "switch"
           ? {
-              title: "Switch node version",
-              message: `Replace ${pack.name} with Registry version ${selectedVersion ?? "selected"}?`,
+              title: t("nodes.confirm.switchTitle"),
+              message: t("nodes.confirm.switch", {
+                name: pack.name,
+                version: selectedVersion ?? t("nodes.unknown"),
+              }),
             }
           : undefined
     return options ? (await app.extensionManager.dialog.confirm(options)) === true : true
@@ -463,11 +558,7 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
     selectedVersion?: string,
   ): Promise<boolean> {
     if (snapshot.installedStatus !== "ready") {
-      showToast(
-        "warn",
-        "ComfyUI-Manager unavailable",
-        "Refresh the installed-node list before changing nodes.",
-      )
+      showToast("warn", t("nodes.managerUnavailableTitle"), t("nodes.managerUnavailableRefresh"))
       return false
     }
     if (isActive(findOperationForPack(snapshot.operations, pack))) return false
@@ -483,10 +574,10 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
       operation,
       status: "starting",
       selectedVersion,
-      message:
+      messageKey:
         operation === "uninstall" || operation === "switch"
-          ? "Waiting for confirmation…"
-          : "Preparing Manager task…",
+          ? "nodes.waitingConfirmation"
+          : "nodes.preparingTask",
     }
     replaceOperation(state)
 
@@ -495,7 +586,7 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
       confirmed = await confirm(operation, pack, selectedVersion)
     } catch (error) {
       confirmed = false
-      showToast("error", "Nodes Manager", errorMessage(error))
+      showToast("error", t("toast.nodesManager"), errorMessage(error))
     }
     const restoreReservation = () => {
       if (snapshot.operations[pack.key]?.taskId !== taskId) return
@@ -510,27 +601,22 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
     }
     if (snapshot.installedStatus !== "ready") {
       restoreReservation()
-      showToast(
-        "warn",
-        "ComfyUI-Manager unavailable",
-        "Refresh the installed-node list before changing nodes.",
-      )
+      showToast("warn", t("nodes.managerUnavailableTitle"), t("nodes.managerUnavailableRefresh"))
       return false
     }
 
     let payload
     try {
       payload = buildManagerQueuePayload(pack, operation, clientId, taskId, selectedVersion)
-    } catch (error) {
+    } catch {
       replaceOperation({
-        ...state,
+        ...withMessageKey(state, "toast.selectVersion"),
         status: "failed",
-        message: errorMessage(error),
       })
       return false
     }
 
-    replaceOperation({ ...state, message: "Submitting task to ComfyUI-Manager…" })
+    replaceOperation(withMessageKey(state, "nodes.submittingTask"))
     try {
       await service.enqueue(payload)
     } catch (error) {
@@ -538,13 +624,19 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
         typeof (error as { status?: unknown })?.status === "number" &&
         (error as { status: number }).status >= 400 &&
         (error as { status: number }).status < 500
-      replaceOperation({
-        ...state,
-        status: definitive ? "failed" : "unknown",
-        message: definitive
-          ? errorMessage(error)
-          : `Manager task acceptance is uncertain. Check task status before retrying: ${errorMessage(error)}`,
-      })
+      replaceOperation(
+        definitive
+          ? {
+              ...withRawMessage(state, errorMessage(error)),
+              status: "failed",
+            }
+          : {
+              ...withMessageKey(state, "nodes.acceptanceUncertain", {
+                error: errorMessage(error),
+              }),
+              status: "unknown",
+            },
+      )
       if (!definitive) void pollPending()
       return false
     }
@@ -553,20 +645,18 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
       await service.startQueue()
       if (snapshot.operations[pack.key]?.taskId !== taskId) return false
       replaceOperation({
-        ...state,
+        ...withMessageKey(state, "nodes.acceptedWaiting"),
         status: "pending",
         accepted: true,
-        message: "Task accepted; waiting for Manager to finish.",
       })
       await pollPending()
       return true
     } catch (error) {
       replaceOperation({
-        ...state,
+        ...withMessageKey(state, "nodes.couldNotStartQueue", { error: errorMessage(error) }),
         status: "unknown",
         accepted: true,
         queueStartFailed: true,
-        message: `Task was accepted, but Manager could not start the queue. Its outcome is unknown: ${errorMessage(error)}`,
       })
       await pollPending()
       return false
@@ -584,30 +674,27 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
       return false
     }
     replaceOperation({
-      ...operation,
+      ...withMessageKey(operation, "nodes.startingAcceptedTask"),
       status: "starting",
-      message: "Starting the accepted Manager task…",
     })
     try {
       await service.startQueue()
       if (snapshot.operations[packKey]?.taskId !== operation.taskId) return false
       replaceOperation({
-        ...operation,
+        ...withMessageKey(operation, "nodes.queueStartedWaiting"),
         status: "pending",
         accepted: true,
         queueStartFailed: false,
-        message: "Queue started; waiting for Manager to finish.",
       })
       await pollPending()
       return true
     } catch (error) {
       if (snapshot.operations[packKey]?.taskId !== operation.taskId) return false
       replaceOperation({
-        ...operation,
+        ...withMessageKey(operation, "nodes.queueStillAccepted", { error: errorMessage(error) }),
         status: "unknown",
         accepted: true,
         queueStartFailed: true,
-        message: `Task remains accepted, but Manager could not start the queue: ${errorMessage(error)}`,
       })
       return false
     }

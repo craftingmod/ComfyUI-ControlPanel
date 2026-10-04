@@ -1,6 +1,7 @@
-import { Download, RotateCwClock, Star, Trash2 } from "lucide-react"
+import { Download, RefreshCcw, RotateCwClock, Star, Trash2 } from "lucide-react"
 import { useId } from "react"
 
+import { useI18n, type TranslationKey, type TranslationValues } from "../i18n/index.tsx"
 import {
   safeImageUrl,
   type ManagedPack,
@@ -16,6 +17,8 @@ import styles from "./nodesManagerCard.module.css"
 type VersionState = {
   loading: boolean
   error?: string
+  errorKey?: TranslationKey
+  errorValues?: TranslationValues
   values?: RegistryVersion[]
 }
 
@@ -49,34 +52,37 @@ function statusReason(version: RegistryVersion | undefined): string | undefined 
   return undefined
 }
 
-function formatCount(value: number | undefined): string {
+function formatCount(value: number | undefined, locale: string): string {
   return typeof value === "number" && Number.isFinite(value)
-    ? new Intl.NumberFormat().format(value)
+    ? new Intl.NumberFormat(locale).format(value)
     : "—"
 }
 
-function formatDate(value: string | undefined): string | undefined {
+function formatDate(value: string | undefined, locale: string): string | undefined {
   if (!value) return undefined
   const date = new Date(value)
   return Number.isNaN(date.valueOf())
     ? undefined
-    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date).replace(/\.$/u, "")
+    : new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(date).replace(/\.$/u, "")
 }
 
-function operationLabel(operation: NodesManagerOperationState): string {
+function operationLabel(
+  operation: NodesManagerOperationState,
+  t: (key: TranslationKey, values?: TranslationValues) => string,
+): string {
   switch (operation.status) {
     case "starting":
-      return "Starting…"
+      return t("operation.starting")
     case "pending":
-      return "In progress"
+      return t("operation.inProgress")
     case "unknown":
-      return "Outcome unknown"
+      return t("nodes.outcomeUnknown")
     case "succeeded":
-      return "Completed"
+      return t("operation.completed")
     case "failed":
-      return "Failed"
+      return t("operation.failed")
     case "skipped":
-      return "Skipped, no changes applied"
+      return t("operation.skipped")
   }
 }
 
@@ -96,6 +102,7 @@ export function NodesManagerCard({
   onSubmit,
   onRetryQueueStart,
 }: NodesManagerCardProps) {
+  const { locale, t } = useI18n()
   const titleId = useId()
   const versionId = useId()
   const versionLabelId = useId()
@@ -114,8 +121,17 @@ export function NodesManagerCard({
   const busy = isOperationActive(operation)
   const canInstall = !installed && pack.source === "Registry" && Boolean(selectedVersion)
   const canSwitch = Boolean(installed && pack.source === "Registry" && selectedVersion)
-  const updated = formatDate(pack.updatedAt)
+  const updated = formatDate(pack.updatedAt, locale)
   const repositoryUrl = safeImageUrl(pack.repository)
+  const sourceKey: TranslationKey =
+    pack.source === "Registry"
+      ? "card.source.registry"
+      : pack.source === "Git"
+        ? "card.source.git"
+        : "card.source.unknown"
+  const operationMessage = operation?.messageKey
+    ? t(operation.messageKey, operation.messageValues)
+    : operation?.message
 
   return (
     <article className={styles.card} aria-labelledby={titleId}>
@@ -143,19 +159,19 @@ export function NodesManagerCard({
             {pack.id}
           </p>
         </div>
-        <Badge>{pack.source}</Badge>
+        <Badge>{t(sourceKey)}</Badge>
       </div>
 
-      <p className={styles.description}>{pack.description || "No description provided."}</p>
+      <p className={styles.description}>{pack.description || t("card.noDescription")}</p>
 
       <div className={styles.metadata}>
-        <span title="GitHub stars">
+        <span title={t("card.githubStars")}>
           <Star className={styles.metadataIcon} aria-hidden="true" fill="currentColor" />
-          {formatCount(pack.stars)}
+          {formatCount(pack.stars, locale)}
         </span>
-        <span title="Downloads">
+        <span title={t("card.downloads")}>
           <Download className={styles.metadataIcon} aria-hidden="true" />
-          {formatCount(pack.downloads)}
+          {formatCount(pack.downloads, locale)}
         </span>
         {updated && (
           <span title={updated}>
@@ -164,36 +180,47 @@ export function NodesManagerCard({
           </span>
         )}
       </div>
-      <p className={styles.author}>By {pack.author || "Unknown author"}</p>
+      <p className={styles.author}>
+        {t("card.author", {
+          author:
+            pack.author || (installed ? t("toast.localInstallation") : t("card.unknownAuthor")),
+        })}
+      </p>
 
       {repositoryUrl ? (
         <a className={styles.repository} href={repositoryUrl} target="_blank" rel="noreferrer">
-          View source ↗
+          {t("card.viewSource")}
         </a>
       ) : pack.repository ? (
         <p className={styles.repositoryText} title={pack.repository}>
-          Source: {pack.repository}
+          {t("card.sourceText", { source: pack.repository })}
         </p>
       ) : null}
 
       <div className={styles.installDetails}>
         <span>
-          {installed ? `Installed: ${installed.version || "version unavailable"}` : "Not installed"}
+          {installed
+            ? t("card.installed", {
+                version: installed.version || t("card.versionUnavailable"),
+              })
+            : t("card.notInstalled")}
         </span>
         {installed && (
           <span
             className={installed.enabled === false ? styles.disabledState : styles.enabledState}
           >
-            {installed.enabled === false ? "Disabled" : "Enabled"}
+            {installed.enabled === false ? t("card.disabled") : t("card.enabled")}
           </span>
         )}
-        {pack.latestVersion?.version && <span>Latest: {pack.latestVersion.version}</span>}
-        {pack.updateAvailable && <Badge tone="warning">Update available</Badge>}
+        {pack.latestVersion?.version && (
+          <span>{t("card.latest", { version: pack.latestVersion.version })}</span>
+        )}
+        {pack.updateAvailable && <Badge tone="warning">{t("card.updateAvailable")}</Badge>}
       </div>
 
       {(pack.source === "Registry" || (!installed && pack.latestVersion)) && (
         <div className={styles.versionField}>
-          <span id={versionLabelId}>Registry version</span>
+          <span id={versionLabelId}>{t("card.registryVersion")}</span>
           {hasLoadedVersions ? (
             <select
               id={versionId}
@@ -203,14 +230,14 @@ export function NodesManagerCard({
               disabled={!actionsEnabled || busy}
               onChange={(event) => onSelectVersion(event.currentTarget.value)}
             >
-              <option value="">Choose a version…</option>
+              <option value="">{t("card.chooseVersion")}</option>
               {versions.map((version) => {
                 const flaggedVersion = isFlagged(version)
                 const status = version.status && !flaggedVersion ? ` — ${version.status}` : ""
                 return (
                   <option key={version.id ?? version.version} value={version.version}>
                     {version.version}
-                    {flaggedVersion ? " — Flagged" : status}
+                    {flaggedVersion ? ` — ${t("card.flaggedVersion")}` : status}
                   </option>
                 )
               })}
@@ -221,30 +248,37 @@ export function NodesManagerCard({
               type="button"
               data-action="load-version"
               busy={versionState?.loading}
-              busyLabel="Loading versions…"
+              busyLabel={t("card.loadingVersions")}
               disabled={!actionsEnabled || busy}
               onClick={onLoadVersions}
             >
-              Choose a version…
+              {t("card.chooseVersion")}
             </Button>
           )}
-          {versionState?.error && (
+          {(versionState?.error || versionState?.errorKey) && (
             <div className={styles.inlineError}>
-              <span>Could not load versions: {versionState.error}</span>
+              <span>
+                {t("card.couldNotLoadVersions", {
+                  error: versionState.errorKey
+                    ? t(versionState.errorKey, versionState.errorValues)
+                    : (versionState.error ?? t("nodes.unknownError")),
+                })}
+              </span>
               <Button
                 size="sm"
                 type="button"
                 disabled={!actionsEnabled || busy}
                 onClick={onRetryVersions}
               >
-                Retry
+                {t("nodes.retry")}
               </Button>
             </div>
           )}
           {flagged && (
             <p className={styles.flaggedNote} role="note">
-              Flagged Registry version{flaggedReason ? `: ${flaggedReason}` : "."} ComfyUI-Manager
-              policy still controls whether it can be installed.
+              {t("card.flaggedNotice", {
+                reason: flaggedReason ? t("card.flaggedReason", { reason: flaggedReason }) : "",
+              })}
             </p>
           )}
         </div>
@@ -259,7 +293,7 @@ export function NodesManagerCard({
             disabled={!actionsEnabled || busy || !canInstall}
             onClick={() => onSubmit("install", selectedVersion)}
           >
-            Install
+            {t("card.install")}
           </Button>
         )}
         {installed && (
@@ -271,7 +305,8 @@ export function NodesManagerCard({
               disabled={!actionsEnabled || busy}
               onClick={() => onSubmit("update")}
             >
-              Update
+              <RefreshCcw size={16} />
+              {t("card.update")}
             </Button>
             {pack.source === "Registry" && (
               <Button
@@ -280,7 +315,7 @@ export function NodesManagerCard({
                 disabled={!actionsEnabled || busy || !canSwitch}
                 onClick={() => onSubmit("switch", selectedVersion)}
               >
-                Install selected version
+                {t("card.installSelectedVersion")}
               </Button>
             )}
             <Button
@@ -289,14 +324,14 @@ export function NodesManagerCard({
               disabled={!actionsEnabled || busy}
               onClick={() => onSubmit(installed.enabled === true ? "disable" : "enable")}
             >
-              {installed.enabled === true ? "Disable" : "Enable"}
+              {installed.enabled === true ? t("card.disable") : t("card.enable")}
             </Button>
             <Button
               size="sm"
               variant="danger"
               type="button"
-              aria-label={`Uninstall ${pack.name}`}
-              title={`Uninstall ${pack.name}`}
+              aria-label={t("card.uninstall", { name: pack.name })}
+              title={t("card.uninstall", { name: pack.name })}
               disabled={!actionsEnabled || busy}
               onClick={() => onSubmit("uninstall")}
             >
@@ -307,9 +342,7 @@ export function NodesManagerCard({
       </div>
 
       {!actionsEnabled && (
-        <p className={styles.managerUnavailable}>
-          Actions are unavailable until ComfyUI-Manager installed-node data loads.
-        </p>
+        <p className={styles.managerUnavailable}>{t("card.managerUnavailable")}</p>
       )}
       {operation && (
         <div
@@ -317,8 +350,8 @@ export function NodesManagerCard({
           role={operation.status === "failed" ? "alert" : "status"}
           aria-live="polite"
         >
-          <strong>{operationLabel(operation)}</strong>
-          {operation.message && <span>{operation.message}</span>}
+          <strong>{operationLabel(operation, t)}</strong>
+          {operationMessage && <span>{operationMessage}</span>}
           {operation.queueStartFailed && (
             <Button
               size="sm"
@@ -329,11 +362,11 @@ export function NodesManagerCard({
               }
               onClick={onRetryQueueStart}
             >
-              Retry Queue Start
+              {t("nodes.retryQueue")}
             </Button>
           )}
           {operation.restartRequired && (
-            <span className={styles.restartNote}>Restart ComfyUI to load this change.</span>
+            <span className={styles.restartNote}>{t("nodes.restartRequired")}</span>
           )}
         </div>
       )}

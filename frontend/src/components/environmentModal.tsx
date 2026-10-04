@@ -1,13 +1,14 @@
 import { Fragment } from "react"
 
+import { useI18n, type TranslationKey } from "../i18n/index.tsx"
 import type { JsonObject } from "../types.ts"
 import { ControlPanelDialog } from "./controlPanelDialog.tsx"
 
 import styles from "./controlPanel.module.css"
 
 type EnvironmentSection = {
-  title: string
-  rows: Array<[string, unknown]>
+  title: TranslationKey
+  rows: Array<[TranslationKey, unknown]>
 }
 
 type EnvironmentModalProps = {
@@ -33,60 +34,61 @@ function environmentSections(data: JsonObject): EnvironmentSection[] | undefined
   const workspace = asRecord(environment.workspace)
   return [
     {
-      title: "Comfy CLI",
+      title: "environment.cli",
       rows: [
-        ["Version", cli?.version],
-        ["Command", cli?.command],
+        ["environment.version", cli?.version],
+        ["environment.command", cli?.command],
       ],
     },
     {
-      title: "Python",
+      title: "environment.python",
       rows: [
-        ["Python Version", python?.version],
-        ["Python Executable", python?.executable],
-        ["Virtualenv Path", python?.virtualenv],
-        ["Conda Env", python?.conda_env],
+        ["environment.pythonVersion", python?.version],
+        ["environment.pythonExecutable", python?.executable],
+        ["environment.virtualenvPath", python?.virtualenv],
+        ["environment.condaEnvironment", python?.conda_env],
       ],
     },
     {
-      title: "Workspace",
+      title: "environment.workspace",
       rows: [
-        ["Current selected workspace", workspace?.path],
-        ["Workspace Type", workspace?.type],
-        ["Manager", workspace?.manager_mode],
-        ["UV Compile Default", workspace?.uv_compile_default],
+        ["environment.selectedWorkspace", workspace?.path],
+        ["environment.workspaceType", workspace?.type],
+        ["environment.manager", workspace?.manager_mode],
+        ["environment.uvCompileDefault", workspace?.uv_compile_default],
       ],
     },
     {
-      title: "Server",
+      title: "environment.server",
       rows: [
-        ["Comfy Server Running", server?.running],
-        ["Server URL", server?.url],
+        ["environment.serverRunning", server?.running],
+        ["environment.serverUrl", server?.url],
       ],
     },
     {
-      title: "Config",
+      title: "environment.config",
       rows: [
-        ["Config Path", config?.path],
-        ["Default ComfyUI workspace", config?.default_workspace],
-        ["Default ComfyUI launch extra options", config?.default_launch_extras],
-        ["Recent ComfyUI workspace", config?.recent_workspace],
-        ["Tracking Analytics", config?.tracking_enabled],
-        ["Background ComfyUI", config?.background],
+        ["environment.configPath", config?.path],
+        ["environment.defaultWorkspace", config?.default_workspace],
+        ["environment.defaultLaunchOptions", config?.default_launch_extras],
+        ["environment.recentWorkspace", config?.recent_workspace],
+        ["environment.trackingAnalytics", config?.tracking_enabled],
+        ["environment.backgroundComfyUI", config?.background],
       ],
     },
   ]
 }
 
-function environmentValueText(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "Not set"
-  if (typeof value === "boolean") return value ? "Yes" : "No"
+function environmentValueText(value: unknown, t: (key: TranslationKey) => string): string {
+  if (value === null || value === undefined || value === "") return t("environment.notSet")
+  if (typeof value === "boolean") return value ? t("environment.yes") : t("environment.no")
   return typeof value === "string" || typeof value === "number" || typeof value === "bigint"
     ? String(value)
-    : (JSON.stringify(value) ?? "Not set")
+    : (JSON.stringify(value) ?? t("environment.notSet"))
 }
 
 export function EnvironmentModal({ isOpen, data, error, onClose }: EnvironmentModalProps) {
+  const { t } = useI18n()
   if (!isOpen) return null
   const sections = data ? environmentSections(data) : undefined
   const result = asRecord(data?.result)
@@ -94,7 +96,7 @@ export function EnvironmentModal({ isOpen, data, error, onClose }: EnvironmentMo
 
   return (
     <ControlPanelDialog
-      title="Comfy CLI Environment"
+      title={t("environment.title")}
       titleId="cp-environment-title"
       className={styles.environmentModal}
       onClose={onClose}
@@ -103,7 +105,7 @@ export function EnvironmentModal({ isOpen, data, error, onClose }: EnvironmentMo
         {error ? (
           error
         ) : !data ? (
-          "Loading comfy env..."
+          t("environment.loading")
         ) : !sections ? (
           <pre className={styles.environmentFallback}>{JSON.stringify(data, null, 2)}</pre>
         ) : (
@@ -111,8 +113,8 @@ export function EnvironmentModal({ isOpen, data, error, onClose }: EnvironmentMo
             <table className={styles.environmentTable}>
               <thead>
                 <tr>
-                  <th scope="col">Environment</th>
-                  <th scope="col">Value</th>
+                  <th scope="col">{t("environment.heading")}</th>
+                  <th scope="col">{t("environment.value")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -120,13 +122,13 @@ export function EnvironmentModal({ isOpen, data, error, onClose }: EnvironmentMo
                   <Fragment key={section.title}>
                     <tr className={styles.environmentSectionRow}>
                       <th scope="rowgroup" colSpan={2}>
-                        {section.title}
+                        {t(section.title)}
                       </th>
                     </tr>
                     {section.rows.map(([label, value]) => (
                       <tr key={label}>
-                        <th scope="row">{label}</th>
-                        <td>{environmentValueText(value)}</td>
+                        <th scope="row">{t(label)}</th>
+                        <td>{environmentValueText(value, t)}</td>
                       </tr>
                     ))}
                   </Fragment>
@@ -135,7 +137,7 @@ export function EnvironmentModal({ isOpen, data, error, onClose }: EnvironmentMo
             </table>
             {stderr && (
               <pre className={`${styles.environmentFallback} ${styles.environmentStderr}`}>
-                {`stderr\n${stderr}`}
+                {`${t("environment.stderr")}\n${stderr}`}
               </pre>
             )}
           </>

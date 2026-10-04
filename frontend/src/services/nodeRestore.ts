@@ -1,5 +1,8 @@
+import { translate, type TranslationKey, type TranslationValues } from "../i18n/messages.ts"
 import type { JsonObject } from "../types.ts"
 import { createMetadataCache } from "./cnrMetadata.ts"
+
+type Translator = (key: TranslationKey, values?: TranslationValues) => string
 
 export type NodeRestoreManifest = JsonObject & {
   format_version: 1
@@ -87,7 +90,10 @@ export function buildNodeRestoreManifest(
   }
 }
 
-export function parseNodeRestoreManifest(text: string): NodeRestoreManifest {
+export function parseNodeRestoreManifest(
+  text: string,
+  t: Translator = (key, values) => translate(key, "en", values),
+): NodeRestoreManifest {
   const value: unknown = JSON.parse(text)
   const manifest = asRecord(value)
   if (
@@ -95,7 +101,7 @@ export function parseNodeRestoreManifest(text: string): NodeRestoreManifest {
     !Array.isArray(manifest.registry_nodes) ||
     !Array.isArray(manifest.git_nodes)
   ) {
-    throw new Error("This is not a supported node restore manifest.")
+    throw new Error(t("error.nodeRestoreInvalid"))
   }
   return {
     ...manifest,
@@ -112,7 +118,7 @@ function displayCommandArgument(value: string): string {
   return /\s/.test(value) ? JSON.stringify(value) : value
 }
 
-export function dependencySyncNotice(result: unknown): string | undefined {
+export function dependencySyncCommand(result: unknown): string | undefined {
   const data = asRecord(result)
   if (data?.dependency_sync_required !== true) {
     return undefined
@@ -122,5 +128,13 @@ export function dependencySyncNotice(result: unknown): string | undefined {
     : []
   const commandText =
     command.length > 0 ? command.map(displayCommandArgument).join(" ") : "comfy node uv-sync"
-  return `Close ComfyUI, then run: ${commandText}`
+  return commandText
+}
+
+export function dependencySyncNotice(
+  result: unknown,
+  t: Translator = (key, values) => translate(key, "en", values),
+): string | undefined {
+  const command = dependencySyncCommand(result)
+  return command ? t("nodeRestore.dependencySyncRequired", { command }) : undefined
 }

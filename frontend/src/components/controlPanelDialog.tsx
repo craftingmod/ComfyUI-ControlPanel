@@ -1,10 +1,11 @@
+import { X } from "lucide-react"
 import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react"
 import { createPortal } from "react-dom"
 
+import { useI18n } from "../i18n/index.tsx"
 import { Button } from "./ui/button.tsx"
 
 import styles from "./controlPanel.module.css"
-import { X } from "lucide-react";
 
 type ControlPanelDialogProps = {
   title: string
@@ -30,6 +31,7 @@ export function ControlPanelDialog({
 }: ControlPanelDialogProps) {
   const panelRef = useRef<HTMLElement>(null)
   const onCloseRef = useRef(onClose)
+  const { t } = useI18n()
   useLayoutEffect(() => {
     onCloseRef.current = onClose
   }, [onClose])
@@ -105,7 +107,7 @@ export function ControlPanelDialog({
           <h2 id={titleId} className={styles.title}>
             {title}
           </h2>
-          <Button size="icon" type="button" aria-label="Close" onClick={onClose}>
+          <Button size="icon" type="button" aria-label={t("panel.close")} onClick={onClose}>
             <X />
           </Button>
         </div>

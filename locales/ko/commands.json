@@ -1,0 +1,8 @@
+{
+  "control-panel_open": {
+    "label": "ControlPanel 열기"
+  },
+  "control-panel_fix-cnr-id": {
+    "label": "메타데이터 복구"
+  }
+}

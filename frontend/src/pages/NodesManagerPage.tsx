@@ -14,26 +14,32 @@ import { Virtuoso, type Components, type VirtuosoHandle } from "react-virtuoso"
 import { ControlPanelDialog } from "../components/controlPanelDialog.tsx"
 import { NodesManagerCard } from "../components/NodesManagerCard.tsx"
 import { Button } from "../components/ui/button.tsx"
+import { useI18n, type TranslationKey } from "../i18n/index.tsx"
 import {
   filterAndSortManagedPacks,
+  type ManagerOperation,
   type NodesManagerFilter,
   type NodesManagerSort,
 } from "../services/nodesManager.ts"
-import type { NodesManagerController } from "../services/nodesManagerController.ts"
+import type {
+  NodesManagerController,
+  NodesManagerOperationState,
+} from "../services/nodesManagerController.ts"
 import { findOperationForPack } from "../services/nodesManagerController.ts"
 
 import styles from "./nodesManager.module.css"
 
-const FILTERS: { id: NodesManagerFilter; label: string }[] = [
-  { id: "all", label: "All Extensions" },
-  { id: "not-installed", label: "Not Installed" },
-  { id: "installed", label: "All Installed" },
-  { id: "updates", label: "Updates Available" },
-  { id: "disabled", label: "Disabled" },
+const FILTERS: { id: NodesManagerFilter; key: TranslationKey }[] = [
+  { id: "all", key: "nodes.filter.all" },
+  { id: "not-installed", key: "nodes.filter.notInstalled" },
+  { id: "installed", key: "nodes.filter.installed" },
+  { id: "updates", key: "nodes.filter.updates" },
+  { id: "disabled", key: "nodes.filter.disabled" },
 ]
 
 const ExtensionScroller = forwardRef<HTMLDivElement, ScrollerProps>(
   function ExtensionScroller(props, ref) {
+    const { t } = useI18n()
     return (
       <div
         {...props}
@@ -41,7 +47,7 @@ const ExtensionScroller = forwardRef<HTMLDivElement, ScrollerProps>(
         className={styles.cardViewport}
         tabIndex={props.tabIndex ?? 0}
         role="region"
-        aria-label="Extensions"
+        aria-label={t("nodes.aria.extensions")}
       />
     )
   },
@@ -54,6 +60,7 @@ type NodesManagerPageProps = {
 }
 
 export function NodesManagerPage({ controller }: NodesManagerPageProps) {
+  const { locale, t } = useI18n()
   const snapshot = useSyncExternalStore(
     controller.subscribe,
     controller.getSnapshot,
@@ -73,6 +80,47 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
     () => filterAndSortManagedPacks(snapshot.packs, filter, deferredSearch, sort),
     [snapshot.packs, filter, deferredSearch, sort],
   )
+  const formattedCount = new Intl.NumberFormat(locale).format(filteredPacks.length)
+
+  function operationStatusLabel(status: NodesManagerOperationState["status"]): string {
+    switch (status) {
+      case "starting":
+        return t("operation.starting")
+      case "pending":
+        return t("operation.inProgress")
+      case "unknown":
+        return t("nodes.outcomeUnknown")
+      case "succeeded":
+        return t("operation.completed")
+      case "failed":
+        return t("operation.failed")
+      case "skipped":
+        return t("operation.skipped")
+    }
+  }
+
+  function operationName(operation: ManagerOperation): string {
+    switch (operation) {
+      case "install":
+        return t("card.install")
+      case "update":
+        return t("card.update")
+      case "switch":
+        return t("card.installSelectedVersion")
+      case "disable":
+        return t("card.disable")
+      case "enable":
+        return t("card.enable")
+      case "uninstall":
+        return t("card.uninstall", { name: "" }).trim()
+    }
+  }
+
+  function operationMessage(operation: NodesManagerOperationState): string | undefined {
+    return operation.messageKey
+      ? t(operation.messageKey, operation.messageValues)
+      : operation.message
+  }
   const packRows = useMemo(() => {
     const rows: (typeof filteredPacks)[] = []
     for (let index = 0; index < filteredPacks.length; index += columnCount) {
@@ -156,16 +204,16 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
 
   return (
     <ControlPanelDialog
-      title="Nodes Manager"
+      title={t("nodes.title")}
       titleId="cp-nodes-manager-title"
       className={styles.managerDialog}
       initialFocusRef={searchRef}
       onClose={controller.close}
     >
       <div className={styles.managerBody}>
-        <aside className={styles.sidebar} aria-label="Extension filters">
-          <p className={styles.sidebarLabel}>Browse</p>
-          <nav className={styles.filterList} aria-label="Filter extensions">
+        <aside className={styles.sidebar} aria-label={t("nodes.filtersLabel")}>
+          <p className={styles.sidebarLabel}>{t("nodes.browse")}</p>
+          <nav className={styles.filterList} aria-label={t("nodes.filterExtensions")}>
             {FILTERS.map((item) => (
               <Button
                 key={item.id}
@@ -175,27 +223,24 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
                 aria-pressed={filter === item.id}
                 onClick={() => setFilter(item.id)}
               >
-                <span>{item.label}</span>
+                <span>{t(item.key)}</span>
                 <span className={styles.filterCount}>{counts[item.id]}</span>
               </Button>
             ))}
           </nav>
-          <div className={styles.sidebarHelp}>
-            Install and update tasks run through ComfyUI-Manager. Restart ComfyUI to load node
-            changes.
-          </div>
+          <div className={styles.sidebarHelp}>{t("nodes.sidebarHelp")}</div>
         </aside>
 
         <main className={styles.main}>
           <div className={styles.toolbar}>
             <label className={styles.searchField}>
-              <span className={styles.visuallyHidden}>Search extensions</span>
+              <span className={styles.visuallyHidden}>{t("nodes.searchLabel")}</span>
               <input
                 ref={searchRef}
                 type="search"
                 name="nodes-manager-search"
                 autoComplete="off"
-                placeholder="Search name, ID, author, or description…"
+                placeholder={t("nodes.searchPlaceholder")}
                 value={search}
                 onChange={(event) => {
                   setSearch(event.currentTarget.value)
@@ -203,7 +248,7 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
               />
             </label>
             <label className={styles.sortField}>
-              <span className={styles.visuallyHidden}>Sort extensions</span>
+              <span className={styles.visuallyHidden}>{t("nodes.sortLabel")}</span>
               <select
                 name="nodes-manager-sort"
                 value={sort}
@@ -211,69 +256,81 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
                   setSort(event.currentTarget.value as NodesManagerSort)
                 }}
               >
-                <option value="name">Sort: Name</option>
-                <option value="stars">Sort: Most Stars</option>
-                <option value="updated">Sort: Recently Updated</option>
-                <option value="downloads">Sort: Most Downloads</option>
+                <option value="name">{t("nodes.sort.name")}</option>
+                <option value="stars">{t("nodes.sort.stars")}</option>
+                <option value="updated">{t("nodes.sort.updated")}</option>
+                <option value="downloads">{t("nodes.sort.downloads")}</option>
               </select>
             </label>
             <Button
               type="button"
               busy={snapshot.checking}
-              busyLabel="Refreshing…"
+              busyLabel={t("nodes.refreshing")}
               onClick={() => void controller.refresh()}
             >
-              Refresh
+              {t("nodes.refresh")}
             </Button>
           </div>
 
           {(snapshot.catalogSource || snapshot.catalogWarning) && (
             <div className={styles.sourceNotice} role="status">
-              <strong>Catalog source: {snapshot.catalogSource ?? "Unknown"}</strong>
+              <strong>
+                {t("nodes.catalogSource", {
+                  source: snapshot.catalogSource ?? t("nodes.unknown"),
+                })}
+              </strong>
               {snapshot.catalogWarning && <span>{snapshot.catalogWarning}</span>}
             </div>
           )}
           {snapshot.catalogStatus === "loading" && (
             <p className={styles.notice} role="status" aria-live="polite">
-              Loading the local extension catalog…
+              {t("nodes.catalogLoading")}
             </p>
           )}
           {snapshot.catalogStatus === "error" && (
             <div className={styles.errorNotice} role="alert">
               <span>
-                Could not read the local extension catalog:{" "}
-                {snapshot.catalogError ?? "Unknown error"}
+                {t("nodes.catalogReadFailed", {
+                  error: snapshot.catalogErrorKey
+                    ? t(snapshot.catalogErrorKey, snapshot.catalogErrorValues)
+                    : (snapshot.catalogError ?? t("nodes.unknownError")),
+                })}
               </span>
               <Button size="sm" type="button" onClick={() => void controller.refresh()}>
-                Retry
+                {t("nodes.retry")}
               </Button>
             </div>
           )}
           {snapshot.installedStatus === "loading" && (
             <p className={styles.notice} role="status" aria-live="polite">
-              Checking ComfyUI-Manager availability…
+              {t("nodes.managerChecking")}
             </p>
           )}
           {snapshot.installedStatus === "error" && (
             <div className={styles.errorNotice} role="alert">
               <span>
-                ComfyUI-Manager installed-node data is unavailable. Actions are disabled.
-                {snapshot.installedError ? ` ${snapshot.installedError}` : ""}
+                {t("nodes.managerUnavailable", {
+                  detail: snapshot.installedErrorKey
+                    ? ` ${t(snapshot.installedErrorKey, snapshot.installedErrorValues)}`
+                    : snapshot.installedError
+                      ? ` ${snapshot.installedError}`
+                      : "",
+                })}
               </span>
               <Button size="sm" type="button" onClick={() => void controller.refresh()}>
-                Retry
+                {t("nodes.retry")}
               </Button>
             </div>
           )}
           {snapshot.installedStatus === "ready" && (
             <p className={styles.managerReady} role="status">
-              ComfyUI-Manager is available. Changes require a ComfyUI restart.
+              {t("nodes.managerReady")}
             </p>
           )}
 
           {orphanedOperations.length > 0 && (
-            <section className={styles.taskSummary} aria-label="Recent Manager results">
-              <h3>Recent Manager results</h3>
+            <section className={styles.taskSummary} aria-label={t("nodes.recentResults")}>
+              <h3>{t("nodes.recentResults")}</h3>
               {orphanedOperations.map((operation) => (
                 <div
                   key={operation.taskId}
@@ -282,12 +339,13 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
                   aria-live="polite"
                 >
                   <strong>
-                    {operation.pack.name} · {operation.operation}
+                    {t("nodes.operationSeparator", {
+                      pack: operation.pack.name,
+                      operation: operationName(operation.operation),
+                    })}
                   </strong>
-                  <span>
-                    {operation.status === "unknown" ? "Outcome unknown" : operation.status}
-                  </span>
-                  {operation.message && <span>{operation.message}</span>}
+                  <span>{operationStatusLabel(operation.status)}</span>
+                  {operationMessage(operation) && <span>{operationMessage(operation)}</span>}
                   {operation.queueStartFailed && (
                     <Button
                       size="sm"
@@ -296,30 +354,34 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
                       disabled={operation.status === "starting" || operation.status === "pending"}
                       onClick={() => void controller.retryQueueStart(operation.packKey)}
                     >
-                      Retry Queue Start
+                      {t("nodes.retryQueue")}
                     </Button>
                   )}
-                  {operation.restartRequired && <span>Restart ComfyUI to load this change.</span>}
+                  {operation.restartRequired && <span>{t("nodes.restartRequired")}</span>}
                 </div>
               ))}
             </section>
           )}
 
           <div className={styles.resultsHeader}>
-            <h3>{FILTERS.find((item) => item.id === filter)?.label}</h3>
+            <h3>{t(FILTERS.find((item) => item.id === filter)?.key ?? "nodes.filter.all")}</h3>
             <span className={styles.resultCount} aria-live="polite">
-              {filteredPacks.length.toLocaleString()}{" "}
-              {filteredPacks.length === 1 ? "extension" : "extensions"}
+              {t(
+                filteredPacks.length === 1
+                  ? "nodes.resultCount.singular"
+                  : "nodes.resultCount.plural",
+                { count: formattedCount },
+              )}
             </span>
           </div>
 
           {snapshot.catalogStatus !== "loading" && filteredPacks.length === 0 && (
             <div className={styles.emptyState}>
               {snapshot.catalogStatus === "error" && snapshot.packs.length === 0
-                ? "No cached catalog is available. Check the ControlPanel Registry cache and retry."
+                ? t("nodes.empty.noCatalog")
                 : search.trim()
-                  ? "No extensions match this search."
-                  : "No extensions match this filter."}
+                  ? t("nodes.empty.search")
+                  : t("nodes.empty.filter")}
             </div>
           )}
 

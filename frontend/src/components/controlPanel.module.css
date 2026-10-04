@@ -145,8 +145,7 @@
 .restartNotice {
   margin: 0 0 var(--space-3sm);
   padding: var(--space-sm) var(--space-3sm);
-  border: var(--cp-border-width) solid
-    color-mix(in srgb, var(--cp-warning) 40%, var(--cp-border));
+  border: var(--cp-border-width) solid color-mix(in srgb, var(--cp-warning) 40%, var(--cp-border));
   border-radius: var(--cp-radius);
   background: color-mix(in srgb, var(--cp-warning) 12%, var(--cp-panel));
   color: var(--cp-text);

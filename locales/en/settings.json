@@ -1,0 +1,22 @@
+{
+  "ControlPanel_Debug_Logging": {
+    "name": "Enable Debug Logging",
+    "tooltip": "Show detailed debug logs in the browser console during manager operations"
+  },
+  "ControlPanel_Manager_Repository_Data_Override": {
+    "name": "Replace Manager Repository Data",
+    "tooltip": "Use ControlPanel's cached Manager repository data and force ComfyUI Manager offline channel settings"
+  },
+  "ControlPanel_Manager_Repository_Data_Channel": {
+    "name": "Manager Repository Data Source",
+    "tooltip": "Choose where ControlPanel fetches ComfyUI Manager repository data",
+    "options": {
+      "jsdelivr": "jsDelivr",
+      "github": "GitHub Raw"
+    }
+  },
+  "ControlPanel_Allow_Flagged_Version_As_Latest": {
+    "name": "Allow flagged version as latest",
+    "tooltip": "Use a newer cached Flagged version as latest in Manager exports, preserving its Registry status"
+  }
+}

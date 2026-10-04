@@ -1,5 +1,6 @@
 import type { ComfyApp } from "@comfyorg/comfyui-frontend-types"
 
+import { createTranslator } from "../i18n/messages.ts"
 import {
   applyMetadataChange,
   CnrMetadataService,
@@ -38,18 +39,9 @@ type ChangeAwareGraph = MetadataGraph & {
   setDirtyCanvas?: (foreground: boolean, background: boolean) => void
 }
 
-function formatSummary(summary: FixMetadataSummary): string {
-  return [
-    `Updated: ${summary.updated}`,
-    `Already correct: ${summary.alreadyCorrect}`,
-    `Unresolved: ${summary.unresolved}`,
-    `Skipped: ${summary.skipped}`,
-    `Conflicts preserved: ${summary.conflictsPreserved}`,
-  ].join(" · ")
-}
-
 export function createCnrMetadataController(app: ComfyApp): CnrMetadataController {
   const service = new CnrMetadataService(app)
+  const t = createTranslator(() => app.extensionManager.setting?.get?.("Comfy.Locale"))
   const pendingNodes = new Set<MetadataNode>()
   let warnedAboutInitialization = false
   let warnedAboutConflict = false
@@ -99,8 +91,8 @@ export function createCnrMetadataController(app: ComfyApp): CnrMetadataControlle
     if (state !== "ready") {
       app.extensionManager.toast.add({
         severity: "error",
-        summary: "Repair Metadata",
-        detail: `Metadata APIs are not fully available. ${service.lastErrors.join(" ")}`,
+        summary: t("command.repairMetadata"),
+        detail: t("metadata.apiUnavailable", { error: service.lastErrors.join(" ") }),
         life: 7000,
       })
       return undefined
@@ -155,8 +147,14 @@ export function createCnrMetadataController(app: ComfyApp): CnrMetadataControlle
 
     app.extensionManager.toast.add({
       severity: summary.unresolved > 0 ? "warn" : "success",
-      summary: "Repair Metadata",
-      detail: formatSummary(summary),
+      summary: t("command.repairMetadata"),
+      detail: t("metadata.summary", {
+        updated: summary.updated,
+        alreadyCorrect: summary.alreadyCorrect,
+        unresolved: summary.unresolved,
+        skipped: summary.skipped,
+        conflictsPreserved: summary.conflictsPreserved,
+      }),
       life: 7000,
     })
     return summary

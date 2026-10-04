@@ -1,0 +1,22 @@
+{
+  "ControlPanel_Debug_Logging": {
+    "name": "디버그 로그 사용",
+    "tooltip": "매니저 작업 중 브라우저 콘솔에 자세한 로그 표시"
+  },
+  "ControlPanel_Manager_Repository_Data_Override": {
+    "name": "매니저 저장소 데이터 대체",
+    "tooltip": "ControlPanel의 캐시된 매니저 저장소 데이터를 사용하고 ComfyUI Manager의 오프라인 채널 설정 적용"
+  },
+  "ControlPanel_Manager_Repository_Data_Channel": {
+    "name": "매니저 저장소 데이터 출처",
+    "tooltip": "ControlPanel에서 ComfyUI Manager 저장소 데이터를 가져올 위치 선택",
+    "options": {
+      "jsdelivr": "jsDelivr",
+      "github": "GitHub Raw"
+    }
+  },
+  "ControlPanel_Allow_Flagged_Version_As_Latest": {
+    "name": "Flagged 버전을 최신 버전으로 허용",
+    "tooltip": "Manager 내보내기에서 캐시된 최신 Flagged 버전을 최신 버전으로 사용하고 Registry 상태 유지"
+  }
+}

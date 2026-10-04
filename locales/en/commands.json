@@ -1,0 +1,8 @@
+{
+  "control-panel_open": {
+    "label": "Open ControlPanel"
+  },
+  "control-panel_fix-cnr-id": {
+    "label": "Repair Metadata"
+  }
+}

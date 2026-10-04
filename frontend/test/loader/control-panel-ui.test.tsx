@@ -79,7 +79,7 @@ async function mountControlPanel(overrides: Partial<ControlPanelActions> = {}) {
     isOpen: true,
     log: "Retained operation log",
     managerCacheControlsEnabled: true,
-    managerCacheStatus: "Manager cache is available.",
+    managerCacheStatus: "panel.managerCacheEnabled",
     updateCheckOutput: "",
   }
   const listeners = new Set<() => void>()
@@ -256,7 +256,7 @@ it("does not start status polling when a job POST resolves after the Panel close
     await act(async () => {
       controller.open()
       await new Promise((resolve) => setTimeout(resolve, 0))
-      startJob = controller.startUpdateJob("Update ComfyUI", API_ROUTES.UPDATE_COMFYUI)
+      startJob = controller.startUpdateJob("panel.action.updateComfyUI", API_ROUTES.UPDATE_COMFYUI)
     })
     expect(fetchApi).toHaveBeenCalledWith(
       API_ROUTES.UPDATE_COMFYUI,

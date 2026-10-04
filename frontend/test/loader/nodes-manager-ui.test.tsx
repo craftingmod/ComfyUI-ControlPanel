@@ -412,7 +412,7 @@ it("keeps an orphaned accepted task visible and retries only Queue Start", async
     managerSnapshot([], { operations: { [pack.key]: operation } }),
   )
   try {
-    expect(document.body.textContent).toContain("Pack removed-git-pack · uninstall")
+    expect(document.body.textContent).toContain("Pack removed-git-pack · Uninstall")
     expect(document.body.textContent).toContain("Outcome unknown")
     await act(async () => findButton("Retry Queue Start").click())
     expect(mounted.controller.retryQueueStart).toHaveBeenCalledWith(pack.key)
@@ -427,7 +427,7 @@ it("keeps the parent dialog inert while open, closes on Escape, and reopens with
     isOpen: true,
     log: "",
     managerCacheControlsEnabled: false,
-    managerCacheStatus: "",
+    managerCacheStatus: "panel.managerCacheEnabled",
     updateCheckOutput: "",
   }
   const panelListeners = new Set<() => void>()

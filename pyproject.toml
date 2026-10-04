@@ -29,7 +29,7 @@ Repository = "https://github.com/craftingmod/ComfyUI-ControlPanel"
 PublisherId = "alyac"
 DisplayName = "ComfyUI-ControlPanel"
 Icon = "https://cdn.jsdelivr.net/gh/craftingmod/ComfyUI-ControlPanel/assets/icon.svg"
-includes = ["dist", "backend/_version.py"]
+includes = ["dist", "locales", "backend/_version.py"]
 
 [tool.comfy.version]
 path = "backend/_version.py"

@@ -4,8 +4,7 @@
   align-items: center;
   min-height: var(--space-md);
   padding: var(--space-2xs) var(--space-xs);
-  border: var(--cp-border-width) solid
-    color-mix(in srgb, var(--cp-accent) 50%, var(--cp-border));
+  border: var(--cp-border-width) solid color-mix(in srgb, var(--cp-accent) 50%, var(--cp-border));
   border-radius: 999px;
   background: color-mix(in srgb, var(--cp-accent) 10%, var(--cp-panel));
   color: color-mix(in srgb, var(--cp-accent) 65%, var(--cp-text));

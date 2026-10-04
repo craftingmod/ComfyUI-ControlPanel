@@ -4,13 +4,16 @@ import { createRoot, type Root } from "react-dom/client"
 
 import { API_ROUTES } from "../constants.ts"
 import { debugLog } from "../debug.ts"
+import { I18nProvider } from "../i18n/index.tsx"
+import { createTranslator, resolveLocale } from "../i18n/messages.ts"
+import type { TranslationKey } from "../i18n/messages.ts"
 import { ControlPanelPage } from "../pages/ControlPanelPage.tsx"
 import { fetchInstalledPackages } from "../services/cnrMetadata.ts"
 import type { FixMetadataSummary } from "../services/cnrMetadataController.ts"
 import { createControlPanelApi, isUpdateJob } from "../services/controlPanelApi.ts"
 import {
   buildNodeRestoreManifest,
-  dependencySyncNotice,
+  dependencySyncCommand,
   parseNodeRestoreManifest,
 } from "../services/nodeRestore.ts"
 import { createNodesManagerController } from "../services/nodesManagerController.ts"
@@ -31,16 +34,18 @@ export type ControlPanelController = ControlPanelActions & {
 
 export function createControlPanelController(options: ControlPanelOptions): ControlPanelController {
   const { app, readBooleanSetting } = options
+  const readLocale = () => resolveLocale(app.extensionManager.setting?.get?.("Comfy.Locale"))
+  const t = createTranslator(readLocale)
   const api = createControlPanelApi(app)
   const nodesManager = createNodesManagerController(app)
   const listeners = new Set<() => void>()
   const dependencySyncNotifiedJobs = new Set<string>()
   let viewState: ControlPanelViewState = {
     isOpen: false,
-    log: "Ready.\n",
+    log: `${t("panel.ready")}\n`,
     managerCacheControlsEnabled: false,
-    managerCacheStatus: "Checking Replace Manager Repository Data setting...",
-    updateCheckOutput: "Preparing update check...",
+    managerCacheStatus: "panel.checkingRepositorySetting",
+    updateCheckOutput: t("operation.updateCheckPreparing"),
   }
   let host: HTMLDivElement | undefined
   let root: Root | undefined
@@ -75,12 +80,12 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     const stderr = typeof result?.stderr === "string" ? result.stderr.trim() : ""
     if (!destination && !stdout && !stderr) return undefined
 
-    const lines = ["Install via Git URL completed."]
+    const lines = [t("operation.installGitCompleted")]
     if (destination) {
       const pathParts = destination.split(/[\\/]/).filter(Boolean)
       const folderName = pathParts[pathParts.length - 1] ?? destination
-      lines.push(`Installed: ${folderName}`)
-      lines.push(`Path: ${destination}`)
+      lines.push(t("operation.installed", { name: folderName }))
+      lines.push(t("operation.path", { path: destination }))
     }
     if (stdout) lines.push("", stdout)
     if (stderr) lines.push("", stderr)
@@ -88,68 +93,89 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
   }
 
   function formatOperationResult(
-    label: string,
+    label: TranslationKey,
     route: string,
     data: JsonObject,
   ): string | undefined {
     if (route === API_ROUTES.INSTALL_GIT_URL) return formatGitInstallResult(data)
-    return `${label} completed.\n${JSON.stringify(data, null, 2)}`
+    return `${t("operation.completedLog", { operation: t(label) })}\n${JSON.stringify(data, null, 2)}`
   }
 
   function writeLog(message: string, payload?: unknown): void {
-    const timestamp = new Date().toLocaleTimeString()
+    const timestamp = new Date().toLocaleTimeString(readLocale())
     const body = payload === undefined ? "" : `\n${JSON.stringify(payload, null, 2)}`
     setViewState({ log: `${viewState.log}[${timestamp}] ${message}${body}\n\n` })
   }
 
   function clearLog(): void {
-    setViewState({ log: "Ready.\n" })
+    setViewState({ log: `${t("panel.ready")}\n` })
   }
 
-  function renderJob(job: UpdateJob): void {
-    const logs = job.logs.length > 0 ? job.logs.join("\n") : `${job.label} is ${job.status}.`
-    const error = job.error ? `\n\nError:\n${job.error}` : ""
-    const syncNotice = job.status === "succeeded" ? dependencySyncNotice(job.result) : undefined
-    const requiredAction = syncNotice ? `\n\nAction required:\n${syncNotice}` : ""
+  function jobStatusLabel(status: UpdateJob["status"]): string {
+    return t(`operation.status.${status}` as TranslationKey)
+  }
+
+  function renderJob(job: UpdateJob, label: TranslationKey): void {
+    const operation = t(label)
+    const logs =
+      job.logs.length > 0
+        ? job.logs.join("\n")
+        : t("operation.status", { operation, status: jobStatusLabel(job.status) })
+    const error = job.error ? `\n\n${t("panel.errorLabel")}:\n${job.error}` : ""
+    const command = job.status === "succeeded" ? dependencySyncCommand(job.result) : undefined
+    const syncNotice = command ? t("nodeRestore.dependencySyncRequired", { command }) : undefined
+    const requiredAction = syncNotice ? `\n\n${t("panel.actionRequiredLabel")}:\n${syncNotice}` : ""
     setViewState({
-      log: `${job.label} (${job.status})\n\n${logs}${error}${requiredAction}\n`,
+      log: `${operation} (${jobStatusLabel(job.status)})\n\n${logs}${error}${requiredAction}\n`,
       restartNotice:
         job.restart_required && job.status === "succeeded"
-          ? (syncNotice ?? "Restart required to finish applying updates.")
+          ? command
+            ? "nodeRestore.dependencySyncRequired"
+            : "panel.restartToApply"
           : undefined,
+      restartNoticeValues: command ? { command } : undefined,
     })
     if (syncNotice && !dependencySyncNotifiedJobs.has(job.id)) {
       dependencySyncNotifiedJobs.add(job.id)
-      toast("warn", "Dependency Sync Required", syncNotice)
+      toast("warn", t("toast.dependencySyncTitle"), syncNotice)
     }
   }
 
-  function renderUpdateCheckJob(job: UpdateJob): void {
-    const logs = job.logs.length > 0 ? job.logs.join("\n") : `${job.label} is ${job.status}.`
-    const error = job.error ? `\n\nError:\n${job.error}` : ""
-    setViewState({ updateCheckOutput: `${job.label} (${job.status})\n\n${logs}${error}` })
+  function renderUpdateCheckJob(job: UpdateJob, label: TranslationKey): void {
+    const operation = t(label)
+    const logs =
+      job.logs.length > 0
+        ? job.logs.join("\n")
+        : t("operation.status", { operation, status: jobStatusLabel(job.status) })
+    const error = job.error ? `\n\n${t("panel.errorLabel")}:\n${job.error}` : ""
+    setViewState({
+      updateCheckOutput: `${operation} (${jobStatusLabel(job.status)})\n\n${logs}${error}`,
+    })
   }
 
-  function renderJobFor(output: JobOutput, job: UpdateJob): void {
-    if (output === "update-check") renderUpdateCheckJob(job)
-    else renderJob(job)
+  function renderJobFor(output: JobOutput, job: UpdateJob, label: TranslationKey): void {
+    if (output === "update-check") renderUpdateCheckJob(job, label)
+    else renderJob(job, label)
   }
 
   async function runOperation(
-    label: string,
+    label: TranslationKey,
     route: string,
     body?: JsonObject,
   ): Promise<JsonObject | undefined> {
-    writeLog(`${label} started.`)
-    debugLog(readBooleanSetting, `${label} request`, { route, body })
+    const operation = t(label)
+    writeLog(t("operation.started", { operation }))
+    debugLog(readBooleanSetting, `${operation} request`, { route, body })
     try {
       const data = await api.fetchJson(route, body)
-      writeLog(formatOperationResult(label, route, data) ?? `${label} completed.`)
-      toast("success", "ComfyUI-ControlPanel", `${label} completed.`)
+      writeLog(
+        formatOperationResult(label, route, data) ?? t("operation.completedLog", { operation }),
+      )
+      toast("success", "ComfyUI-ControlPanel", t("operation.completedLog", { operation }))
       return data
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      writeLog(`${label} failed: ${message}`)
+      writeLog(t("operation.failedLog", { operation, error: message }))
       toast("error", "ComfyUI-ControlPanel", message)
       return undefined
     }
@@ -168,39 +194,39 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       setViewState({
         managerCacheControlsEnabled: managerCacheEnabled,
         managerCacheStatus: managerCacheEnabled
-          ? "Replace Manager Repository Data is enabled."
-          : "Enable Replace Manager Repository Data in settings to use these actions.",
+          ? "panel.managerCacheEnabled"
+          : "panel.managerCacheEnableSetting",
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setViewState({
         managerCacheControlsEnabled: false,
-        managerCacheStatus: "Status check failed. See the log for details.",
+        managerCacheStatus: "panel.statusCheckFailed",
       })
-      writeLog(`Status check failed: ${message}`)
+      writeLog(t("operation.statusFailed", { error: message }))
     }
   }
 
   async function showStatusJson(): Promise<void> {
-    writeLog("Status JSON started.")
+    writeLog(t("operation.statusJsonStarted"))
     try {
       const data = await fetchStatus()
-      writeLog("Status JSON completed.", data)
+      writeLog(t("operation.statusJsonCompleted"), data)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      writeLog(`Status JSON failed: ${message}`)
+      writeLog(t("operation.statusJsonFailed", { error: message }))
       toast("error", "ComfyUI-ControlPanel", message)
     }
   }
 
   async function repairMetadata(): Promise<void> {
-    writeLog("Repair Metadata started.")
+    writeLog(t("operation.metadataStarted"))
     const summary = await options.fixCnrId()
     if (!summary) {
-      writeLog("Repair Metadata stopped because metadata APIs were unavailable.")
+      writeLog(t("operation.metadataStopped"))
       return
     }
-    writeLog("Repair Metadata completed.", {
+    writeLog(t("operation.metadataCompleted"), {
       updated: summary.updated,
       already_correct: summary.alreadyCorrect,
       unresolved: summary.unresolved,
@@ -219,20 +245,21 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
 
   async function refreshUpdateStatus(
     output: JobOutput,
+    label: TranslationKey,
     generation: number,
   ): Promise<UpdateJob | undefined> {
     const data = await api.fetchJson(API_ROUTES.UPDATE_STATUS)
     const job = data.job
     if (!isUpdateJob(job) || generation !== panelGeneration || !viewState.isOpen) return undefined
-    renderJobFor(output, job)
+    renderJobFor(output, job, label)
     return job
   }
 
-  function pollUpdateStatus(output: JobOutput): void {
+  function pollUpdateStatus(output: JobOutput, label: TranslationKey): void {
     stopPolling()
     const generation = panelGeneration
     statusPollTimer = window.setInterval(() => {
-      void refreshUpdateStatus(output, generation)
+      void refreshUpdateStatus(output, label, generation)
         .then((job) => {
           if (generation !== panelGeneration || !viewState.isOpen) return
           if (job && !["queued", "running"].includes(job.status)) {
@@ -240,7 +267,10 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
             toast(
               job.status === "succeeded" ? "success" : "error",
               "ComfyUI-ControlPanel",
-              `${job.label} ${job.status}.`,
+              t("operation.status", {
+                operation: t(label),
+                status: jobStatusLabel(job.status),
+              }),
             )
           }
         })
@@ -248,35 +278,38 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
           if (generation !== panelGeneration || !viewState.isOpen) return
           stopPolling()
           const message = error instanceof Error ? error.message : String(error)
-          writeLog(`Status polling failed: ${message}`)
+          writeLog(t("operation.statusPollingFailed", { error: message }))
           if (output === "update-check") {
-            setViewState({ updateCheckOutput: `Check for Updates failed.\n\n${message}` })
+            setViewState({
+              updateCheckOutput: t("operation.updateCheckFailed", { error: message }),
+            })
           }
         })
     }, 1500)
   }
 
   async function startUpdateJob(
-    label: string,
+    label: TranslationKey,
     route: string,
     body: JsonObject = {},
     output: JobOutput = "panel",
   ): Promise<void> {
     const generation = panelGeneration
-    writeLog(`${label} queued.`)
-    debugLog(readBooleanSetting, `${label} request`, { route, body })
+    const operation = t(label)
+    writeLog(t("operation.queued", { operation }))
+    debugLog(readBooleanSetting, `${operation} request`, { route, body })
     try {
       const data = await api.fetchJson(route, body)
       const job = data.job
-      if (!isUpdateJob(job)) throw new Error("Update job response was missing job details.")
-      renderJobFor(output, job)
-      toast("info", "ComfyUI-ControlPanel", `${label} started.`)
-      if (generation === panelGeneration && viewState.isOpen) pollUpdateStatus(output)
+      if (!isUpdateJob(job)) throw new Error(t("error.updateJobMissing"))
+      renderJobFor(output, job, label)
+      toast("info", "ComfyUI-ControlPanel", t("operation.started", { operation }))
+      if (generation === panelGeneration && viewState.isOpen) pollUpdateStatus(output, label)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      writeLog(`${label} failed to start: ${message}`)
+      writeLog(t("operation.failedToStart", { operation, error: message }))
       if (output === "update-check") {
-        setViewState({ updateCheckOutput: `Check for Updates failed.\n\n${message}` })
+        setViewState({ updateCheckOutput: t("operation.updateCheckFailed", { error: message }) })
       }
       toast("error", "ComfyUI-ControlPanel", message)
     }
@@ -291,21 +324,21 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
 
   async function listSnapshots(): Promise<string[] | undefined> {
     const generation = ++snapshotRequestGeneration
-    writeLog("Snapshot List started.")
+    writeLog(t("operation.snapshotListStarted"))
     try {
       const data = await api.fetchJson(API_ROUTES.SNAPSHOT_LIST)
       if (generation !== snapshotRequestGeneration || !viewState.isOpen) return undefined
       const names = snapshotNamesFromResponse(data)
-      writeLog(`Snapshot List completed.\n${JSON.stringify(data, null, 2)}`)
+      writeLog(`${t("operation.snapshotListCompleted")}\n${JSON.stringify(data, null, 2)}`)
       if (names.length === 0) {
-        toast("warn", "ComfyUI-ControlPanel", "No snapshots were found.")
+        toast("warn", "ComfyUI-ControlPanel", t("operation.noSnapshots"))
         return undefined
       }
       return names
     } catch (error) {
       if (generation !== snapshotRequestGeneration || !viewState.isOpen) return undefined
       const message = error instanceof Error ? error.message : String(error)
-      writeLog(`Snapshot List failed: ${message}`)
+      writeLog(t("operation.snapshotListFailed", { error: message }))
       toast("error", "ComfyUI-ControlPanel", message)
       return undefined
     }
@@ -313,16 +346,18 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
 
   async function restoreSnapshot(target: string, onConfirmed: () => void): Promise<void> {
     if (!target) {
-      toast("warn", "ComfyUI-ControlPanel", "Select a snapshot to restore.")
+      toast("warn", "ComfyUI-ControlPanel", t("operation.selectSnapshot"))
       return
     }
     const confirmed = await app.extensionManager.dialog.confirm({
-      title: "Restore Snapshot",
-      message: `Restoring "${target}" may change installed custom nodes and dependencies. Continue?`,
+      title: t("operation.restoreSnapshotConfirmTitle"),
+      message: t("operation.restoreSnapshotConfirm", { target }),
     })
     if (confirmed) {
       onConfirmed()
-      await startUpdateJob("Restore Snapshot", API_ROUTES.SNAPSHOT_RESTORE, { target })
+      await startUpdateJob("operation.restoreSnapshotLabel", API_ROUTES.SNAPSHOT_RESTORE, {
+        target,
+      })
     }
   }
 
@@ -348,7 +383,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
   }
 
   async function backupInstalledNodes(): Promise<void> {
-    writeLog("Backup Installed Nodes started.")
+    writeLog(t("operation.backupNodesStarted"))
     try {
       const [installed, inventory] = await Promise.all([
         fetchInstalledPackages(app),
@@ -356,86 +391,100 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       ])
       const manifest = buildNodeRestoreManifest(installed, inventory)
       downloadJson(nodeRestoreFilename(), manifest)
-      writeLog("Backup Installed Nodes completed.", manifest)
+      writeLog(t("operation.backupNodesCompleted"), manifest)
       const unmanaged = manifest.unmanaged_nodes.length
+      const summary = t("operation.backupSummary", {
+        registryCount: manifest.registry_nodes.length,
+        gitCount: manifest.git_nodes.length,
+      })
       toast(
         unmanaged > 0 ? "warn" : "success",
         "ComfyUI-ControlPanel",
-        `Backed up ${manifest.registry_nodes.length} registry and ${manifest.git_nodes.length} Git nodes.${unmanaged > 0 ? ` ${unmanaged} unmanaged folders require manual backup.` : ""}`,
+        `${summary}${unmanaged > 0 ? ` ${t("operation.unmanagedBackupWarning", { count: unmanaged })}` : ""}`,
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      writeLog(`Backup Installed Nodes failed: ${message}`)
+      writeLog(t("operation.backupNodesFailed", { error: message }))
       toast("error", "ComfyUI-ControlPanel", message)
     }
   }
 
   async function restoreNodesFromFile(file: File): Promise<void> {
     try {
-      const manifest = parseNodeRestoreManifest(await file.text())
+      const manifest = parseNodeRestoreManifest(await file.text(), t)
       const confirmed = await app.extensionManager.dialog.confirm({
-        title: "Restore Custom Nodes",
-        message: `Install the latest versions of ${manifest.registry_nodes.length} registry and ${manifest.git_nodes.length} Git nodes? Existing Git destination folders will be skipped.`,
+        title: t("operation.restoreNodesConfirmTitle"),
+        message: t("operation.restoreNodesConfirm", {
+          registryCount: manifest.registry_nodes.length,
+          gitCount: manifest.git_nodes.length,
+        }),
       })
       if (confirmed) {
-        await startUpdateJob("Restore Custom Nodes", API_ROUTES.NODE_RESTORE_RESTORE, { manifest })
+        await startUpdateJob("operation.restoreNodesLabel", API_ROUTES.NODE_RESTORE_RESTORE, {
+          manifest,
+        })
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      writeLog(`Restore Custom Nodes failed: ${message}`)
+      writeLog(t("operation.restoreNodesFailed", { error: message }))
       toast("error", "ComfyUI-ControlPanel", message)
     }
   }
 
   async function restartComfyUI(): Promise<void> {
-    const label = "Restart"
+    const label = "panel.action.restart"
     const body = { confirm: true }
-    writeLog(`${label} started.`)
-    debugLog(readBooleanSetting, `${label} request`, { route: API_ROUTES.RESTART, body })
+    const operation = t(label)
+    writeLog(t("operation.restartStarted"))
+    debugLog(readBooleanSetting, `${operation} request`, { route: API_ROUTES.RESTART, body })
     try {
       const data = await api.fetchJson(API_ROUTES.RESTART, body)
-      writeLog(formatOperationResult(label, API_ROUTES.RESTART, data) ?? `${label} completed.`)
-      toast("info", "ComfyUI-ControlPanel", "Restarting")
+      writeLog(
+        formatOperationResult(label, API_ROUTES.RESTART, data) ??
+          t("operation.completedLog", { operation }),
+      )
+      toast("info", "ComfyUI-ControlPanel", t("operation.restarting"))
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      writeLog(`${label} failed: ${message}`)
+      writeLog(t("operation.restartFailed", { error: message }))
       toast("error", "ComfyUI-ControlPanel", message)
     }
   }
 
   async function confirmRestart(): Promise<void> {
     const confirmed = await app.extensionManager.dialog.confirm({
-      title: "Restart ComfyUI",
-      message: "Restart ComfyUI now?",
+      title: t("operation.restartConfirmTitle"),
+      message: t("operation.restartConfirm"),
     })
     if (confirmed) await restartComfyUI()
   }
 
   async function rebuildManagerCache(): Promise<void> {
     const confirmed = await app.extensionManager.dialog.confirm({
-      title: "Rebuild Manager Cache",
-      message: "Rebuilding the Manager cache may take some time. Continue?",
+      title: t("operation.rebuildCacheConfirmTitle"),
+      message: t("operation.rebuildCacheConfirm"),
     })
-    if (confirmed) await startUpdateJob("Rebuild Manager Cache", API_ROUTES.REBUILD_MANAGER_CACHE)
+    if (confirmed)
+      await startUpdateJob("panel.action.rebuildManagerCache", API_ROUTES.REBUILD_MANAGER_CACHE)
   }
 
   async function showEnvironment(): Promise<JsonObject> {
-    writeLog("Show Environment started.")
+    writeLog(t("operation.environmentStarted"))
     try {
       const data = await api.fetchJson(API_ROUTES.SHOW_ENVIRONMENT, {})
-      writeLog("Show Environment completed.")
+      writeLog(t("operation.environmentCompleted"))
       return data
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      writeLog(`Show Environment failed: ${message}`)
+      writeLog(t("operation.environmentFailed", { error: message }))
       toast("error", "ComfyUI-ControlPanel", message)
       throw error
     }
   }
 
   async function showUpdateCheck(): Promise<void> {
-    setViewState({ updateCheckOutput: "Preparing update check..." })
-    await startUpdateJob("Check for Updates", API_ROUTES.CHECK_UPDATES, {}, "update-check")
+    setViewState({ updateCheckOutput: t("operation.updateCheckPreparing") })
+    await startUpdateJob("updateCheck.title", API_ROUTES.CHECK_UPDATES, {}, "update-check")
   }
 
   function close(): void {
@@ -474,7 +523,13 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       host = document.createElement("div")
       host.dataset.templateTheme = ""
       root = createRoot(host)
-      root.render(createElement(ControlPanelPage, { actions }))
+      root.render(
+        createElement(
+          I18nProvider,
+          { settings: app.ui?.settings ?? new EventTarget(), readLocale },
+          createElement(ControlPanelPage, { actions }),
+        ),
+      )
     }
     if (!host.isConnected) document.body.append(host)
     setViewState({ isOpen: true })

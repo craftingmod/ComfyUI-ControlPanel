@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react"
 
+import { useI18n } from "../i18n/index.tsx"
 import { ControlPanelDialog } from "./controlPanelDialog.tsx"
 
 import styles from "./controlPanel.module.css"
@@ -12,6 +13,7 @@ type UpdateCheckModalProps = {
 
 export function UpdateCheckModal({ isOpen, output, onClose }: UpdateCheckModalProps) {
   const outputRef = useRef<HTMLPreElement>(null)
+  const { t } = useI18n()
 
   useEffect(() => {
     if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight
@@ -21,7 +23,7 @@ export function UpdateCheckModal({ isOpen, output, onClose }: UpdateCheckModalPr
 
   return (
     <ControlPanelDialog
-      title="Check for Updates"
+      title={t("updateCheck.title")}
       titleId="cp-update-check-title"
       className={styles.updateCheckModal}
       onClose={onClose}

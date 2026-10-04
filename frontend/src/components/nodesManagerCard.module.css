@@ -239,8 +239,7 @@
   display: grid;
   gap: var(--space-xs);
   padding: var(--space-sm);
-  border: var(--cp-border-width) solid
-    color-mix(in srgb, var(--cp-success) 40%, var(--cp-border));
+  border: var(--cp-border-width) solid color-mix(in srgb, var(--cp-success) 40%, var(--cp-border));
   border-radius: var(--cp-radius);
   background: color-mix(in srgb, var(--cp-success) 12%, var(--cp-panel));
   color: var(--cp-text);

@@ -1,5 +1,6 @@
 import { useRef } from "react"
 
+import { useI18n } from "../i18n/index.tsx"
 import { ControlPanelDialog } from "./controlPanelDialog.tsx"
 import { Button } from "./ui/button.tsx"
 
@@ -23,17 +24,18 @@ export function SnapshotRestoreModal({
   onClose,
 }: SnapshotRestoreModalProps) {
   const selectRef = useRef<HTMLSelectElement>(null)
+  const { t } = useI18n()
   if (!isOpen) return null
 
   return (
     <ControlPanelDialog
-      title="Restore Snapshot"
+      title={t("snapshot.title")}
       titleId="cp-snapshot-restore-title"
       initialFocusRef={selectRef}
       onClose={onClose}
     >
       <div className={styles.field}>
-        <label htmlFor="cp-snapshot-select">Snapshot</label>
+        <label htmlFor="cp-snapshot-select">{t("snapshot.field")}</label>
         <select
           ref={selectRef}
           id="cp-snapshot-select"
@@ -50,10 +52,10 @@ export function SnapshotRestoreModal({
       </div>
       <div className={styles.modalActions}>
         <Button type="button" onClick={onClose}>
-          Cancel
+          {t("snapshot.cancel")}
         </Button>
         <Button variant="danger" type="button" disabled={!selected} onClick={onRestore}>
-          Restore
+          {t("snapshot.restore")}
         </Button>
       </div>
     </ControlPanelDialog>

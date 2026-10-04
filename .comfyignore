@@ -9,6 +9,8 @@
 !/assets/**
 !/backend/
 !/backend/**
+!/locales/
+!/locales/**
 !/dist/
 !/dist/**
 
