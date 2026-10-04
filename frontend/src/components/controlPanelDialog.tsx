@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react"
 import { createPortal } from "react-dom"
 
+import { Button } from "./ui/button.tsx"
+
 import styles from "./controlPanel.module.css"
 
 type ControlPanelDialogProps = {
@@ -102,14 +104,9 @@ export function ControlPanelDialog({
           <h2 id={titleId} className={styles.title}>
             {title}
           </h2>
-          <button
-            className={`${styles.button} ${styles.closeButton}`}
-            type="button"
-            aria-label="Close"
-            onClick={onClose}
-          >
+          <Button size="icon" type="button" aria-label="Close" onClick={onClose}>
             ×
-          </button>
+          </Button>
         </div>
         {children}
       </section>

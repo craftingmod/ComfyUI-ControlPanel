@@ -33,9 +33,14 @@ their class declarations in `frontend/.generated/`, and `typecheck` runs it firs
 The entry installs the emitted `dist/index.css` through `stylesheet.ts`.
 
 `styles/globals.css` owns inherited theme/runtime tokens and scoped native-note
-rules. Reuse `var(--space-*)` for every padding, margin, and gap; define new
-shared spacing tokens there when needed. The ControlPanel CSS Module composes
-its buttons from `styles/controls.module.css` and is loaded with `stylesheet.ts`.
+rules. Use literal `0` for zero spacing and `var(--space-*)` for nonzero padding,
+margin, and gap. The shared scale is 2xs (2px), xs (4px), sm (8px), 3sm (12px),
+md (16px), lg (24px), xl (32px), and 2xl (48px).
+
+Reuse `components/ui/button.tsx` for actions and `components/ui/badge.tsx` for
+labels. Button owns secondary, primary, danger, and ghost variants, md/sm/icon
+sizes, focus and disabled states, refs, and optional busy labels. Keep layout
+classes in feature CSS Modules. Button composes `styles/controls.module.css`.
 
 ## Directory Structure
 

@@ -4,44 +4,44 @@
   display: grid;
   place-items: center;
   padding: var(--space-xs);
-  background: rgb(0 0 0 / 55%);
+  background: var(--cp-backdrop);
   inset: 0;
 }
 
 .panel {
   box-sizing: border-box;
-  width: min(760px, calc(100vw - 32px));
-  max-height: min(870px, calc(100vh - 24px));
+  width: min(760px, calc(100vw - var(--space-xl)));
+  max-height: min(870px, calc(100vh - var(--space-lg)));
   overflow: auto;
-  padding: var(--space-20px);
-  border: 1px solid rgb(255 255 255 / 16%);
-  border-radius: 8px;
-  background: #18191d;
-  color: #f1f3f7;
-  box-shadow: 0 18px 48px rgb(0 0 0 / 36%);
+  padding: var(--space-lg);
+  border: var(--cp-border-width) solid var(--cp-border);
+  border-radius: var(--cp-radius);
+  background: var(--cp-bg);
+  color: var(--cp-text);
+  box-shadow: var(--cp-modal-shadow);
   font:
-    14px/1.45 system-ui,
+    var(--cp-note-size)/1.45 system-ui,
     sans-serif;
 }
 
 .controlPanel {
   display: flex;
-  width: min(1180px, calc(100vw - 32px));
-  max-height: calc(100vh - 24px);
+  width: min(1180px, calc(100vw - var(--space-xl)));
+  max-height: calc(100vh - var(--space-lg));
   flex-direction: column;
   overflow: hidden;
 }
 
 .modalPanel {
-  width: min(520px, calc(100vw - 32px));
+  width: min(520px, calc(100vw - var(--space-xl)));
 }
 
 .environmentModal {
-  width: min(900px, calc(100vw - 32px));
+  width: min(900px, calc(100vw - var(--space-xl)));
 }
 
 .updateCheckModal {
-  width: min(1100px, calc(100vw - 32px));
+  width: min(1100px, calc(100vw - var(--space-xl)));
   overflow: hidden;
 }
 
@@ -55,7 +55,7 @@
 
 .title {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--cp-heading-size);
   font-weight: 700;
 }
 
@@ -67,7 +67,7 @@
 
 .field {
   display: grid;
-  gap: var(--space-6px);
+  gap: var(--space-sm);
 }
 
 .fieldWide {
@@ -75,7 +75,7 @@
 }
 
 .field label {
-  color: #c9ced8;
+  color: var(--cp-muted);
   font-size: 12px;
   font-weight: 600;
 }
@@ -84,35 +84,42 @@
 .field select {
   box-sizing: border-box;
   width: 100%;
-  padding: var(--space-10px) var(--space-3sm);
-  border: 1px solid rgb(255 255 255 / 18%);
-  border-radius: 6px;
-  background: #22242a;
-  color: #f1f3f7;
+  padding: var(--space-sm) var(--space-3sm);
+  border: var(--cp-border-width) solid var(--cp-border);
+  border-radius: var(--cp-radius);
+  background: var(--cp-panel);
+  color: var(--cp-text);
+  font: inherit;
+}
+
+.field input:focus-visible,
+.field select:focus-visible {
+  outline: var(--cp-focus-width) solid var(--cp-accent);
+  outline-offset: var(--space-xs);
 }
 
 .actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-10px);
+  gap: var(--space-sm);
   margin: var(--space-md) 0;
 }
 
 .actionGroup {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-10px);
-  margin: var(--space-md) 0 var(--space-10px);
+  gap: var(--space-sm);
+  margin: var(--space-md) 0 var(--space-sm);
   padding: var(--space-3sm);
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 8px;
-  background: rgb(255 255 255 / 4%);
+  border: var(--cp-border-width) solid var(--cp-border);
+  border-radius: var(--cp-radius);
+  background: var(--cp-panel);
 }
 
 .groupTitle {
   grid-column: 1 / -1;
   margin: 0 0 var(--space-2xs);
-  color: #b9c0ca;
+  color: var(--cp-muted);
   font-size: 12px;
   font-weight: 700;
 }
@@ -120,85 +127,34 @@
 .groupStatus {
   grid-column: 1 / -1;
   margin: calc(-1 * var(--space-2xs)) 0 var(--space-2xs);
-  color: #94d3a2;
+  color: var(--cp-success);
   font-size: 12px;
 }
 
 .groupStatusDisabled {
-  color: #d4b06a;
+  color: var(--cp-warning);
 }
 
 .modalActions {
   display: flex;
   justify-content: flex-end;
-  gap: var(--space-10px);
+  gap: var(--space-sm);
   margin-top: var(--space-md);
 }
 
 .restartNotice {
   margin: 0 0 var(--space-3sm);
-  padding: var(--space-10px) var(--space-3sm);
-  border: 1px solid rgb(251 191 36 / 38%);
-  border-radius: 6px;
-  background: rgb(251 191 36 / 12%);
-  color: #fde68a;
+  padding: var(--space-sm) var(--space-3sm);
+  border: var(--cp-border-width) solid
+    color-mix(in srgb, var(--cp-warning) 40%, var(--cp-border));
+  border-radius: var(--cp-radius);
+  background: color-mix(in srgb, var(--cp-warning) 12%, var(--cp-panel));
+  color: var(--cp-text);
   font-weight: 650;
-}
-
-.button {
-  composes: controlBase from "../styles/controls.module.css";
-  min-height: 42px;
-  padding: var(--space-9px) var(--space-3sm);
-  border-color: rgb(255 255 255 / 14%);
-  border-radius: 6px;
-  background: #2d3436;
-  color: #f1f3f7;
-  font-weight: 650;
-}
-
-.button:hover {
-  background: #394245;
-}
-
-.button:disabled {
-  border-color: rgb(255 255 255 / 8%);
-  background: #262a2c;
-  color: #818890;
-  cursor: not-allowed;
-}
-
-.button:disabled:hover {
-  background: #262a2c;
 }
 
 .buttonWide {
   grid-column: 1 / -1;
-}
-
-.danger {
-  background: #6b1610;
-}
-
-.danger:hover {
-  background: #842116;
-}
-
-.controlPanel .restartButton {
-  background: #b91c1c;
-}
-
-.controlPanel .restartButton:hover {
-  background: #dc2626;
-}
-
-.closeButton {
-  width: 42px;
-  height: 42px;
-  min-height: 42px;
-  padding: 0;
-  border-radius: 50%;
-  font-size: 24px;
-  line-height: 1;
 }
 
 .logWrap {
@@ -209,18 +165,9 @@
   position: absolute;
   z-index: 1;
   display: flex;
-  gap: var(--space-6px);
+  gap: var(--space-sm);
   top: var(--space-sm);
   right: var(--space-lg);
-}
-
-.logAction,
-.logClear {
-  min-height: 0;
-  padding: var(--space-xs) var(--space-sm);
-  border-radius: 5px;
-  background: rgb(45 52 54 / 92%);
-  font-size: 12px;
 }
 
 .log {
@@ -228,11 +175,11 @@
   max-height: 240px;
   overflow: auto;
   margin: 0;
-  padding: var(--space-38px) var(--space-3sm) var(--space-3sm);
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 6px;
-  background: #101115;
-  color: #d6dae2;
+  padding: var(--space-2xl) var(--space-3sm) var(--space-3sm);
+  border: var(--cp-border-width) solid var(--cp-border);
+  border-radius: var(--cp-radius);
+  background: var(--cp-bg);
+  color: var(--cp-text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   scrollbar-gutter: stable;
@@ -245,10 +192,10 @@
   overflow: auto;
   margin: 0;
   padding: var(--space-3sm);
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 6px;
-  background: #101115;
-  color: #d6dae2;
+  border: var(--cp-border-width) solid var(--cp-border);
+  border-radius: var(--cp-radius);
+  background: var(--cp-panel);
+  color: var(--cp-text);
   font:
     12px/1.45 ui-monospace,
     SFMono-Regular,
@@ -265,10 +212,10 @@
   overflow: auto;
   margin: 0;
   padding: var(--space-3sm);
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 6px;
-  background: #101115;
-  color: #d6dae2;
+  border: var(--cp-border-width) solid var(--cp-border);
+  border-radius: var(--cp-radius);
+  background: var(--cp-panel);
+  color: var(--cp-text);
   font:
     12px/1.35 ui-monospace,
     SFMono-Regular,
@@ -286,17 +233,17 @@
 
 .environmentTable th,
 .environmentTable td {
-  padding: var(--space-5px) var(--space-sm);
-  border-bottom: 1px solid rgb(255 255 255 / 8%);
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: var(--cp-border-width) solid var(--cp-border);
   text-align: left;
   vertical-align: top;
   overflow-wrap: anywhere;
 }
 
 .environmentSectionRow th {
-  padding-top: var(--space-14px);
-  border-bottom: 1px solid rgb(255 255 255 / 16%);
-  color: #b9c0ca;
+  padding-top: var(--space-md);
+  border-bottom: var(--cp-border-width) solid var(--cp-border);
+  color: var(--cp-muted);
   font:
     700 11px/1.2 system-ui,
     sans-serif;
@@ -304,19 +251,19 @@
 }
 
 .environmentTable thead th {
-  border: 1px solid rgb(255 255 255 / 34%);
-  color: #d98dff;
+  border: var(--cp-border-width) solid var(--cp-border);
+  color: var(--cp-text);
   font-weight: 700;
 }
 
 .environmentTable tbody th {
   width: 42%;
-  color: #66d9ef;
+  color: var(--cp-text);
   font-weight: 650;
 }
 
 .environmentTable tbody td {
-  color: #edf1f7;
+  color: var(--cp-text);
 }
 
 .environmentFallback {
@@ -327,7 +274,7 @@
 
 .environmentStderr {
   margin-top: var(--space-3sm);
-  color: #ff9b9b;
+  color: color-mix(in srgb, var(--cp-danger) 65%, var(--cp-text));
 }
 
 .panelContent {
@@ -369,7 +316,7 @@
 
 @media (width <= 980px), (height <= 560px) {
   .controlPanel {
-    width: min(760px, calc(100vw - 32px));
+    width: min(760px, calc(100vw - var(--space-xl)));
     overflow: auto;
   }
 

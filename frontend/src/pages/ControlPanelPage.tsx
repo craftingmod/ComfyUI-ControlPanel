@@ -13,6 +13,7 @@ import type { ControlPanelActions } from "../components/controlPanelTypes.ts"
 import { EnvironmentModal } from "../components/environmentModal.tsx"
 import { GitInstallModal } from "../components/gitInstallModal.tsx"
 import { SnapshotRestoreModal } from "../components/snapshotRestoreModal.tsx"
+import { Button } from "../components/ui/button.tsx"
 import { UpdateCheckModal } from "../components/updateCheckModal.tsx"
 import { API_ROUTES } from "../constants.ts"
 import type { ToastSeverity } from "../types.ts"
@@ -185,41 +186,35 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
                 title="Install / Update"
                 ariaLabel="Install and update actions"
               >
-                <button
-                  className={styles.button}
-                  type="button"
-                  onClick={() => setGitInstallOpen(true)}
-                >
+                <Button type="button" onClick={() => setGitInstallOpen(true)}>
                   Install via Git URL
-                </button>
-                <button className={styles.button} type="button" onClick={openUpdateCheck}>
+                </Button>
+                <Button type="button" onClick={openUpdateCheck}>
                   Check for Updates
-                </button>
-                <button
-                  className={`${styles.button} ${styles.buttonWide}`}
+                </Button>
+                <Button
+                  className={styles.buttonWide}
                   type="button"
                   onClick={() => void actions.nodesManager.open()}
                 >
                   Nodes Manager
-                </button>
-                <button
-                  className={styles.button}
+                </Button>
+                <Button
                   type="button"
                   onClick={() =>
                     void actions.startUpdateJob("Update ComfyUI", API_ROUTES.UPDATE_COMFYUI)
                   }
                 >
                   Update ComfyUI
-                </button>
-                <button
-                  className={styles.button}
+                </Button>
+                <Button
                   type="button"
                   onClick={() =>
                     void actions.startUpdateJob("Update Git Nodes", API_ROUTES.UPDATE_CUSTOM_NODES)
                   }
                 >
                   Update Git Nodes
-                </button>
+                </Button>
               </ControlPanelActionGroup>
               <ControlPanelActionGroup title="Manager Cache" ariaLabel="Manager cache actions">
                 <div
@@ -227,8 +222,7 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
                 >
                   {view.managerCacheStatus}
                 </div>
-                <button
-                  className={styles.button}
+                <Button
                   type="button"
                   disabled={!view.managerCacheControlsEnabled}
                   onClick={() =>
@@ -239,37 +233,31 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
                   }
                 >
                   Update Manager Cache
-                </button>
-                <button
-                  className={`${styles.button} ${styles.danger}`}
+                </Button>
+                <Button
+                  variant="danger"
                   type="button"
                   disabled={!view.managerCacheControlsEnabled}
                   onClick={() => void actions.rebuildManagerCache()}
                 >
                   Rebuild Manager Cache
-                </button>
+                </Button>
               </ControlPanelActionGroup>
             </div>
             <div className={styles.panelColumn}>
               <ControlPanelActionGroup title="Snapshot" ariaLabel="Snapshot actions">
-                <button
-                  className={styles.button}
+                <Button
                   type="button"
                   onClick={() =>
                     void actions.startUpdateJob("Save Snapshot", API_ROUTES.SNAPSHOT_SAVE)
                   }
                 >
                   Save Snapshot
-                </button>
-                <button
-                  className={`${styles.button} ${styles.danger}`}
-                  type="button"
-                  onClick={() => void openSnapshotRestore()}
-                >
+                </Button>
+                <Button variant="danger" type="button" onClick={() => void openSnapshotRestore()}>
                   Restore Snapshot
-                </button>
-                <button
-                  className={styles.button}
+                </Button>
+                <Button
                   type="button"
                   onClick={() =>
                     void actions.runOperation(
@@ -280,9 +268,8 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
                   }
                 >
                   Open Snapshots Folder
-                </button>
-                <button
-                  className={styles.button}
+                </Button>
+                <Button
                   type="button"
                   onClick={() =>
                     void actions.runOperation(
@@ -293,52 +280,40 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
                   }
                 >
                   Open custom_nodes Folder
-                </button>
+                </Button>
               </ControlPanelActionGroup>
               <ControlPanelActionGroup
                 title="Node Restore"
                 ariaLabel="Custom node backup and restore actions"
               >
-                <button
-                  className={styles.button}
-                  type="button"
-                  onClick={() => void actions.backupInstalledNodes()}
-                >
+                <Button type="button" onClick={() => void actions.backupInstalledNodes()}>
                   Backup Installed Nodes
-                </button>
-                <button
-                  className={`${styles.button} ${styles.danger}`}
-                  type="button"
-                  onClick={chooseNodeRestoreFile}
-                >
+                </Button>
+                <Button variant="danger" type="button" onClick={chooseNodeRestoreFile}>
                   Restore Latest Nodes
-                </button>
+                </Button>
               </ControlPanelActionGroup>
               <ControlPanelActionGroup
                 title="Workflow Metadata"
                 ariaLabel="Workflow metadata actions"
               >
-                <button
-                  className={`${styles.button} ${styles.buttonWide}`}
+                <Button
+                  className={styles.buttonWide}
                   type="button"
                   onClick={() => void actions.repairMetadata()}
                 >
                   Repair Metadata
-                </button>
+                </Button>
               </ControlPanelActionGroup>
             </div>
             <div className={`${styles.panelColumn} ${styles.panelColumnStatus}`}>
               <div className={styles.actions}>
-                <button className={styles.button} type="button" onClick={showEnvironment}>
+                <Button type="button" onClick={showEnvironment}>
                   Show Environment
-                </button>
-                <button
-                  className={`${styles.button} ${styles.danger} ${styles.restartButton}`}
-                  type="button"
-                  onClick={() => void actions.restart()}
-                >
+                </Button>
+                <Button variant="danger" type="button" onClick={() => void actions.restart()}>
                   Restart
-                </button>
+                </Button>
               </div>
               {view.restartNotice && (
                 <div className={styles.restartNotice} role="status">
@@ -347,22 +322,17 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
               )}
               <div className={styles.logWrap}>
                 <div className={styles.logActions}>
-                  <button
-                    className={`${styles.button} ${styles.logAction}`}
+                  <Button
+                    size="sm"
                     type="button"
                     aria-label="Show status JSON"
                     onClick={() => void actions.showStatusJson()}
                   >
                     Show Status
-                  </button>
-                  <button
-                    className={`${styles.button} ${styles.logClear}`}
-                    type="button"
-                    aria-label="Clear log"
-                    onClick={clearLog}
-                  >
+                  </Button>
+                  <Button size="sm" type="button" aria-label="Clear log" onClick={clearLog}>
                     Clear Log
-                  </button>
+                  </Button>
                 </div>
                 <pre ref={logRef} className={styles.log} aria-live="polite">
                   {view.log}

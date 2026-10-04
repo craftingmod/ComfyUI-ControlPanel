@@ -1,6 +1,7 @@
 import { useRef } from "react"
 
 import { ControlPanelDialog } from "./controlPanelDialog.tsx"
+import { Button } from "./ui/button.tsx"
 
 import styles from "./controlPanel.module.css"
 
@@ -48,17 +49,12 @@ export function SnapshotRestoreModal({
         </select>
       </div>
       <div className={styles.modalActions}>
-        <button className={styles.button} type="button" onClick={onClose}>
+        <Button type="button" onClick={onClose}>
           Cancel
-        </button>
-        <button
-          className={`${styles.button} ${styles.danger}`}
-          type="button"
-          disabled={!selected}
-          onClick={onRestore}
-        >
+        </Button>
+        <Button variant="danger" type="button" disabled={!selected} onClick={onRestore}>
           Restore
-        </button>
+        </Button>
       </div>
     </ControlPanelDialog>
   )

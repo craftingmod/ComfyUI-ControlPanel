@@ -1,39 +1,42 @@
 /* Runtime tokens inherit through both the React host and native DOM island. */
 [data-template-theme] {
-  --example-value: "example";
-  --template-text: var(--fg-color, #eee);
-  --template-muted-text: var(--descrip-text, #aaa);
-  --template-surface: var(--comfy-input-bg, #222);
-  --template-border: var(--border-color, #555);
-  --template-radius: 6px;
-  --template-border-width: 1px;
-  --template-focus-width: 2px;
-  --template-heading-size: 1.125rem;
-  --template-note-size: 0.875rem;
-
-  /* global variable in this node */
+  /* Shared spacing scale. Use literal 0 for zero spacing. */
   --space-2xs: 2px;
-  --space-5px: 5px;
-  --space-6px: 6px;
-  --space-9px: 9px;
-  --space-10px: 10px;
-  --space-3sm: 12px;
-  --space-14px: 14px;
-  --space-20px: 20px;
-  --space-38px: 38px;
   --space-xs: 4px;
   --space-sm: 8px;
+  --space-3sm: 12px;
   --space-md: 16px;
   --space-lg: 24px;
   --space-xl: 32px;
   --space-2xl: 48px;
+
+  /* color preset */
+  --cp-bg: var(--base-background, var(--comfy-menu-bg, #17191f));
+  --cp-panel: var(--secondary-background, var(--comfy-input-bg, #242833));
+  --cp-border: var(--border-subtle, var(--border-color, #535967));
+  --cp-text: var(--base-foreground, var(--input-text, #e8eaf0));
+  --cp-muted: var(--muted-foreground, var(--descrip-text, #a4abba));
+  --cp-accent: var(--primary-background, var(--p-primary-color, #6ba4ff));
+  --cp-danger: oklch(74% 0.16 19deg);
+  --cp-success: color-mix(in srgb, #16a34a 65%, var(--cp-text));
+  --cp-warning: color-mix(in srgb, #b7791f 65%, var(--cp-text));
+  --cp-backdrop: rgb(0 0 0 / 55%);
+  --cp-modal-shadow: 0 18px 48px rgb(0 0 0 / 36%);
+
+  /* Design preset */
+  --cp-radius: 6px;
+  --cp-border-width: 1px;
+  --cp-focus-width: 2px;
+  --cp-heading-size: 1.125rem;
+  --cp-note-size: 0.875rem;
+  --nodes-manager-card-min-width: 300px;
 }
 
 /* Global rules are limited to this extension's native DOM island. */
 [data-template-theme] [data-template-native-note] {
   margin: 0 var(--space-md) var(--space-md);
   padding: var(--space-sm) var(--space-md);
-  border-inline-start: var(--template-border-width) solid var(--template-border);
-  color: var(--template-muted-text);
-  font-size: var(--template-note-size);
+  border-inline-start: var(--cp-border-width) solid var(--cp-border);
+  color: var(--cp-muted);
+  font-size: var(--cp-note-size);
 }

@@ -1,4 +1,5 @@
 .card {
+  position: relative;
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -7,8 +8,6 @@
   border: 1px solid rgb(255 255 255 / 9%);
   border-radius: 10px;
   background: linear-gradient(155deg, #212630, #1b1f26 70%);
-  content-visibility: auto;
-  contain-intrinsic-size: auto 390px;
 }
 
 .cardHead {
@@ -69,18 +68,6 @@
   white-space: nowrap;
 }
 
-.sourceBadge,
-.updateBadge {
-  flex: 0 0 auto;
-  padding: var(--space-2xs) var(--space-xs);
-  border: 1px solid rgb(129 167 211 / 22%);
-  border-radius: 999px;
-  background: rgb(56 98 147 / 17%);
-  color: #b7d3f3;
-  font-size: 10px;
-  font-weight: 700;
-}
-
 .description {
   display: -webkit-box;
   min-height: 3em;
@@ -115,6 +102,12 @@
   flex: 0 0 auto;
 }
 
+.uninstallIcon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
 .author,
 .repositoryText {
   overflow: hidden;
@@ -138,7 +131,7 @@
 }
 
 .repository:focus-visible {
-  outline: var(--template-focus-width) solid currentcolor;
+  outline: var(--cp-focus-width) solid currentcolor;
   outline-offset: var(--space-xs);
 }
 
@@ -159,12 +152,6 @@
 
 .disabledState {
   color: #e6b574;
-}
-
-.updateBadge {
-  border-color: rgb(233 177 79 / 25%);
-  background: rgb(172 114 32 / 16%);
-  color: #f1ca85;
 }
 
 .versionField {
@@ -196,12 +183,11 @@
 .versionField > button {
   box-sizing: border-box;
   width: 100%;
-  min-height: 36px;
   text-align: left;
 }
 
 .versionField select:focus-visible {
-  outline: var(--template-focus-width) solid currentcolor;
+  outline: var(--cp-focus-width) solid currentcolor;
   outline-offset: var(--space-xs);
 }
 
@@ -218,16 +204,6 @@
   color: #ffc7c1;
   font-size: 11px;
   overflow-wrap: anywhere;
-}
-
-.inlineRetryButton {
-  composes: controlBase from "../styles/controls.module.css";
-  flex: 0 0 auto;
-  padding: var(--space-xs) var(--space-sm);
-  border-color: rgb(255 255 255 / 15%);
-  background: #303642;
-  color: #f1f3f7;
-  font-size: 11px;
 }
 
 .flaggedNote {
@@ -248,70 +224,8 @@
   margin-top: auto;
 }
 
-.button {
-  composes: controlBase from "../styles/controls.module.css";
-  min-height: 34px;
-  padding: var(--space-xs) var(--space-sm);
-  border-color: rgb(255 255 255 / 13%);
-  background: #303743;
-  color: #edf1f6;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.primaryButton {
-  composes: controlBase from "../styles/controls.module.css";
-  min-height: 34px;
-  padding: var(--space-xs) var(--space-sm);
-  border-color: rgb(80 155 237 / 35%);
-  background: #245f9b;
-  color: #edf1f6;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.dangerButton {
-  composes: controlBase from "../styles/controls.module.css";
-  min-height: 34px;
-  padding: var(--space-xs) var(--space-sm);
-  border-color: rgb(238 112 103 / 30%);
-  background: #632b2d;
-  color: #edf1f6;
-  font-size: 11px;
-  font-weight: 700;
-}
-
 .retryQueueButton {
-  composes: controlBase from "../styles/controls.module.css";
-  min-height: 34px;
-  padding: var(--space-xs) var(--space-sm);
   justify-self: start;
-  border-color: rgb(255 255 255 / 18%);
-  background: #414958;
-  color: #edf1f6;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.button:disabled,
-.primaryButton:disabled,
-.dangerButton:disabled,
-.retryQueueButton:disabled {
-  background: #262b33;
-  color: #7f8995;
-  cursor: not-allowed;
-}
-
-.button:hover:not(:disabled) {
-  background: #414c5b;
-}
-
-.primaryButton:hover:not(:disabled) {
-  background: #2e77bd;
-}
-
-.dangerButton:hover:not(:disabled) {
-  background: #803638;
 }
 
 .managerUnavailable {
@@ -348,10 +262,6 @@
   border-color: rgb(231 178 86 / 27%);
   background: rgb(142 91 23 / 14%);
   color: #f2d49c;
-}
-
-.retryQueueButton:hover:not(:disabled) {
-  background: #525e71;
 }
 
 .restartNote {

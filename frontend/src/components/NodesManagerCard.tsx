@@ -1,4 +1,4 @@
-import { Download, RotateCwClock, Star } from "lucide-react"
+import { Download, RotateCwClock, Star, Trash2 } from "lucide-react"
 import { useId } from "react"
 
 import {
@@ -8,6 +8,8 @@ import {
   type RegistryVersion,
 } from "../services/nodesManager.ts"
 import type { NodesManagerOperationState } from "../services/nodesManagerController.ts"
+import { Badge } from "./ui/badge.tsx"
+import { Button } from "./ui/button.tsx"
 
 import styles from "./nodesManagerCard.module.css"
 
@@ -58,7 +60,7 @@ function formatDate(value: string | undefined): string | undefined {
   const date = new Date(value)
   return Number.isNaN(date.valueOf())
     ? undefined
-    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date)
+    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date).replace(/\.$/u, "")
 }
 
 function operationLabel(operation: NodesManagerOperationState): string {
@@ -141,7 +143,7 @@ export function NodesManagerCard({
             {pack.id}
           </p>
         </div>
-        <span className={styles.sourceBadge}>{pack.source}</span>
+        <Badge>{pack.source}</Badge>
       </div>
 
       <p className={styles.description}>{pack.description || "No description provided."}</p>
@@ -156,9 +158,9 @@ export function NodesManagerCard({
           {formatCount(pack.downloads)}
         </span>
         {updated && (
-          <span title={`Updated ${updated}`}>
+          <span title={updated}>
             <RotateCwClock className={styles.metadataIcon} aria-hidden="true" />
-            Updated {updated}
+            {updated}
           </span>
         )}
       </div>
@@ -186,7 +188,7 @@ export function NodesManagerCard({
           </span>
         )}
         {pack.latestVersion?.version && <span>Latest: {pack.latestVersion.version}</span>}
-        {pack.updateAvailable && <span className={styles.updateBadge}>Update available</span>}
+        {pack.updateAvailable && <Badge tone="warning">Update available</Badge>}
       </div>
 
       {(pack.source === "Registry" || (!installed && pack.latestVersion)) && (
@@ -214,27 +216,29 @@ export function NodesManagerCard({
               })}
             </select>
           ) : (
-            <button
-              className={styles.button}
+            <Button
+              size="sm"
               type="button"
-              aria-busy={versionState?.loading ?? false}
-              disabled={!actionsEnabled || busy || versionState?.loading}
+              data-action="load-version"
+              busy={versionState?.loading}
+              busyLabel="Loading versions…"
+              disabled={!actionsEnabled || busy}
               onClick={onLoadVersions}
             >
-              {versionState?.loading ? "Loading versions…" : "Choose a version…"}
-            </button>
+              Choose a version…
+            </Button>
           )}
           {versionState?.error && (
             <div className={styles.inlineError}>
               <span>Could not load versions: {versionState.error}</span>
-              <button
-                className={styles.inlineRetryButton}
+              <Button
+                size="sm"
                 type="button"
                 disabled={!actionsEnabled || busy}
                 onClick={onRetryVersions}
               >
                 Retry
-              </button>
+              </Button>
             </div>
           )}
           {flagged && (
@@ -248,51 +252,56 @@ export function NodesManagerCard({
 
       <div className={styles.actions}>
         {!installed && (
-          <button
-            className={styles.primaryButton}
+          <Button
+            size="sm"
+            variant="primary"
             type="button"
             disabled={!actionsEnabled || busy || !canInstall}
             onClick={() => onSubmit("install", selectedVersion)}
           >
             Install
-          </button>
+          </Button>
         )}
         {installed && (
           <>
-            <button
-              className={styles.primaryButton}
+            <Button
+              size="sm"
+              variant="primary"
               type="button"
               disabled={!actionsEnabled || busy}
               onClick={() => onSubmit("update")}
             >
               Update
-            </button>
+            </Button>
             {pack.source === "Registry" && (
-              <button
-                className={styles.button}
+              <Button
+                size="sm"
                 type="button"
                 disabled={!actionsEnabled || busy || !canSwitch}
                 onClick={() => onSubmit("switch", selectedVersion)}
               >
                 Install selected version
-              </button>
+              </Button>
             )}
-            <button
-              className={styles.button}
+            <Button
+              size="sm"
               type="button"
               disabled={!actionsEnabled || busy}
               onClick={() => onSubmit(installed.enabled === true ? "disable" : "enable")}
             >
               {installed.enabled === true ? "Disable" : "Enable"}
-            </button>
-            <button
-              className={styles.dangerButton}
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
               type="button"
+              aria-label={`Uninstall ${pack.name}`}
+              title={`Uninstall ${pack.name}`}
               disabled={!actionsEnabled || busy}
               onClick={() => onSubmit("uninstall")}
             >
-              Uninstall
-            </button>
+              <Trash2 className={styles.uninstallIcon} aria-hidden="true" />
+            </Button>
           </>
         )}
       </div>
@@ -311,7 +320,8 @@ export function NodesManagerCard({
           <strong>{operationLabel(operation)}</strong>
           {operation.message && <span>{operation.message}</span>}
           {operation.queueStartFailed && (
-            <button
+            <Button
+              size="sm"
               className={styles.retryQueueButton}
               type="button"
               disabled={
@@ -320,7 +330,7 @@ export function NodesManagerCard({
               onClick={onRetryQueueStart}
             >
               Retry Queue Start
-            </button>
+            </Button>
           )}
           {operation.restartRequired && (
             <span className={styles.restartNote}>Restart ComfyUI to load this change.</span>

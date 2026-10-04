@@ -2,6 +2,7 @@ import { expect, it, vi } from "bun:test"
 
 import { act } from "react"
 import { createRoot } from "react-dom/client"
+import { VirtuosoMockContext } from "react-virtuoso"
 
 import type {
   ControlPanelActions,
@@ -15,6 +16,9 @@ import type {
   NodesManagerController,
   NodesManagerSnapshot,
 } from "../../src/services/nodesManagerController.ts"
+
+const MOCK_LIST_ITEM_HEIGHT = 420
+const MOCK_LIST_VIEWPORT_HEIGHT = 680
 
 function managedPack(id: string, changes: Partial<ManagedPack> = {}): ManagedPack {
   return {
@@ -123,7 +127,15 @@ async function mountNodesManager(snapshot: NodesManagerSnapshot) {
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)
-  await act(async () => root.render(<NodesManagerPage controller={manager.controller} />))
+  await act(async () =>
+    root.render(
+      <VirtuosoMockContext.Provider
+        value={{ itemHeight: MOCK_LIST_ITEM_HEIGHT, viewportHeight: MOCK_LIST_VIEWPORT_HEIGHT }}
+      >
+        <NodesManagerPage controller={manager.controller} />
+      </VirtuosoMockContext.Provider>,
+    ),
+  )
   return {
     ...manager,
     destroy: async () => {
@@ -131,6 +143,50 @@ async function mountNodesManager(snapshot: NodesManagerSnapshot) {
       host.remove()
     },
   }
+}
+
+function scrollVirtualListTo(top: number, itemCount: number): HTMLElement {
+  const scroller = document.querySelector<HTMLElement>("[data-virtuoso-scroller]")
+  if (!scroller) throw new Error("Missing virtualized Extensions scroller")
+
+  let scrollTop = scroller.scrollTop
+  Object.defineProperties(scroller, {
+    scrollTop: {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value
+      },
+    },
+    scrollHeight: {
+      configurable: true,
+      get: () => itemCount * MOCK_LIST_ITEM_HEIGHT,
+    },
+    clientHeight: {
+      configurable: true,
+      value: MOCK_LIST_VIEWPORT_HEIGHT,
+    },
+    offsetHeight: {
+      configurable: true,
+      value: MOCK_LIST_VIEWPORT_HEIGHT,
+    },
+    scrollTo: {
+      configurable: true,
+      value: (options: ScrollToOptions) => {
+        scrollTop = options.top ?? scrollTop
+        scroller.dispatchEvent(new Event("scroll"))
+      },
+    },
+  })
+  scrollTop = top
+  scroller.dispatchEvent(new Event("scroll"))
+  return scroller
+}
+
+async function settleVirtualScroll(): Promise<void> {
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  )
 }
 
 it("keeps latest as the install default and reveals version choices after fetch", async () => {
@@ -212,26 +268,104 @@ it("keeps latest as the install default and reveals version choices after fetch"
   }
 })
 
-it("limits results to 48 cards and resets pagination when a filter or search changes", async () => {
-  const packs = Array.from({ length: 50 }, (_, index) => managedPack(`pack-${index + 1}`))
+it("virtually scrolls past 48 results and keeps selection while cards unmount", async () => {
+  const packs = Array.from({ length: 60 }, (_, index) =>
+    managedPack(`pack-${index + 1}`, { downloads: 1_000 - index }),
+  )
   const mounted = await mountNodesManager(managerSnapshot(packs))
   try {
     expect(
       document.querySelector<HTMLSelectElement>('select[name="nodes-manager-sort"]')?.value,
     ).toBe("downloads")
-    expect(document.querySelectorAll("article")).toHaveLength(48)
-    await act(async () => findButton("Next").click())
-    expect(document.querySelectorAll("article")).toHaveLength(2)
-    expect(document.body.textContent).toContain("Page 2 of 2")
+    expect(document.body.textContent).toContain("60 extensions")
+    expect(document.body.textContent).not.toContain("Previous")
+    expect(document.body.textContent).not.toContain("Next")
 
-    await act(async () => findButtonContaining("Not Installed").click())
-    expect(document.querySelectorAll("article")).toHaveLength(48)
-    expect(document.body.textContent).toContain("Page 1 of 2")
+    const scroller = document.querySelector<HTMLElement>("[data-virtuoso-scroller]")!
+    expect(scroller.tabIndex).toBe(0)
+    expect(scroller.getAttribute("aria-label")).toBe("Extensions")
+    expect(document.querySelectorAll("article").length).toBeLessThan(packs.length)
 
+    await act(async () => findButton("Choose a version…").click())
+    const firstPackVersions = document.querySelector<HTMLSelectElement>(
+      'select[name="version-pack-1"]',
+    )!
+    await act(async () => setValue(firstPackVersions, "0.9.0"))
+
+    await act(async () => {
+      scrollVirtualListTo((packs.length - 1) * MOCK_LIST_ITEM_HEIGHT, packs.length)
+      await settleVirtualScroll()
+    })
+    expect(document.body.textContent).toContain("Pack pack-60")
+    expect(document.querySelector('select[name="version-pack-1"]')).toBeNull()
+    const endScrollTop = scroller.scrollTop
+
+    const loadedVersions: RegistryVersion[] = [
+      { version: "1.0.0", status: "Active" },
+      { version: "0.9.0", status: "Flagged", status_reason: "Known security issue" },
+    ]
+    await act(async () => {
+      mounted.update({
+        versions: {
+          ...mounted.controller.getSnapshot().versions,
+          "pack-60": { loading: false, values: loadedVersions },
+        },
+      })
+      await settleVirtualScroll()
+    })
+    expect(scroller.scrollTop).toBe(endScrollTop)
+    expect(document.body.textContent).toContain("Pack pack-60")
+
+    await act(async () => {
+      scrollVirtualListTo(0, packs.length)
+      await settleVirtualScroll()
+    })
+    expect(document.querySelector<HTMLSelectElement>('select[name="version-pack-1"]')?.value).toBe(
+      "0.9.0",
+    )
+
+    await act(async () => {
+      scrollVirtualListTo((packs.length - 1) * MOCK_LIST_ITEM_HEIGHT, packs.length)
+      await settleVirtualScroll()
+    })
+    await act(async () => {
+      findButtonContaining("Not Installed").click()
+      await settleVirtualScroll()
+    })
+    expect(scroller.scrollTop).toBe(0)
+    expect(document.body.textContent).toContain("Pack pack-1")
+
+    await act(async () => {
+      scrollVirtualListTo((packs.length - 1) * MOCK_LIST_ITEM_HEIGHT, packs.length)
+      await settleVirtualScroll()
+    })
+    const sort = document.querySelector<HTMLSelectElement>('select[name="nodes-manager-sort"]')!
+    await act(async () => {
+      setValue(sort, "name")
+      await settleVirtualScroll()
+    })
+    expect(scroller.scrollTop).toBe(0)
+    expect(document.body.textContent).toContain("Pack pack-1")
+
+    await act(async () => {
+      scrollVirtualListTo((packs.length - 1) * MOCK_LIST_ITEM_HEIGHT, packs.length)
+      await settleVirtualScroll()
+    })
     const search = document.querySelector<HTMLInputElement>('input[name="nodes-manager-search"]')!
-    await act(async () => setValue(search, "pack-50"))
+    await act(async () => {
+      setValue(search, "pack-60")
+      await settleVirtualScroll()
+    })
+    expect(scroller.scrollTop).toBe(0)
     expect(document.querySelectorAll("article")).toHaveLength(1)
-    expect(document.body.textContent).toContain("Page 1 of 1")
+    expect(document.body.textContent).toContain("Pack pack-60")
+
+    await act(async () => {
+      setValue(search, "no-such-extension")
+      await settleVirtualScroll()
+    })
+    expect(document.querySelectorAll("article")).toHaveLength(0)
+    expect(document.body.textContent).toContain("No extensions match this search.")
   } finally {
     await mounted.destroy()
   }

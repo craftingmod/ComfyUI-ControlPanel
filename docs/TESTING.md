@@ -22,9 +22,7 @@ For ComfyUI API changes, verify behavior against the current official ComfyUI do
 
 ## Nodes Manager
 
-Restart ComfyUI after updating ControlPanel so the local catalog and Registry-version routes are registered. Open ControlPanel → Nodes Manager and check the catalog source label, search, the five filters, name/star/update sorting, and navigation across the 48-item pages. Click “Choose a version…” to load Registry versions, verify the button shows “Loading versions…” while pending, and confirm the selector appears only after a successful response. On failure, verify the error and Retry button remain available. Check that Flagged versions include their available reason and that the latest version remains the install default. Check installed Git and Registry packs, including disabled packs and packs absent from the catalog.
-
-When ComfyUI-Manager is unavailable, verify the installed-data error and that mutation buttons are disabled. For Manager task UI checks, use a test ComfyUI environment: inspect install, exact-version switch, update, enable, disable, uninstall confirmation, pending/failed/unknown/skipped results, accepted-task queue-start retry, and restart notices. Do not treat an accepted queue request as a completed node change; completion must be confirmed by Manager history and refreshed installed data. No real install or uninstall is required for routine automated validation.
+See `docs/agent/NODES_MANAGER.md`.
 
 ## Generated files
 

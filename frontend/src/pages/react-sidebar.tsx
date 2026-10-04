@@ -2,6 +2,7 @@ import type { SidebarTabExtension } from "@comfyorg/comfyui-frontend-types"
 import { useState } from "react"
 import { createRoot, type Root } from "react-dom/client"
 
+import { Button } from "../components/ui/button.tsx"
 import { PROJECT_ID, PROJECT_NAME } from "../constants.ts"
 
 import styles from "./react-sidebar.module.css"
@@ -13,16 +14,12 @@ function ReactExample() {
     <section className={styles.panel} aria-label={PROJECT_NAME}>
       <h2 className={styles.heading}>{PROJECT_NAME}</h2>
       <div className={styles.actions}>
-        <button
-          className={styles.counterButton}
-          type="button"
-          onClick={() => setCount((value) => value + 1)}
-        >
+        <Button type="button" onClick={() => setCount((value) => value + 1)}>
           Count: {count}
-        </button>
-        <button className={styles.resetButton} type="button" onClick={() => setCount(0)}>
+        </Button>
+        <Button type="button" onClick={() => setCount(0)}>
           Reset
-        </button>
+        </Button>
       </div>
     </section>
   )

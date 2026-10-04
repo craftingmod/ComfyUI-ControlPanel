@@ -1,0 +1,89 @@
+.button {
+  composes: controlBase from "../../styles/controls.module.css";
+}
+
+[data-template-theme] .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  min-height: var(--space-xl);
+  padding: var(--space-sm) var(--space-3sm);
+  border-color: var(--cp-border);
+  background: var(--cp-panel);
+  color: var(--cp-text);
+  font-weight: 650;
+  touch-action: manipulation;
+
+  &:disabled {
+    background: var(--cp-panel);
+    color: var(--cp-muted);
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  &:focus-visible {
+    outline: var(--cp-focus-width) solid var(--cp-accent);
+    outline-offset: var(--space-xs);
+  }
+
+  &:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--cp-panel) 80%, var(--cp-text));
+    border-color: var(--cp-accent);
+  }
+
+  &[data-size="sm"] {
+    min-height: var(--space-lg);
+    padding: var(--space-xs) var(--space-sm);
+    font-size: 11px;
+  }
+
+  &[data-size="icon"] {
+    width: var(--space-2xl);
+    height: var(--space-2xl);
+    padding: 0;
+    border-radius: 50%;
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  &[data-variant="primary"] {
+    background: color-mix(in srgb, var(--cp-accent) 72%, #162239);
+    border-color: color-mix(in srgb, var(--cp-accent) 80%, white);
+    color: white;
+  }
+
+  &[data-variant="primary"]:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--cp-accent) 80%, white);
+  }
+
+  &[data-variant="danger"] {
+    border-color: color-mix(in srgb, var(--cp-danger) 65%, var(--cp-border));
+    color: var(--cp-danger);
+  }
+
+  &[data-variant="danger"]:hover:not(:disabled) {
+    border-color: var(--cp-danger);
+    background: color-mix(in srgb, var(--cp-danger) 38%, var(--cp-panel));
+    color: white;
+  }
+
+  &[data-variant="ghost"] {
+    justify-content: space-between;
+    gap: var(--space-sm);
+    padding: var(--space-sm);
+    border-color: transparent;
+    background: transparent;
+    text-align: left;
+  }
+
+  &[data-variant="ghost"]:hover:not(:disabled) {
+    background: rgb(255 255 255 / 6%);
+  }
+
+  &[data-variant="ghost"][aria-pressed="true"] {
+    border-color: rgb(99 168 255 / 24%);
+    background: rgb(48 113 188 / 22%);
+    color: #e9f3ff;
+  }
+}
