@@ -92,6 +92,33 @@ def register_routes(api: Any) -> bool:
     except nodes_manager.CatalogUnavailableError as error:
       return api._error_response(str(error), status=503)
 
+  @routes.get(f"{api.API_PREFIX}/nodes-manager/local-folders")
+  @control_route
+  async def nodes_manager_local_folders(_request):
+    return api._json_response(
+      {
+        "ok": True,
+        "packs": nodes_manager.discover_local_folders(api.custom_node_roots()),
+      }
+    )
+
+  @routes.post(f"{api.API_PREFIX}/nodes-manager/open-folder")
+  @control_route
+  async def nodes_manager_open_folder(request):
+    data = await api._read_json(request)
+    target = nodes_manager.resolve_local_folder(
+      api.custom_node_roots(), data.get("node_id")
+    )
+    if target is None:
+      return api._json_response({"ok": True, "skipped": True})
+    try:
+      result = api.open_path_in_file_manager(target)
+      return api._json_response({"ok": True, **result})
+    except Exception as error:
+      if not target.is_dir():
+        return api._json_response({"ok": True, "skipped": True})
+      return api._error_response(str(error), status=500)
+
   @routes.get(f"{api.API_PREFIX}/nodes-manager/versions")
   @control_route
   async def nodes_manager_versions(request):
@@ -219,6 +246,25 @@ def register_routes(api: Any) -> bool:
   async def update_custom_nodes(_request):
     return await api._start_job_response(
       "git-nodes", "Update Git Nodes", api._job_update_git_nodes
+    )
+
+  @routes.post(f"{api.API_PREFIX}/update/git-node")
+  @control_route(manager_policy=api._MANAGER_POLICY_MIDDLE)
+  async def update_git_node(request):
+    data = await api._read_json(request)
+    node_key = data.get("node_key")
+    if not isinstance(node_key, str) or not node_key:
+      return api._error_response(
+        "An installed Git node folder key is required.", status=400
+      )
+    try:
+      repository = api.resolve_git_node_repository(node_key)
+    except api.ManagerApiError as error:
+      return api._error_response(str(error), status=400)
+    return await api._start_job_response(
+      "git-node",
+      f"Fetch {repository.name}",
+      lambda job: api._job_update_git_node(job, repository),
     )
 
   @routes.post(f"{api.API_PREFIX}/updates/check")

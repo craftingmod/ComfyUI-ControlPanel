@@ -12,6 +12,41 @@ import {
 } from "../../src/services/nodesManager.ts"
 
 describe("Nodes Manager service contracts", () => {
+  it("preserves cached Flagged version metadata separately from the latest install target", () => {
+    const flagged = { version: "0.9.0", status: "NodeVersionStatusFlagged" }
+    const [pack] = normalizeManagedPacks(
+      {
+        nodes: [
+          {
+            id: "pack",
+            latest_version: { version: "1.0.0", status: "Active" },
+            latest_flagged_version: flagged,
+          },
+        ],
+      },
+      { pack: { cnr_id: "pack", ver: "0.9.0", enabled: true } },
+    )
+    expect(pack?.latestFlaggedVersion).toEqual(flagged)
+    expect(pack?.latestVersion?.version).toBe("1.0.0")
+  })
+
+  it("keeps local folders separate from Registry names and blocks Manager operations", () => {
+    const packs = normalizeManagedPacks({ nodes: [{ id: "local-pack", name: "Registry Pack" }] }, [
+      { key: "V:/custom_nodes/local-pack", name: "local-pack", local: true, enabled: true },
+      { key: "V:/other/local-pack", name: "local-pack", local: true, enabled: false },
+      { key: "git-pack", auxId: "owner/git-pack", enabled: true },
+    ])
+    const locals = filterAndSortManagedPacks(packs, "local", "local-pack", "name")
+    expect(locals).toHaveLength(2)
+    expect(locals[0]).toMatchObject({ source: "Local folder", readOnly: true, name: "local-pack" })
+    expect(packs[0]?.installed).toBeUndefined()
+    expect(filterAndSortManagedPacks(packs, "installed", "", "name")).toHaveLength(3)
+    expect(filterAndSortManagedPacks(locals, "disabled", "", "name")).toHaveLength(1)
+    for (const operation of ["update", "enable", "disable", "uninstall"] as const) {
+      expect(() => buildManagerQueuePayload(locals[0]!, operation, "client", "task")).toThrow()
+    }
+  })
+
   it("uses jsDelivr for GitHub raw images while preserving repository URLs", () => {
     const raw =
       "https://raw.githubusercontent.com/crystian/ComfyUI-Crystools/main/docs/screwdriver.png"

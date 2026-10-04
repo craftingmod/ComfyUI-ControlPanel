@@ -1,6 +1,7 @@
 import type { ComfyApp } from "@comfyorg/comfyui-frontend-types"
 
 import { createTranslator, type TranslationKey, type TranslationValues } from "../i18n/messages.ts"
+import type { MetadataGraph } from "./graphWalker.ts"
 import {
   buildManagerQueuePayload,
   createNodesManagerService,
@@ -16,6 +17,7 @@ import {
   type RegistryVersion,
   sameManagedPackTarget,
 } from "./nodesManager.ts"
+import { analyzeWorkflow, type WorkflowNodeDiagnostic } from "./nodesManagerWorkflow.ts"
 
 export type NodesManagerOperationState = {
   packKey: string
@@ -32,6 +34,8 @@ export type NodesManagerOperationState = {
   accepted?: boolean
   queueStartFailed?: boolean
   restartRequired?: boolean
+  provider?: "git"
+  gitJobId?: string
 }
 
 export type NodesManagerSnapshot = {
@@ -48,6 +52,13 @@ export type NodesManagerSnapshot = {
   installedErrorValues?: TranslationValues
   installed: InstalledPack[]
   packs: ManagedPack[]
+  workflowStatus: "idle" | "loading" | "ready" | "degraded" | "unavailable"
+  workflowAvailabilityKnown: boolean
+  workflowError?: string
+  workflowPacks: ManagedPack[]
+  workflowMissingPacks: ManagedPack[]
+  workflowDiagnostics: WorkflowNodeDiagnostic[]
+  workflowMappingIssueCount: number
   operations: Record<string, NodesManagerOperationState>
   versions: Record<
     string,
@@ -60,6 +71,7 @@ export type NodesManagerSnapshot = {
     }
   >
   checking: boolean
+  bulkOperation?: "git" | "updates"
 }
 
 type ConfirmOptions = { title: string; message: string }
@@ -77,6 +89,8 @@ export type NodesManagerController = {
     selectedVersion?: string,
   ) => Promise<boolean>
   retryQueueStart: (packKey: string) => Promise<boolean>
+  submitAll: (filter: "git" | "updates") => Promise<void>
+  browseLocalFolder: (pack: ManagedPack) => Promise<void>
 }
 
 function errorMessage(error: unknown): string {
@@ -110,6 +124,7 @@ function isActive(operation: NodesManagerOperationState | undefined): boolean {
 function shouldPoll(operation: NodesManagerOperationState): boolean {
   return (
     (operation.status === "pending" || operation.status === "unknown") &&
+    (operation.provider !== "git" || Boolean(operation.gitJobId)) &&
     operation.managerStatus === undefined
   )
 }
@@ -162,17 +177,78 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
     installedStatus: "idle",
     installed: [],
     packs: [],
+    workflowStatus: "idle",
+    workflowAvailabilityKnown: false,
+    workflowPacks: [],
+    workflowMissingPacks: [],
+    workflowDiagnostics: [],
+    workflowMappingIssueCount: 0,
     operations: {},
     versions: {},
     checking: false,
   }
   let catalogNodes: RegistryNode[] = []
+  let workflowGraph: MetadataGraph | undefined
+  let workflowMappings: unknown
+  let workflowMappingsAvailable = false
+  let workflowMappingError: string | undefined
   let readGeneration = 0
   let installedReadGeneration = 0
   let dialogGeneration = 0
   const versionGenerations = new Map<string, number>()
   let pollTimer: number | undefined
   let pollRunning = false
+
+  function workflowPatch(
+    packs: ManagedPack[],
+    installed: InstalledPack[],
+    installedKnown: boolean,
+  ): Pick<
+    NodesManagerSnapshot,
+    | "workflowStatus"
+    | "workflowAvailabilityKnown"
+    | "workflowError"
+    | "workflowPacks"
+    | "workflowMissingPacks"
+    | "workflowDiagnostics"
+    | "workflowMappingIssueCount"
+  > {
+    if (!workflowGraph) {
+      return {
+        workflowStatus: "unavailable",
+        workflowAvailabilityKnown: installedKnown,
+        workflowError: undefined,
+        workflowPacks: [],
+        workflowMissingPacks: [],
+        workflowDiagnostics: [],
+        workflowMappingIssueCount: 0,
+      }
+    }
+    const report = analyzeWorkflow(
+      workflowGraph,
+      workflowMappings,
+      packs,
+      installed,
+      installedKnown,
+    )
+    return {
+      workflowStatus:
+        !workflowMappingsAvailable || !installedKnown || report.mappingIssueCount > 0
+          ? "degraded"
+          : "ready",
+      workflowAvailabilityKnown: installedKnown,
+      workflowError: workflowMappingError,
+      workflowPacks: report.packs,
+      workflowMissingPacks: report.missingPacks,
+      workflowDiagnostics: report.diagnostics,
+      workflowMappingIssueCount: workflowMappingsAvailable ? report.mappingIssueCount : 0,
+    }
+  }
+
+  function currentWorkflowGraph(): MetadataGraph | undefined {
+    const host = app as ComfyApp & { rootGraph?: MetadataGraph; graph?: MetadataGraph }
+    return host.rootGraph ?? host.graph
+  }
 
   function publish(next: NodesManagerSnapshot): void {
     snapshot = next
@@ -228,10 +304,14 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
       installedError: undefined,
       installedErrorKey: undefined,
       installedErrorValues: undefined,
+      workflowStatus: "loading",
+      workflowError: undefined,
     })
-    const [catalogResult, installedResult] = await Promise.allSettled([
+    const currentGraph = currentWorkflowGraph()
+    const [catalogResult, installedResult, workflowMappingsResult] = await Promise.allSettled([
       service.loadCatalog(),
       service.loadInstalled(),
+      service.loadWorkflowMappings(),
     ])
     if (generation !== readGeneration || !snapshot.isOpen) return
 
@@ -278,6 +358,15 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
     }
 
     const packs = normalizeManagedPacks({ nodes: catalogNodes }, installed)
+    workflowGraph = currentGraph
+    workflowMappingsAvailable = workflowMappingsResult.status === "fulfilled"
+    workflowMappings =
+      workflowMappingsResult.status === "fulfilled" ? workflowMappingsResult.value : undefined
+    workflowMappingError =
+      workflowMappingsResult.status === "rejected"
+        ? errorMessage(workflowMappingsResult.reason)
+        : undefined
+    const availabilityKnown = installedStatus === "ready"
     publish({
       ...snapshot,
       catalogStatus,
@@ -292,6 +381,7 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
       installedErrorValues,
       installed,
       packs,
+      ...workflowPatch(packs, installed, availabilityKnown),
     })
     if (installedResult.status === "fulfilled" && installedGeneration === installedReadGeneration) {
       await reconcileManagerSuccesses(installed)
@@ -337,6 +427,68 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
       generation === dialogGeneration &&
       snapshot.operations[operation.packKey]?.taskId === operation.taskId
     try {
+      if (operation.provider === "git" && operation.gitJobId) {
+        const job = await service.getGitJob(operation.gitJobId)
+        if (!isCurrent()) return
+        const message = [...job.logs, ...(job.error ? [job.error] : [])].join("\n")
+        if (job.status === "queued" || job.status === "running") {
+          replaceOperation({ ...withRawMessage(operation, message), status: "pending" })
+          return
+        }
+        const result = Array.isArray(job.result?.results)
+          ? (job.result.results[0] as { error?: string; skipped?: string } | undefined)
+          : undefined
+        const status =
+          job.status === "failed" || result?.error
+            ? "failed"
+            : result?.skipped
+              ? "skipped"
+              : "succeeded"
+        replaceOperation({
+          ...withRawMessage(
+            operation,
+            message ||
+              result?.error ||
+              result?.skipped ||
+              t(
+                status === "failed"
+                  ? "operation.failed"
+                  : status === "skipped"
+                    ? "operation.skipped"
+                    : "operation.completed",
+              ),
+          ),
+          status,
+          managerStatus: status === "failed" ? "error" : status === "skipped" ? "skip" : "success",
+          restartRequired: status === "succeeded" && Boolean(job.restart_required),
+        })
+        const installedGeneration = ++installedReadGeneration
+        try {
+          const installed = await service.loadInstalled()
+          if (!isCurrent() || installedGeneration !== installedReadGeneration) return
+          const packs = normalizeManagedPacks({ nodes: catalogNodes }, installed)
+          update({
+            installed,
+            installedStatus: "ready",
+            installedError: undefined,
+            installedErrorKey: undefined,
+            installedErrorValues: undefined,
+            packs,
+            ...workflowPatch(packs, installed, true),
+          })
+        } catch (error) {
+          if (!isCurrent() || installedGeneration !== installedReadGeneration) return
+          const details = errorDetails(error)
+          update({
+            installedStatus: "error",
+            installedError: details.message,
+            installedErrorKey: details.key,
+            installedErrorValues: details.values,
+            ...workflowPatch(snapshot.packs, snapshot.installed, false),
+          })
+        }
+        return
+      }
       const response = await service.getTaskHistory(operation.taskId, operation.clientId)
       if (!isCurrent()) return
       const item = findHistoryItem(response, operation.taskId, operation.clientId)
@@ -355,13 +507,18 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
             installedErrorKey: undefined,
             installedErrorValues: undefined,
           })
-          update({ packs: normalizeManagedPacks({ nodes: catalogNodes }, installed) })
+          const packs = normalizeManagedPacks({ nodes: catalogNodes }, installed)
+          update({
+            packs,
+            ...workflowPatch(packs, installed, true),
+          })
         } else if (installedGeneration === installedReadGeneration) {
           update({
             installedStatus: "error",
             installedError: undefined,
             installedErrorKey: "nodes.installedRefreshFailed",
             installedErrorValues: undefined,
+            ...workflowPatch(snapshot.packs, snapshot.installed, false),
           })
         }
         const historyMessage = item.status?.messages?.filter(Boolean).join("\n")
@@ -403,7 +560,10 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
           installedErrorValues: undefined,
         })
         const packs = normalizeManagedPacks({ nodes: catalogNodes }, installed)
-        update({ packs })
+        update({
+          packs,
+          ...workflowPatch(packs, installed, true),
+        })
         await reconcileOperation(terminal, installed)
       } catch (error) {
         if (!isCurrent()) return
@@ -417,6 +577,7 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
           installedError: details.message,
           installedErrorKey: details.key,
           installedErrorValues: details.values,
+          ...workflowPatch(snapshot.packs, snapshot.installed, false),
         })
       }
     } catch (error) {
@@ -478,11 +639,12 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
         value.loading ? { ...value, loading: false } : value,
       ]),
     )
-    update({ isOpen: false, checking: false, versions })
+    update({ isOpen: false, checking: false, versions, bulkOperation: undefined })
   }
 
   async function loadVersions(pack: ManagedPack): Promise<void> {
-    if (!pack.id || snapshot.versions[pack.key]?.loading) return
+    if (pack.readOnly || pack.source === "Git" || !pack.id || snapshot.versions[pack.key]?.loading)
+      return
     const generation = dialogGeneration
     const versionGeneration = (versionGenerations.get(pack.key) ?? 0) + 1
     versionGenerations.set(pack.key, versionGeneration)
@@ -557,6 +719,16 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
     operation: ManagerOperation,
     selectedVersion?: string,
   ): Promise<boolean> {
+    if (
+      pack.readOnly ||
+      (pack.source === "Git" && (operation === "install" || operation === "switch")) ||
+      ((operation === "install" || operation === "switch") &&
+        !pack.installed &&
+        pack.source !== "Registry")
+    ) {
+      showToast("warn", t("nodes.managerUnavailableTitle"), t("nodes.workflow.installUnavailable"))
+      return false
+    }
     if (snapshot.installedStatus !== "ready") {
       showToast("warn", t("nodes.managerUnavailableTitle"), t("nodes.managerUnavailableRefresh"))
       return false
@@ -572,6 +744,7 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
       taskId,
       clientId,
       operation,
+      provider: pack.source === "Git" && operation === "update" ? "git" : undefined,
       status: "starting",
       selectedVersion,
       messageKey:
@@ -603,6 +776,40 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
       restoreReservation()
       showToast("warn", t("nodes.managerUnavailableTitle"), t("nodes.managerUnavailableRefresh"))
       return false
+    }
+
+    if (state.provider === "git") {
+      if (!pack.installed?.key) {
+        replaceOperation({
+          ...withMessageKey(state, "toast.operationUnavailable"),
+          status: "failed",
+        })
+        return false
+      }
+      replaceOperation(withMessageKey(state, "nodes.submittingTask"))
+      try {
+        const job = await service.updateGitNode(pack.installed.key)
+        if (snapshot.operations[pack.key]?.taskId !== taskId) return false
+        replaceOperation({
+          ...withMessageKey(state, "nodes.acceptedWaiting"),
+          status: "pending",
+          gitJobId: job.id,
+          accepted: true,
+        })
+        await pollPending()
+        return true
+      } catch (error) {
+        const definitive =
+          error instanceof ManagerRequestError &&
+          typeof error.status === "number" &&
+          error.status >= 400 &&
+          error.status < 500
+        replaceOperation({
+          ...withRawMessage(state, errorMessage(error)),
+          status: definitive ? "failed" : "unknown",
+        })
+        return false
+      }
     }
 
     let payload
@@ -663,6 +870,76 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
     }
   }
 
+  async function browseLocalFolder(pack: ManagedPack): Promise<void> {
+    if (pack.source !== "Local folder" || !pack.installed?.local || !pack.installed.name) return
+    try {
+      await service.browseLocalFolder(pack.installed.name)
+    } catch (error) {
+      showToast("error", t("toast.nodesManager"), errorMessage(error))
+    }
+  }
+
+  async function submitAll(filter: "git" | "updates"): Promise<void> {
+    if (
+      !snapshot.isOpen ||
+      snapshot.bulkOperation ||
+      snapshot.checking ||
+      snapshot.installedStatus !== "ready" ||
+      Object.values(snapshot.operations).some(isActive)
+    )
+      return
+    const targets = snapshot.packs.filter(
+      (pack) =>
+        pack.installed &&
+        !pack.readOnly &&
+        (filter === "git" ? pack.source === "Git" : pack.updateAvailable),
+    )
+    const session = dialogGeneration
+    let succeeded = 0
+    update({ bulkOperation: filter })
+    try {
+      for (const pack of targets) {
+        if (!snapshot.isOpen || session !== dialogGeneration) break
+        if (!(await submit(pack, "update"))) break
+        await new Promise<void>((resolve) => {
+          const check = () => {
+            const operation = findOperationForPack(snapshot.operations, pack)
+            if (
+              !snapshot.isOpen ||
+              session !== dialogGeneration ||
+              (!snapshot.checking && (!operation || operation.status !== "pending"))
+            ) {
+              unsubscribe()
+              resolve()
+            }
+          }
+          const unsubscribe = subscribe(check)
+          check()
+        })
+        const status = findOperationForPack(snapshot.operations, pack)?.status
+        if (status === "succeeded") succeeded += 1
+        if (status === "unknown") break
+      }
+      if (
+        filter === "updates" &&
+        snapshot.isOpen &&
+        session === dialogGeneration &&
+        targets.length > 0 &&
+        succeeded === targets.length
+      ) {
+        showToast(
+          "success",
+          t("toast.nodesManager"),
+          t("toast.operationComplete", {
+            operation: t("nodes.updateAll"),
+          }),
+        )
+      }
+    } finally {
+      if (session === dialogGeneration) update({ bulkOperation: undefined })
+    }
+  }
+
   async function retryQueueStart(packKey: string): Promise<boolean> {
     const operation = snapshot.operations[packKey]
     if (
@@ -708,6 +985,8 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
     refresh,
     loadVersions,
     submit,
+    submitAll,
+    browseLocalFolder,
     retryQueueStart,
   }
 }

@@ -28,6 +28,65 @@ class RegistryVersionsError(RuntimeError):
   pass
 
 
+def discover_local_folders(roots: list[Path]) -> list[dict[str, Any]]:
+  packs = []
+  seen: set[str] = set()
+  for root in roots:
+    for directory, enabled in ((root, True), (root / ".disabled", False)):
+      try:
+        children = sorted(directory.iterdir(), key=lambda child: child.name.lower())
+      except OSError:
+        continue
+      for child in children:
+        if (
+          child.name.startswith(".")
+          or child.name == "__pycache__"
+          or not child.is_dir()
+          or (child / ".git").exists()
+          or (child / ".tracking").is_file()
+        ):
+          continue
+        path = str(child.resolve())
+        if path in seen:
+          continue
+        seen.add(path)
+        packs.append(
+          {"key": path, "name": child.name, "enabled": enabled, "local": True}
+        )
+  return packs
+
+
+def resolve_local_folder(roots: list[Path], node_id: Any) -> Path | None:
+  if (
+    not isinstance(node_id, str)
+    or not node_id
+    or node_id.startswith(".")
+    or node_id.endswith((".", " "))
+    or node_id == "__pycache__"
+    or any(char in '<>:"/\\|?*' or ord(char) < 32 for char in node_id)
+  ):
+    return None
+  matches: set[Path] = set()
+  for root in roots:
+    try:
+      resolved_root = root.resolve(strict=True)
+      for directory in (root, root / ".disabled"):
+        candidate = directory / node_id
+        if not candidate.is_dir():
+          continue
+        target = candidate.resolve(strict=True)
+        if (
+          target.parent == directory.resolve()
+          and target.is_relative_to(resolved_root)
+          and not (candidate / ".git").exists()
+          and not (candidate / ".tracking").is_file()
+        ):
+          matches.add(target)
+    except (OSError, RuntimeError):
+      continue
+  return next(iter(matches)) if len(matches) == 1 else None
+
+
 def _catalog_payload(data: Any, source: str) -> dict[str, Any]:
   raw_nodes = data.get("nodes") if isinstance(data, dict) else None
   if isinstance(raw_nodes, dict):
@@ -48,6 +107,16 @@ def _catalog_payload(data: Any, source: str) -> dict[str, Any]:
     ):
       raise ValueError("Registry catalog contained an invalid node entry.")
   metadata = data.get("cache_metadata")
+  summaries = data.get("installed_node_versions")
+  if isinstance(summaries, dict):
+    nodes = [
+      {**node, "latest_flagged_version": summary.get("latest_flagged")}
+      if isinstance(
+        summary := summaries.get(node.get("id") or node.get("node_id")), dict
+      )
+      else node
+      for node in nodes
+    ]
   return {
     "nodes": nodes,
     "total": len(nodes),

@@ -31,6 +31,9 @@
   --cp-heading-size: 1.125rem;
   --cp-note-size: 0.875rem;
   --nodes-manager-card-min-width: 300px;
+  --nodes-manager-description-line-height: 18px;
+  --nodes-manager-metadata-height: 16px;
+  --nodes-manager-task-summary-height: 160px;
 }
 
 /* Global rules are limited to this extension's native DOM island. */

@@ -63,10 +63,24 @@
 .heading p {
   overflow: hidden;
   margin: var(--space-2xs) 0 0;
-  color: var(--cp-muted);
+  color: color-mix(in srgb, var(--cp-muted) 65%, var(--cp-panel));
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.contentSlot {
+  display: grid;
+  min-width: 0;
+  height: calc(
+    var(--nodes-manager-description-line-height) * 2 + var(--space-xs) +
+      var(--nodes-manager-metadata-height)
+  );
+  flex: 0 0 auto;
+  grid-template-rows: calc(var(--nodes-manager-description-line-height) * 2) var(
+      --nodes-manager-metadata-height
+    );
+  gap: var(--space-xs);
 }
 
 .description {
@@ -75,33 +89,49 @@
   margin: 0;
   color: var(--cp-text);
   font-size: 12px;
-  line-height: 1.5;
+  min-height: 0;
+  line-height: var(--nodes-manager-description-line-height);
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
-  line-clamp: 3;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .metadata {
   display: flex;
-  flex-wrap: wrap;
+  grid-row: 2;
+  min-width: 0;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-sm);
-  color: var(--cp-muted);
-  margin-top: auto;
+  color: color-mix(in srgb, var(--cp-muted) 85%, var(--cp-panel));
+  margin-top: 0;
+  line-height: var(--nodes-manager-metadata-height);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
 .metadata > span {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--space-2xs);
+  white-space: nowrap;
 }
 
 .metadataIcon {
   width: 13px;
   height: 13px;
   flex: 0 0 auto;
+}
+
+.metadata .metadataIcon {
+  opacity: 0.6;
+}
+
+.downloads {
+  color: color-mix(in srgb, var(--cp-text) 85%, var(--cp-muted));
+  font-weight: 500;
 }
 
 .uninstallIcon {
@@ -113,6 +143,7 @@
 .author {
   min-width: 0;
   max-width: 100%;
+  flex: 0 1 auto;
   overflow: hidden;
   margin: 0;
   margin-inline-start: auto;
@@ -124,13 +155,13 @@
 
 .repository {
   width: fit-content;
-  color: color-mix(in srgb, var(--cp-accent) 65%, var(--cp-text));
+  color: color-mix(in srgb, var(--cp-accent) 65%, var(--cp-muted));
   font-size: 11px;
   text-decoration: none;
 }
 
 .repository:hover {
-  color: var(--cp-text);
+  color: color-mix(in srgb, var(--cp-accent) 80%, var(--cp-text));
   text-decoration: underline;
 }
 
@@ -139,27 +170,37 @@
   outline-offset: var(--space-xs);
 }
 
-.installDetails {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-xs) var(--space-sm);
-  color: var(--cp-text);
-  font-size: 11px;
+.disabledIndicator {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--cp-warning);
 }
 
-.installDetails > span {
-  gap: var(--space-2xs);
+.disabledIndicator[data-disabled="false"] {
+  color: var(--cp-muted);
 }
 
 .versionField {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  grid-row: 1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: var(--cp-combo-height);
   align-items: center;
   gap: var(--space-xs);
 }
 
-.versionField[data-has-switch="true"] {
+.versionPlaceholder {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--cp-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.versionField[data-has-retry="true"] {
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
@@ -176,7 +217,7 @@
   font-size: 12px;
 }
 
-.versionField > [data-action="switch-version"],
+.versionField > [data-action="retry-version"],
 .versionField > [data-action="cancel-version"] {
   box-sizing: border-box;
   height: var(--cp-combo-height);
@@ -195,14 +236,8 @@
 }
 
 .inlineError {
-  display: flex;
-  grid-column: 1 / -1;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-sm);
+  composes: versionPlaceholder;
   color: color-mix(in srgb, var(--cp-danger) 65%, var(--cp-text));
-  font-size: 11px;
-  overflow-wrap: anywhere;
 }
 
 .actions {
@@ -220,58 +255,49 @@
   margin-inline-start: auto;
 }
 
-.card .actions > [data-action="load-version"]:not(:disabled) {
+.card .actionsEnd > [data-action="update"][data-flagged="true"]:not(:disabled) {
   border-color: color-mix(in srgb, var(--cp-warning) 40%, var(--cp-border));
   background: color-mix(in srgb, var(--cp-warning) 12%, var(--cp-panel));
   color: var(--cp-warning);
 }
 
-.card .actions > [data-action="load-version"]:hover:not(:disabled) {
+.card .actionsEnd > [data-action="update"][data-flagged="true"]:hover:not(:disabled) {
   border-color: var(--cp-warning);
   background: color-mix(in srgb, var(--cp-warning) 20%, var(--cp-panel));
 }
 
-.retryQueueButton {
-  justify-self: start;
+.operationIndicator {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--cp-muted);
 }
 
-.managerUnavailable {
-  margin: 0;
+.operationIndicator[data-status="succeeded"] {
+  color: var(--cp-success);
+}
+
+.operationIndicator[data-status="failed"] {
+  color: var(--cp-danger);
+}
+
+.operationIndicator[data-status="unknown"],
+.operationIndicator[data-restart="true"] {
   color: var(--cp-warning);
-  font-size: 11px;
-  line-height: 1.4;
 }
 
-.operation {
-  display: grid;
-  gap: var(--space-xs);
-  padding: var(--space-sm);
-  border: var(--cp-border-width) solid color-mix(in srgb, var(--cp-success) 40%, var(--cp-border));
-  border-radius: var(--cp-radius);
-  background: color-mix(in srgb, var(--cp-success) 12%, var(--cp-panel));
-  color: var(--cp-text);
-  font-size: 11px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
+.spinner {
+  flex: 0 0 auto;
+  animation: spin 1s linear infinite;
 }
 
-.operation strong {
-  font-size: 12px;
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.operationFailed {
-  border-color: color-mix(in srgb, var(--cp-danger) 40%, var(--cp-border));
-  background: color-mix(in srgb, var(--cp-danger) 12%, var(--cp-panel));
-  color: var(--cp-text);
-}
-
-.operationUnknown {
-  border-color: color-mix(in srgb, var(--cp-warning) 40%, var(--cp-border));
-  background: color-mix(in srgb, var(--cp-warning) 12%, var(--cp-panel));
-  color: var(--cp-text);
-}
-
-.restartNote {
-  color: var(--cp-warning);
-  font-weight: 700;
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }

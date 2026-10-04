@@ -1,8 +1,9 @@
 import type { ComfyApp } from "@comfyorg/comfyui-frontend-types"
 
-import { API_ROUTES } from "../constants.ts"
+import { API_PREFIX, API_ROUTES } from "../constants.ts"
 import { createTranslator } from "../i18n/messages.ts"
 import type { TranslationKey, TranslationValues } from "../i18n/messages.ts"
+import { isUpdateJob } from "./controlPanelApi.ts"
 
 export type RegistryVersion = {
   id?: string
@@ -30,11 +31,14 @@ export type RegistryNode = {
   updated_at?: string
   created_at?: string
   latest_version?: RegistryVersion
+  latest_flagged_version?: RegistryVersion
   [key: string]: unknown
 }
 
 export type InstalledPack = {
   key: string
+  name?: string
+  local?: boolean
   cnrId?: string
   auxId?: string
   version?: string
@@ -53,10 +57,12 @@ export type ManagedPack = {
   downloads?: number
   updatedAt?: string
   latestVersion?: RegistryVersion
+  latestFlaggedVersion?: RegistryVersion
   installed?: InstalledPack
   managerNodeId: string
   isUnknown: boolean
-  source: "Registry" | "Git" | "Unknown"
+  readOnly?: boolean
+  source: "Registry" | "Git" | "Unknown" | "Local folder"
   updateAvailable: boolean
 }
 
@@ -115,7 +121,7 @@ function nonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
 }
 
-function repoKey(value: string | undefined): string | undefined {
+export function normalizeRepository(value: string | undefined): string | undefined {
   if (!value) return undefined
   let pathname = value.trim()
   try {
@@ -188,6 +194,8 @@ function normalizeInstalledPacks(value: unknown): InstalledPack[] {
         throw new Error("Manager returned an invalid normalized installed-pack list.")
       return {
         key,
+        name: nonEmptyString(pack.name),
+        local: pack.local === true,
         cnrId: nonEmptyString(pack.cnrId),
         auxId: nonEmptyString(pack.auxId),
         version: nonEmptyString(pack.version),
@@ -211,8 +219,9 @@ function normalizeInstalledPacks(value: unknown): InstalledPack[] {
 }
 
 function installedIdentity(pack: InstalledPack): string {
+  if (pack.local) return `local:${pack.key}`
   if (pack.cnrId) return `cnr:${pack.cnrId.toLocaleLowerCase()}`
-  const repository = repoKey(pack.auxId)
+  const repository = normalizeRepository(pack.auxId)
   if (repository) return `repo:${repository}`
   return `key:${managerId(pack).toLocaleLowerCase()}`
 }
@@ -246,11 +255,11 @@ function matchInstalledPack(
   const id = catalogId(node).toLocaleLowerCase()
   const cnrMatch = installed.find((pack) => pack.cnrId?.toLocaleLowerCase() === id)
   if (cnrMatch) return cnrMatch
-  const keyMatch = installed.find((pack) => pack.key.toLocaleLowerCase() === id)
+  const keyMatch = installed.find((pack) => !pack.local && pack.key.toLocaleLowerCase() === id)
   if (keyMatch) return keyMatch
-  const targetRepo = repoKey(nonEmptyString(node.repository))
+  const targetRepo = normalizeRepository(nonEmptyString(node.repository))
   if (!targetRepo) return undefined
-  const repoMatches = installed.filter((pack) => repoKey(pack.auxId) === targetRepo)
+  const repoMatches = installed.filter((pack) => normalizeRepository(pack.auxId) === targetRepo)
   return repoMatches.length === 1 ? repoMatches[0] : undefined
 }
 
@@ -264,7 +273,7 @@ export function sameManagedPackTarget(left: ManagedPack, right: ManagedPack): bo
       `id:${pack.id.toLocaleLowerCase()}`,
       `manager:${pack.managerNodeId.toLocaleLowerCase()}`,
       ...[pack.repository, pack.installed?.auxId]
-        .map(repoKey)
+        .map(normalizeRepository)
         .filter((value): value is string => Boolean(value))
         .map((value) => `repo:${value}`),
     ])
@@ -273,6 +282,7 @@ export function sameManagedPackTarget(left: ManagedPack, right: ManagedPack): bo
 }
 
 function packSource(pack: InstalledPack | undefined): ManagedPack["source"] {
+  if (pack?.local) return "Local folder"
   if (!pack) return "Registry"
   if (pack.cnrId) return pack.auxId ? "Git" : "Registry"
   return pack.auxId ? "Git" : "Unknown"
@@ -290,7 +300,7 @@ function makeManagedPack(
   return {
     key: node ? `registry:${id}` : `installed:${installed!.key}`,
     id,
-    name: nonEmptyString(node?.name) ?? id,
+    name: nonEmptyString(node?.name) ?? installed?.name ?? id,
     description: nonEmptyString(node?.description),
     author: nonEmptyString(node?.author) ?? nonEmptyString(node?.publisher?.name),
     repository: nonEmptyString(node?.repository),
@@ -309,7 +319,9 @@ function makeManagedPack(
       nonEmptyString(latestVersion?.createdAt) ??
       nonEmptyString(latestVersion?.created_at),
     latestVersion,
+    latestFlaggedVersion: node?.latest_flagged_version,
     installed,
+    readOnly: installed?.local === true,
     managerNodeId: installed ? managerId(installed) : id,
     isUnknown: Boolean(installed && !installed.cnrId),
     source,
@@ -346,7 +358,16 @@ export function normalizeManagedPacks(
   return packs
 }
 
-export type NodesManagerFilter = "all" | "not-installed" | "installed" | "updates" | "disabled"
+export type NodesManagerFilter =
+  | "all"
+  | "not-installed"
+  | "installed"
+  | "updates"
+  | "disabled"
+  | "git"
+  | "local"
+  | "workflow"
+  | "workflow-missing"
 export type NodesManagerSort = "name" | "stars" | "updated" | "downloads"
 
 export function filterAndSortManagedPacks(
@@ -361,6 +382,8 @@ export function filterAndSortManagedPacks(
     if (filter === "installed" && !pack.installed) return false
     if (filter === "updates" && !pack.updateAvailable) return false
     if (filter === "disabled" && (!pack.installed || pack.installed.enabled !== false)) return false
+    if (filter === "git" && pack.source !== "Git") return false
+    if (filter === "local" && pack.source !== "Local folder") return false
     if (!query) return true
     return [pack.name, pack.id, pack.author, pack.description].some((value) =>
       value?.toLocaleLowerCase().includes(query),
@@ -416,6 +439,16 @@ export function buildManagerQueuePayload(
   taskId: string,
   selectedVersion?: string,
 ): ManagerQueuePayload {
+  if (pack.readOnly) {
+    throw new Error("This workflow-only node pack does not support Manager operations.")
+  }
+  if (
+    (operation === "install" || operation === "switch") &&
+    !pack.installed &&
+    pack.source !== "Registry"
+  ) {
+    throw new Error("Select a Registry node pack before installing.")
+  }
   let kind: ManagerQueueKind
   let params: Record<string, string | boolean>
   if (operation === "install" || operation === "switch") {
@@ -537,7 +570,10 @@ export function createNodesManagerService(app: ComfyApp) {
       if (response.status === 404) {
         throw translatedError("nodes.error.managerApiUnavailable", undefined, response.status)
       }
-      throw new ManagerRequestError(response.statusText, response.status)
+      throw new ManagerRequestError(
+        response.statusText || `HTTP ${response.status}`,
+        response.status,
+      )
     }
     return data
   }
@@ -549,12 +585,30 @@ export function createNodesManagerService(app: ComfyApp) {
       return data as JsonRecord & { nodes: RegistryNode[]; source?: string; warning?: string }
     },
     async loadInstalled() {
-      const data = await request("/v2/customnode/installed")
+      const [data, localData] = await Promise.all([
+        request("/v2/customnode/installed"),
+        request(API_ROUTES.NODES_MANAGER_LOCAL_FOLDERS),
+      ])
       try {
-        return normalizeInstalledPacks(data)
+        const localPacks = normalizeInstalledPacks(localData.packs)
+        const localNames = new Set(localPacks.map((pack) => pack.name?.toLocaleLowerCase()))
+        return [
+          ...normalizeInstalledPacks(data).filter(
+            (pack) => pack.cnrId || pack.auxId || !localNames.has(pack.key.toLocaleLowerCase()),
+          ),
+          ...localPacks,
+        ]
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error)
         throw translatedError("nodes.error.invalidInstalledPackResponseDetail", { error: detail })
+      }
+    },
+    async loadWorkflowMappings() {
+      try {
+        return await request("/v2/customnode/getmappings?mode=local")
+      } catch (error) {
+        if (!(error instanceof ManagerRequestError) || error.status !== 404) throw error
+        return await request("/customnode/getmappings?mode=local")
       }
     },
     async loadVersions(nodeId: string) {
@@ -568,6 +622,19 @@ export function createNodesManagerService(app: ComfyApp) {
     },
     async enqueue(payload: ManagerQueuePayload) {
       await request("/v2/manager/queue/task", "POST", payload)
+    },
+    async updateGitNode(nodeKey: string) {
+      const data = await request(API_ROUTES.UPDATE_GIT_NODE, "POST", { node_key: nodeKey })
+      if (!isUpdateJob(data.job)) throw new Error("Invalid Git update job response.")
+      return data.job
+    },
+    async browseLocalFolder(nodeId: string) {
+      await request(API_ROUTES.NODES_MANAGER_OPEN_FOLDER, "POST", { node_id: nodeId })
+    },
+    async getGitJob(jobId: string) {
+      const data = await request(`${API_PREFIX}/update/jobs/${encodeURIComponent(jobId)}`)
+      if (!isUpdateJob(data.job)) throw new Error("Invalid Git update job response.")
+      return data.job
     },
     async startQueue() {
       await request("/v2/manager/queue/start", "POST", null)

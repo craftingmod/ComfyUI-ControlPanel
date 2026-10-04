@@ -4,7 +4,7 @@ import { cx } from "../../styles/cx.ts"
 
 import styles from "./button.module.css"
 
-export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost"
+export type ButtonVariant = "primary" | "secondary" | "danger" | "warning" | "ghost"
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: "sm" | "md" | "icon"

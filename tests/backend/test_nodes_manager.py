@@ -11,6 +11,36 @@ import pytest
 from backend import manager_routes, nodes_manager, registry_cache
 
 
+def test_discovers_only_local_folders_including_disabled_and_multiple_roots(tmp_path):
+  root = tmp_path / "custom_nodes"
+  local = root / "Local Pack"
+  local.mkdir(parents=True)
+  (root / "git-pack" / ".git").mkdir(parents=True)
+  (root / "worktree").mkdir()
+  (root / "worktree" / ".git").write_text("gitdir: ../git", encoding="utf-8")
+  (root / "registry-pack").mkdir()
+  (root / "registry-pack" / ".tracking").touch()
+  (root / "__pycache__").mkdir()
+  (root / ".hidden").mkdir()
+  (root / "single.py").touch()
+  disabled = root / ".disabled" / "Other Pack"
+  disabled.mkdir(parents=True)
+  extra = tmp_path / "extra" / "Local Pack"
+  extra.mkdir(parents=True)
+  packs = nodes_manager.discover_local_folders([root, extra.parent, root])
+  assert packs == [
+    {"key": str(local.resolve()), "name": "Local Pack", "enabled": True, "local": True},
+    {
+      "key": str(disabled.resolve()),
+      "name": "Other Pack",
+      "enabled": False,
+      "local": True,
+    },
+    {"key": str(extra.resolve()), "name": "Local Pack", "enabled": True, "local": True},
+  ]
+  assert nodes_manager.discover_local_folders([tmp_path / "missing"]) == []
+
+
 def _registry_db(path):
   connection = sqlite3.connect(path)
   try:
@@ -65,6 +95,10 @@ def test_local_catalog_reads_sqlite_projection_without_writing(tmp_path):
 
   assert safe["source"] == "sqlite"
   assert safe["nodes"][0]["latest_version"]["version"] == "1.2.0"
+  assert safe["nodes"][0]["latest_flagged_version"]["version"] == "1.10.0"
+  assert (
+    safe["nodes"][0]["latest_flagged_version"]["status"] == "NodeVersionStatusFlagged"
+  )
   assert flagged["nodes"][0]["latest_version"]["version"] == "1.10.0"
   assert database.read_bytes() == original
 
@@ -320,6 +354,92 @@ def _route_api(*, denied=None, tmp_path=None):
     manager_url_cache_filename=lambda _url: "hashed_nodes.json",
     is_allow_flagged_version_as_latest_enabled=lambda: False,
   )
+
+
+def test_browse_opens_only_a_discovered_local_folder(monkeypatch, tmp_path):
+  local = tmp_path / "local-pack"
+  local.mkdir()
+  git = tmp_path / "git-pack"
+  (git / ".git").mkdir(parents=True)
+  opened = []
+  api = _route_api()
+  api.custom_node_roots = lambda: [tmp_path]
+  api.open_path_in_file_manager = lambda path: (
+    opened.append(path) or {"path": str(path)}
+  )
+  handler = _register_fake_routes(monkeypatch, api)[
+    ("POST", "/control-panel/nodes-manager/open-folder")
+  ]
+  for node_id in [
+    "local-pack",
+    "missing",
+    "git-pack",
+    str(local.resolve()),
+    "../local-pack",
+    "..\\local-pack",
+    "C:local-pack",
+    "",
+    None,
+    [],
+  ]:
+
+    async def read_json(_request, folder_id=node_id):
+      return {"node_id": folder_id}
+
+    api._read_json = read_json
+    response = asyncio.run(handler(SimpleNamespace()))
+    assert response["status"] == 200
+    if node_id != "local-pack":
+      assert response["data"] == {"ok": True, "skipped": True}
+  assert opened == [local.resolve()]
+  api.control_request_denied_response = lambda request, policy=None: {"status": 403}
+  assert asyncio.run(handler(SimpleNamespace()))["status"] == 403
+  assert opened == [local.resolve()]
+
+
+def test_local_folder_resolution_handles_disabled_ambiguous_and_escaped_folders(
+  tmp_path, monkeypatch
+):
+  root = tmp_path / "custom_nodes"
+  disabled = root / ".disabled" / "로컬 노드"
+  disabled.mkdir(parents=True)
+  assert nodes_manager.resolve_local_folder([root], "로컬 노드") == disabled.resolve()
+  enabled = root / "로컬 노드"
+  enabled.mkdir()
+  assert nodes_manager.resolve_local_folder([root], "로컬 노드") is None
+  outside = tmp_path / "outside"
+  outside.mkdir()
+  linked = root / "linked"
+  linked.mkdir()
+  original_resolve = Path.resolve
+
+  def resolve(path, *args, **kwargs):
+    return outside if path == linked else original_resolve(path, *args, **kwargs)
+
+  monkeypatch.setattr(Path, "resolve", resolve)
+  assert nodes_manager.resolve_local_folder([root], "linked") is None
+
+
+def test_browse_quietly_skips_a_folder_removed_before_opening(monkeypatch, tmp_path):
+  local = tmp_path / "local-pack"
+  local.mkdir()
+  api = _route_api()
+  api.custom_node_roots = lambda: [tmp_path]
+
+  async def read_json(_request):
+    return {"node_id": "local-pack"}
+
+  def open_folder(path):
+    path.rmdir()
+    raise FileNotFoundError()
+
+  api._read_json = read_json
+  api.open_path_in_file_manager = open_folder
+  handler = _register_fake_routes(monkeypatch, api)[
+    ("POST", "/control-panel/nodes-manager/open-folder")
+  ]
+  response = asyncio.run(handler(SimpleNamespace()))
+  assert response == {"status": 200, "data": {"ok": True, "skipped": True}}
 
 
 def test_nodes_manager_catalog_route_checks_protection_before_cache_read(monkeypatch):

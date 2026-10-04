@@ -63,6 +63,17 @@
     color: color-mix(in srgb, var(--cp-danger) 65%, var(--cp-text));
   }
 
+  &[data-variant="warning"] {
+    background: color-mix(in srgb, var(--cp-warning) 20%, var(--cp-panel));
+    border-color: color-mix(in srgb, var(--cp-warning) 65%, var(--cp-border));
+    color: color-mix(in srgb, var(--cp-warning) 65%, var(--cp-text));
+  }
+
+  &[data-variant="warning"]:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--cp-warning) 30%, var(--cp-panel));
+    border-color: var(--cp-warning);
+  }
+
   &[data-variant="danger"]:hover:not(:disabled) {
     border-color: var(--cp-danger);
     background: color-mix(in srgb, var(--cp-danger) 38%, var(--cp-panel));

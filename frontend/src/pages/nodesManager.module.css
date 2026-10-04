@@ -43,6 +43,18 @@
   gap: var(--space-2xs);
 }
 
+.filterGroups {
+  display: grid;
+  min-height: 0;
+  gap: var(--space-md);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.filterGroup {
+  min-width: 0;
+}
+
 .filterButton {
   min-width: 0;
 }
@@ -75,6 +87,10 @@
   gap: var(--space-sm);
 }
 
+.toolbar[data-bulk="true"] {
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 210px) auto auto;
+}
+
 .searchField,
 .sortField {
   display: block;
@@ -102,7 +118,6 @@
 
 .sourceNotice,
 .notice,
-.managerReady,
 .errorNotice {
   display: flex;
   align-items: flex-start;
@@ -126,37 +141,36 @@
   color: var(--cp-text);
 }
 
-.managerReady {
-  border-color: color-mix(in srgb, var(--cp-success) 40%, var(--cp-border));
-  background: color-mix(in srgb, var(--cp-success) 12%, var(--cp-panel));
-  color: var(--cp-text);
-}
-
-.sidebarStatus {
-  display: grid;
-  gap: var(--space-xs);
-}
-
-.sidebarStatus > .sourceNotice,
-.sidebarStatus > .managerReady {
-  min-width: 0;
-  margin: 0;
-  padding: var(--space-sm);
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-
 .taskSummary {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  box-sizing: border-box;
+  height: var(--nodes-manager-task-summary-height);
+  flex: 0 0 auto;
   gap: var(--space-xs);
-  max-height: 180px;
-  overflow: auto;
   margin-top: var(--space-sm);
   padding: var(--space-sm);
   border: var(--cp-border-width) solid color-mix(in srgb, var(--cp-warning) 40%, var(--cp-border));
   border-radius: var(--cp-radius);
   background: color-mix(in srgb, var(--cp-warning) 12%, var(--cp-panel));
+}
+
+.taskSummaryHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+}
+
+.taskSummaryList {
+  min-height: 0;
+  overflow: auto;
   overscroll-behavior: contain;
+}
+
+.taskSummaryList:focus-visible {
+  outline: var(--cp-focus-width) solid var(--cp-accent);
+  outline-offset: calc(var(--space-xs) * -1);
 }
 
 .taskSummary h3 {
@@ -178,6 +192,55 @@
 
 .taskSummaryRetryButton {
   justify-self: start;
+}
+
+.workflowDiagnostics {
+  display: grid;
+  max-height: 220px;
+  gap: var(--space-xs);
+  overflow: auto;
+  margin-top: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border: var(--cp-border-width) solid color-mix(in srgb, var(--cp-warning) 40%, var(--cp-border));
+  border-radius: var(--cp-radius);
+  background: color-mix(in srgb, var(--cp-warning) 8%, var(--cp-panel));
+  overscroll-behavior: contain;
+}
+
+.workflowDiagnostics h3,
+.workflowDiagnostics p {
+  margin: 0;
+  color: var(--cp-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workflowDiagnostics p {
+  color: var(--cp-muted);
+}
+
+.workflowDiagnosticsList {
+  display: grid;
+  gap: var(--space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflowDiagnostic {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-sm);
+  padding-top: var(--space-2xs);
+  border-top: var(--cp-border-width) solid var(--cp-border);
+  color: var(--cp-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.workflowDiagnostic strong {
+  color: var(--cp-text);
 }
 
 .errorNotice {
@@ -270,25 +333,18 @@
     padding: var(--space-xs);
   }
 
-  .sidebarLabel,
   .sidebarHelp {
     display: none;
   }
 
-  .filterList {
+  .filterGroups {
     display: flex;
     overflow-x: auto;
     gap: var(--space-xs);
   }
 
-  .sidebarStatus {
-    display: flex;
-    flex-wrap: wrap;
-  }
-
-  .sidebarStatus > .sourceNotice,
-  .sidebarStatus > .managerReady {
-    flex: 1 1 180px;
+  .filterGroup {
+    flex: 0 0 auto;
   }
 
   .filterButton {
@@ -298,7 +354,8 @@
 }
 
 @media (width <= 620px) {
-  .toolbar {
+  .toolbar,
+  .toolbar[data-bulk="true"] {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 

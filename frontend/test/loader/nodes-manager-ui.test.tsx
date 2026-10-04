@@ -50,6 +50,12 @@ function managerSnapshot(
     installedStatus: "ready",
     installed: [],
     packs,
+    workflowStatus: "ready",
+    workflowAvailabilityKnown: true,
+    workflowPacks: [],
+    workflowMissingPacks: [],
+    workflowDiagnostics: [],
+    workflowMappingIssueCount: 0,
     operations: {},
     versions: {},
     checking: false,
@@ -81,6 +87,8 @@ function createManager(initial: NodesManagerSnapshot) {
       update({ versions: { ...snapshot.versions, [pack.key]: { loading: false, values } } })
     }),
     submit: vi.fn(async () => false),
+    submitAll: vi.fn(async () => undefined),
+    browseLocalFolder: vi.fn(async () => undefined),
     retryQueueStart: vi.fn(async () => false),
   }
   return { controller, update }
@@ -189,6 +197,90 @@ async function settleVirtualScroll(): Promise<void> {
   )
 }
 
+it("opens a local card's folder from its right-side Browse button", async () => {
+  const pack = managedPack("local", {
+    source: "Local folder",
+    readOnly: true,
+    installed: { key: "V:/custom_nodes/local", local: true, enabled: true },
+  })
+  const mounted = await mountNodesManager(managerSnapshot([pack]))
+  try {
+    await act(async () => findButtonContaining("Local / Unmanaged").click())
+    const browse = document.querySelector<HTMLButtonElement>('[data-action="browse"]')!
+    expect(browse.textContent?.trim()).toBe("Browse")
+    expect(browse.disabled).toBe(false)
+    await act(async () => browse.click())
+    expect(mounted.controller.browseLocalFolder).toHaveBeenCalledWith(pack)
+  } finally {
+    await mounted.destroy()
+  }
+})
+
+it("shows bulk actions only in their toolbar categories and disables unavailable actions", async () => {
+  const mounted = await mountNodesManager(
+    managerSnapshot([
+      managedPack("git", { source: "Git", installed: { key: "git", enabled: true } }),
+      managedPack("update", { updateAvailable: true, installed: { key: "update", enabled: true } }),
+    ]),
+  )
+  try {
+    expect(document.querySelector('[data-bulk="true"]')).toBeNull()
+    await act(async () => findButtonContaining("Git-installed").click())
+    const fetchAll = findButton("Fetch all")
+    expect(fetchAll.parentElement?.dataset.bulk).toBe("true")
+    await act(async () => fetchAll.click())
+    expect(mounted.controller.submitAll).toHaveBeenCalledWith("git")
+    await act(async () => findButtonContaining("Updates Available").click())
+    await act(async () => findButton("Update All").click())
+    expect(mounted.controller.submitAll).toHaveBeenCalledWith("updates")
+    await act(async () => mounted.update({ bulkOperation: "updates" }))
+    expect(findButton("Update All").disabled).toBe(true)
+    await act(async () => mounted.update({ bulkOperation: undefined, installedStatus: "error" }))
+    expect(findButton("Update All").disabled).toBe(true)
+    await act(async () => mounted.update({ installedStatus: "ready", packs: [] }))
+    expect(findButton("Update All").disabled).toBe(true)
+    await act(async () => findButtonContaining("Local / Unmanaged").click())
+    expect(document.querySelector('[data-bulk="true"]')).toBeNull()
+  } finally {
+    await mounted.destroy()
+  }
+})
+
+it("shows workflow pack categories and reports node diagnostics separately from extension counts", async () => {
+  const registryPack = managedPack("registry-pack")
+  const readOnlyPack = managedPack("https://github.com/example/unregistered-pack", {
+    id: "unregistered-pack",
+    name: "Unregistered Pack",
+    repository: "https://github.com/example/unregistered-pack",
+    source: "Unknown",
+    readOnly: true,
+    isUnknown: true,
+  })
+  const mounted = await mountNodesManager(
+    managerSnapshot([registryPack, readOnlyPack], {
+      workflowPacks: [registryPack, readOnlyPack],
+      workflowMissingPacks: [readOnlyPack],
+      workflowDiagnostics: [{ type: "UnknownNode", kind: "unresolved", occurrences: 2 }],
+    }),
+  )
+
+  try {
+    await act(async () => findButtonContaining("In Workflow").click())
+    expect(document.querySelectorAll("article")).toHaveLength(2)
+    expect(document.body.textContent).toContain("2 extensions")
+    expect(document.body.textContent).toContain("2 unresolved or ambiguous node entries")
+
+    await act(async () => findButtonContaining("Missing").click())
+    expect(document.querySelectorAll("article")).toHaveLength(1)
+    expect(document.body.textContent).toContain("Unregistered Pack")
+    expect(document.querySelector<HTMLButtonElement>('[data-action="install"]')?.disabled).toBe(
+      true,
+    )
+  } finally {
+    await mounted.destroy()
+  }
+})
+
 it("keeps latest as the install default and reveals version choices after fetch", async () => {
   const pack = managedPack("example-pack")
   const mounted = await mountNodesManager(managerSnapshot([pack]))
@@ -228,7 +320,11 @@ it("keeps latest as the install default and reveals version choices after fetch"
     expect(requestedPacks).toEqual([pack])
     expect(requestCount).toBe(1)
     expect(chooseVersion.disabled).toBe(true)
-    expect(chooseVersion.textContent).toContain("Loading versions…")
+    expect(chooseVersion.getAttribute("aria-busy")).toBe("true")
+    expect(document.body.textContent?.match(/Loading versions…/g)).toHaveLength(1)
+    expect(
+      document.querySelector('article a[href="https://github.com/example/example-pack"]'),
+    ).not.toBeNull()
     expect(document.querySelector('select[name="version-example-pack"]')).toBeNull()
 
     await act(async () => {
@@ -245,7 +341,8 @@ it("keeps latest as the install default and reveals version choices after fetch"
     expect(requestedPacks).toEqual([pack, pack])
     expect(requestCount).toBe(2)
     expect(document.querySelector('select[name="version-example-pack"]')).toBeNull()
-    expect(findButton("Loading versions…").disabled).toBe(true)
+    expect(chooseVersion.disabled).toBe(true)
+    expect(document.body.textContent?.match(/Loading versions…/g)).toHaveLength(1)
 
     await act(async () => {
       retryRequest.resolve([
@@ -282,6 +379,176 @@ it("keeps latest as the install default and reveals version choices after fetch"
     await act(async () => findButton("Install").click())
 
     expect(mounted.controller.submit).toHaveBeenCalledWith(pack, "install", "0.9.0")
+  } finally {
+    await mounted.destroy()
+  }
+})
+
+it("filters Git nodes with counts and search, including disabled Git installs", async () => {
+  const packs = [
+    managedPack("registry-pack"),
+    managedPack("git-enabled", {
+      source: "Git",
+      installed: { key: "git-enabled", version: "abc123", enabled: true },
+    }),
+    managedPack("git-disabled", {
+      source: "Git",
+      installed: { key: "git-disabled", version: "def456", enabled: false },
+    }),
+    managedPack("unknown-pack", { source: "Unknown" }),
+  ]
+  const mounted = await mountNodesManager(managerSnapshot(packs))
+  try {
+    const gitFilter = findButtonContaining("Git-installed")
+    expect(gitFilter.textContent).toContain("2")
+    await act(async () => gitFilter.click())
+    expect(gitFilter.getAttribute("aria-pressed")).toBe("true")
+    expect(document.querySelectorAll("article")).toHaveLength(2)
+    expect(document.body.textContent).toContain("Pack git-enabled")
+    expect(document.body.textContent).toContain("Pack git-disabled")
+    expect(document.body.textContent).not.toContain("Pack registry-pack")
+    expect(document.body.textContent).not.toContain("Pack unknown-pack")
+    await act(async () =>
+      setValue(
+        document.querySelector<HTMLInputElement>('input[name="nodes-manager-search"]')!,
+        "git-disabled",
+      ),
+    )
+    expect(document.querySelectorAll("article")).toHaveLength(1)
+    expect(document.body.textContent).toContain("Pack git-disabled")
+    expect(gitFilter.textContent).toContain("2")
+  } finally {
+    await mounted.destroy()
+  }
+})
+
+it("warns on the installed Flagged version, independent of the latest version's status", async () => {
+  const flagged = { version: "0.9.0", status: "NodeVersionStatusFlagged" }
+  for (const [installedVersion, latestVersion, latestFlaggedVersion, expected] of [
+    ["0.9.0", { version: "1.0.0", status: "Active" }, flagged, "warning"],
+    ["0.9.0", flagged, undefined, "warning"],
+    ["1.0.0", flagged, flagged, "secondary"],
+    [undefined, flagged, flagged, "secondary"],
+  ] as const) {
+    const pack = managedPack("pack", {
+      installed: installedVersion
+        ? { key: "pack", version: installedVersion, enabled: true }
+        : undefined,
+      latestVersion,
+      latestFlaggedVersion,
+    })
+    const mounted = await mountNodesManager(managerSnapshot([pack]))
+    try {
+      expect(
+        document.querySelector<HTMLButtonElement>('[data-action="load-version"]')?.dataset.variant,
+      ).toBe(expected)
+    } finally {
+      await mounted.destroy()
+    }
+  }
+})
+
+it("uses the update button for the selected version and restores latest update on cancel", async () => {
+  const pack = managedPack("example-pack", {
+    installed: { key: "example-pack", version: "0.8.0", enabled: true },
+  })
+  const mounted = await mountNodesManager(managerSnapshot([pack]))
+  try {
+    const updateButton = document.querySelector<HTMLButtonElement>('[data-action="update"]')!
+    expect(updateButton.textContent?.trim()).toBe("1.0.0")
+    await act(async () => updateButton.click())
+    expect(mounted.controller.submit).toHaveBeenLastCalledWith(pack, "update", undefined)
+
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-action="load-version"]')!.click(),
+    )
+    expect(document.querySelector('[data-action="switch-version"]')).toBeNull()
+    const selector = document.querySelector<HTMLSelectElement>(
+      'select[name="version-example-pack"]',
+    )!
+    await act(async () => setValue(selector, "0.9.0"))
+    expect(updateButton.textContent?.trim()).toBe("0.9.0")
+    expect(updateButton.dataset.flagged).toBe("true")
+    expect(updateButton.querySelector("svg.lucide-download")).not.toBeNull()
+    await act(async () => updateButton.click())
+    expect(mounted.controller.submit).toHaveBeenLastCalledWith(pack, "switch", "0.9.0")
+
+    await act(async () => setValue(selector, "1.0.0"))
+    expect(updateButton.dataset.flagged).toBe("false")
+    await act(async () => setValue(selector, ""))
+    expect(updateButton.disabled).toBe(true)
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-action="cancel-version"]')!.click(),
+    )
+    expect(updateButton.disabled).toBe(false)
+    expect(updateButton.textContent?.trim()).toBe("1.0.0")
+    await act(async () => updateButton.click())
+    expect(mounted.controller.submit).toHaveBeenLastCalledWith(pack, "update", undefined)
+  } finally {
+    await mounted.destroy()
+  }
+})
+
+it("keeps task details and queue retry outside cards for represented and removed packs", async () => {
+  const pack = managedPack("example-pack", {
+    installed: { key: "example-pack", version: "0.8.0", enabled: true },
+  })
+  const operation: NodesManagerOperationState = {
+    packKey: pack.key,
+    pack,
+    taskId: "task-example",
+    clientId: "test-client",
+    operation: "update",
+    status: "pending",
+    message: "Installing dependencies for example-pack.",
+  }
+  const mounted = await mountNodesManager(
+    managerSnapshot([pack], { operations: { [pack.key]: operation } }),
+  )
+  try {
+    const summary = document.querySelector('section[aria-label="Manager task status"]')!
+    const card = document.querySelector("article")!
+    expect(summary.textContent).toContain(operation.message!)
+    expect(card.textContent).not.toContain(operation.message!)
+    expect(card.querySelector('[data-action="update"]')?.getAttribute("aria-busy")).toBe("true")
+    expect(card.querySelector("svg.lucide-loader-circle")).not.toBeNull()
+
+    await act(async () =>
+      mounted.update({
+        operations: {
+          [pack.key]: {
+            ...operation,
+            status: "failed",
+            message: "Queue start failed.",
+            queueStartFailed: true,
+            restartRequired: true,
+          },
+        },
+      }),
+    )
+    expect(summary.textContent).toContain("Queue start failed.")
+    expect(summary.textContent).toContain("Restart ComfyUI to load this change.")
+    expect(card.textContent).not.toContain("Queue start failed.")
+    expect(card.querySelector("svg.lucide-circle-alert")).not.toBeNull()
+    const retry = findButton("Retry Queue Start")
+    expect(retry.closest("article")).toBeNull()
+    await act(async () => retry.click())
+    expect(mounted.controller.retryQueueStart).toHaveBeenCalledWith(pack.key)
+    await act(async () => mounted.update({ packs: [] }))
+    expect(document.querySelector("article")).toBeNull()
+    expect(summary.textContent).toContain("Queue start failed.")
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('button[aria-label="Close task status"]')!.click(),
+    )
+    expect(document.querySelector('section[aria-label="Manager task status"]')).toBeNull()
+    await act(async () =>
+      mounted.update({ operations: { [pack.key]: { ...operation, status: "succeeded" } } }),
+    )
+    expect(document.querySelector('section[aria-label="Manager task status"]')).toBeNull()
+    await act(async () =>
+      mounted.update({ operations: { [pack.key]: { ...operation, taskId: "new-task" } } }),
+    )
+    expect(document.querySelector('section[aria-label="Manager task status"]')).not.toBeNull()
   } finally {
     await mounted.destroy()
   }

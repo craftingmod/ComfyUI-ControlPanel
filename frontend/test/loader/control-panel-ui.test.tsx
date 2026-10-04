@@ -49,6 +49,12 @@ function createManagerControllerMock() {
     installedStatus: "idle",
     installed: [],
     packs: [],
+    workflowStatus: "idle",
+    workflowAvailabilityKnown: false,
+    workflowPacks: [],
+    workflowMissingPacks: [],
+    workflowDiagnostics: [],
+    workflowMappingIssueCount: 0,
     operations: {},
     versions: {},
     checking: false,
@@ -70,6 +76,8 @@ function createManagerControllerMock() {
     loadVersions: vi.fn(async () => undefined),
     submit: vi.fn(async () => false),
     retryQueueStart: vi.fn(async () => false),
+    submitAll: vi.fn(async () => undefined),
+    browseLocalFolder: vi.fn(async () => undefined),
   }
   return { controller, update }
 }

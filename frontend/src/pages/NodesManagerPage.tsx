@@ -1,3 +1,4 @@
+import { HardDriveDownload, Download, RefreshCw, X } from "lucide-react"
 import {
   forwardRef,
   useCallback,
@@ -28,15 +29,42 @@ import type {
 import { findOperationForPack } from "../services/nodesManagerController.ts"
 
 import styles from "./nodesManager.module.css"
-import { RefreshCcwDot, RefreshCw } from "lucide-react";
 
-const FILTERS: { id: NodesManagerFilter; key: TranslationKey }[] = [
-  { id: "all", key: "nodes.filter.all" },
-  { id: "not-installed", key: "nodes.filter.notInstalled" },
-  { id: "installed", key: "nodes.filter.installed" },
-  { id: "updates", key: "nodes.filter.updates" },
-  { id: "disabled", key: "nodes.filter.disabled" },
+const FILTER_GROUPS: {
+  key: TranslationKey
+  filters: { id: NodesManagerFilter; key: TranslationKey }[]
+}[] = [
+  {
+    key: "nodes.browse",
+    filters: [
+      { id: "all", key: "nodes.filter.all" },
+      { id: "not-installed", key: "nodes.filter.notInstalled" },
+    ],
+  },
+  {
+    key: "nodes.group.installed",
+    filters: [
+      { id: "installed", key: "nodes.filter.installed" },
+      { id: "git", key: "nodes.filter.git" },
+      { id: "local", key: "nodes.filter.local" },
+    ],
+  },
+  {
+    key: "nodes.group.status",
+    filters: [
+      { id: "updates", key: "nodes.filter.updates" },
+      { id: "disabled", key: "nodes.filter.disabled" },
+    ],
+  },
+  {
+    key: "nodes.group.workflow",
+    filters: [
+      { id: "workflow", key: "nodes.filter.workflow" },
+      { id: "workflow-missing", key: "nodes.filter.workflowMissing" },
+    ],
+  },
 ]
+const FILTERS = FILTER_GROUPS.flatMap((group) => group.filters)
 
 const ExtensionScroller = forwardRef<HTMLDivElement, ScrollerProps>(
   function ExtensionScroller(props, ref) {
@@ -72,14 +100,22 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
   const [search, setSearch] = useState("")
   const [columnCount, setColumnCount] = useState(1)
   const [selectedVersions, setSelectedVersions] = useState<Record<string, string>>({})
+  const [dismissedTaskIds, setDismissedTaskIds] = useState<Set<string>>(() => new Set())
   const searchRef = useRef<HTMLInputElement>(null)
   const virtuosoRef = useRef<VirtuosoHandle>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const deferredSearch = useDeferredValue(search)
+  const workflowFilter = filter === "workflow" || filter === "workflow-missing"
+  const categoryPacks =
+    filter === "workflow"
+      ? snapshot.workflowPacks
+      : filter === "workflow-missing"
+        ? snapshot.workflowMissingPacks
+        : snapshot.packs
 
   const filteredPacks = useMemo(
-    () => filterAndSortManagedPacks(snapshot.packs, filter, deferredSearch, sort),
-    [snapshot.packs, filter, deferredSearch, sort],
+    () => filterAndSortManagedPacks(categoryPacks, filter, deferredSearch, sort),
+    [categoryPacks, filter, deferredSearch, sort],
   )
   const formattedCount = new Intl.NumberFormat(locale).format(filteredPacks.length)
 
@@ -129,18 +165,7 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
     }
     return rows
   }, [columnCount, filteredPacks])
-  const representedTaskIds = useMemo(() => {
-    const taskIds = new Set<string>()
-    for (const pack of snapshot.packs) {
-      const operation = findOperationForPack(snapshot.operations, pack)
-      if (operation) taskIds.add(operation.taskId)
-    }
-    return taskIds
-  }, [snapshot.operations, snapshot.packs])
-  const orphanedOperations = Object.values(snapshot.operations)
-    .filter((operation) => !representedTaskIds.has(operation.taskId))
-    .slice(-5)
-    .reverse()
+  const taskOperations = Object.values(snapshot.operations).reverse()
   const counts = useMemo(() => {
     const value: Record<NodesManagerFilter, number> = {
       all: snapshot.packs.length,
@@ -148,15 +173,36 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
       installed: 0,
       updates: 0,
       disabled: 0,
+      git: 0,
+      local: 0,
+      workflow: snapshot.workflowPacks.length,
+      "workflow-missing": snapshot.workflowMissingPacks.length,
     }
     for (const pack of snapshot.packs) {
       if (pack.installed) value.installed += 1
       else value["not-installed"] += 1
       if (pack.updateAvailable) value.updates += 1
       if (pack.installed?.enabled === false) value.disabled += 1
+      if (pack.source === "Git") value.git += 1
+      if (pack.source === "Local folder") value.local += 1
     }
     return value
-  }, [snapshot.packs])
+  }, [snapshot.packs, snapshot.workflowPacks, snapshot.workflowMissingPacks])
+  const workflowDiagnostics = useMemo(() => {
+    if (!workflowFilter) return []
+    const query = deferredSearch.trim().toLocaleLowerCase()
+    return snapshot.workflowDiagnostics.filter((diagnostic) =>
+      [diagnostic.type, ...(diagnostic.candidates ?? [])].some((value) =>
+        value.toLocaleLowerCase().includes(query),
+      ),
+    )
+  }, [deferredSearch, snapshot.workflowDiagnostics, workflowFilter])
+  const unresolvedDiagnosticCount = workflowDiagnostics
+    .filter((diagnostic) => diagnostic.kind === "unresolved" || diagnostic.kind === "ambiguous")
+    .reduce((total, diagnostic) => total + diagnostic.occurrences, 0)
+  const unavailableNodeCount = workflowDiagnostics
+    .filter((diagnostic) => diagnostic.kind === "unavailable")
+    .reduce((total, diagnostic) => total + diagnostic.occurrences, 0)
 
   const observeScroller = useCallback((element: HTMLElement | null | Window) => {
     resizeObserverRef.current?.disconnect()
@@ -213,47 +259,45 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
     >
       <div className={styles.managerBody}>
         <aside className={styles.sidebar} aria-label={t("nodes.filtersLabel")}>
-          <p className={styles.sidebarLabel}>{t("nodes.browse")}</p>
-          <nav className={styles.filterList} aria-label={t("nodes.filterExtensions")}>
-            {FILTERS.map((item) => (
-              <Button
-                key={item.id}
-                className={styles.filterButton}
-                variant="ghost"
-                type="button"
-                aria-pressed={filter === item.id}
-                onClick={() => setFilter(item.id)}
-              >
-                <span>{t(item.key)}</span>
-                <span className={styles.filterCount}>{counts[item.id]}</span>
-              </Button>
+          <nav className={styles.filterGroups} aria-label={t("nodes.filterExtensions")}>
+            {FILTER_GROUPS.map((group) => (
+              <section key={group.key} className={styles.filterGroup} aria-label={t(group.key)}>
+                <h3 className={styles.sidebarLabel}>{t(group.key)}</h3>
+                <div className={styles.filterList}>
+                  {group.filters.map((item) => (
+                    <Button
+                      key={item.id}
+                      className={styles.filterButton}
+                      variant="ghost"
+                      type="button"
+                      aria-pressed={filter === item.id}
+                      onClick={() => setFilter(item.id)}
+                    >
+                      <span>{t(item.key)}</span>
+                      <span className={styles.filterCount}>{counts[item.id]}</span>
+                    </Button>
+                  ))}
+                </div>
+              </section>
             ))}
           </nav>
           <div className={styles.sidebarHelp}>{t("nodes.sidebarHelp")}</div>
-          <div className={styles.sidebarStatus}>
-            {snapshot.catalogSource && (
-              <div className={styles.sourceNotice} role="status">
-                <strong>{t("nodes.catalogSource", { source: snapshot.catalogSource })}</strong>
-              </div>
-            )}
-            {snapshot.installedStatus === "ready" && (
-              <p className={styles.managerReady} role="status">
-                {t("nodes.managerReady")}
-              </p>
-            )}
-          </div>
         </aside>
 
         <main className={styles.main}>
-          <div className={styles.toolbar}>
+          <div className={styles.toolbar} data-bulk={filter === "git" || filter === "updates"}>
             <label className={styles.searchField}>
-              <span className={styles.visuallyHidden}>{t("nodes.searchLabel")}</span>
+              <span className={styles.visuallyHidden}>
+                {t(workflowFilter ? "nodes.workflow.searchLabel" : "nodes.searchLabel")}
+              </span>
               <input
                 ref={searchRef}
                 type="search"
                 name="nodes-manager-search"
                 autoComplete="off"
-                placeholder={t("nodes.searchPlaceholder")}
+                placeholder={t(
+                  workflowFilter ? "nodes.workflow.searchPlaceholder" : "nodes.searchPlaceholder",
+                )}
                 value={search}
                 onChange={(event) => {
                   setSearch(event.currentTarget.value)
@@ -275,6 +319,29 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
                 <option value="downloads">{t("nodes.sort.downloads")}</option>
               </select>
             </label>
+            {(filter === "git" || filter === "updates") && (
+              <Button
+                type="button"
+                variant="primary"
+                busy={Boolean(snapshot.bulkOperation)}
+                disabled={
+                  snapshot.checking ||
+                  snapshot.installedStatus !== "ready" ||
+                  counts[filter] === 0 ||
+                  taskOperations.some((operation) =>
+                    ["starting", "pending", "unknown"].includes(operation.status),
+                  )
+                }
+                onClick={() => void controller.submitAll(filter)}
+              >
+                {filter === "git" ? (
+                  <HardDriveDownload size={24} aria-hidden="true" />
+                ) : (
+                  <Download size={24} aria-hidden="true" />
+                )}
+                {t(filter === "git" ? "nodes.fetchAll" : "nodes.updateAll")}
+              </Button>
+            )}
             <Button
               type="button"
               busy={snapshot.checking}
@@ -331,38 +398,119 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
               </Button>
             </div>
           )}
-          {orphanedOperations.length > 0 && (
+          {workflowFilter && snapshot.workflowStatus === "loading" && (
+            <p className={styles.notice} role="status" aria-live="polite">
+              {t("nodes.workflow.analyzing")}
+            </p>
+          )}
+          {workflowFilter && snapshot.workflowStatus === "degraded" && (
+            <div className={styles.sourceNotice} role="status">
+              {snapshot.workflowError && (
+                <span>{t("nodes.workflow.mappingFailed", { detail: snapshot.workflowError })}</span>
+              )}
+              {!snapshot.workflowAvailabilityKnown && (
+                <span>{t("nodes.workflow.availabilityUnknown")}</span>
+              )}
+              {snapshot.workflowMappingIssueCount > 0 && (
+                <span>
+                  {t("nodes.workflow.mappingIssues", { count: snapshot.workflowMappingIssueCount })}
+                </span>
+              )}
+            </div>
+          )}
+          {workflowFilter && workflowDiagnostics.length > 0 && (
+            <section
+              className={styles.workflowDiagnostics}
+              aria-label={t("nodes.workflow.diagnostics")}
+            >
+              <h3>{t("nodes.workflow.diagnostics")}</h3>
+              <p>
+                {t("nodes.workflow.diagnosticSummary", {
+                  unresolved: unresolvedDiagnosticCount,
+                  unavailable: unavailableNodeCount,
+                })}
+              </p>
+              <ul className={styles.workflowDiagnosticsList}>
+                {workflowDiagnostics.map((diagnostic) => (
+                  <li
+                    key={`${diagnostic.kind}:${diagnostic.type}:${diagnostic.candidates?.join(",") ?? ""}`}
+                    className={styles.workflowDiagnostic}
+                  >
+                    <strong translate="no">{diagnostic.type}</strong>
+                    <span>
+                      {t(`nodes.workflow.diagnostic.${diagnostic.kind}`, {
+                        count: diagnostic.occurrences,
+                      })}
+                    </span>
+                    {diagnostic.candidates && (
+                      <span translate="no">{diagnostic.candidates.join(", ")}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {taskOperations.some((operation) => !dismissedTaskIds.has(operation.taskId)) && (
             <section className={styles.taskSummary} aria-label={t("nodes.recentResults")}>
-              <h3>{t("nodes.recentResults")}</h3>
-              {orphanedOperations.map((operation) => (
-                <div
-                  key={operation.taskId}
-                  className={styles.taskSummaryItem}
-                  role="status"
-                  aria-live="polite"
+              <div className={styles.taskSummaryHeader}>
+                <h3>{t("nodes.recentResults")}</h3>
+                <Button
+                  size="sm"
+                  type="button"
+                  aria-label={t("nodes.closeTaskStatus")}
+                  title={t("nodes.closeTaskStatus")}
+                  onClick={() =>
+                    setDismissedTaskIds(
+                      new Set(taskOperations.map((operation) => operation.taskId)),
+                    )
+                  }
                 >
-                  <strong>
-                    {t("nodes.operationSeparator", {
-                      pack: operation.pack.name,
-                      operation: operationName(operation.operation),
-                    })}
-                  </strong>
-                  <span>{operationStatusLabel(operation.status)}</span>
-                  {operationMessage(operation) && <span>{operationMessage(operation)}</span>}
-                  {operation.queueStartFailed && (
-                    <Button
-                      size="sm"
-                      className={styles.taskSummaryRetryButton}
-                      type="button"
-                      disabled={operation.status === "starting" || operation.status === "pending"}
-                      onClick={() => void controller.retryQueueStart(operation.packKey)}
-                    >
-                      {t("nodes.retryQueue")}
-                    </Button>
-                  )}
-                  {operation.restartRequired && <span>{t("nodes.restartRequired")}</span>}
-                </div>
-              ))}
+                  <X size={16} aria-hidden="true" />
+                </Button>
+              </div>
+              <div
+                className={styles.taskSummaryList}
+                tabIndex={0}
+                role="region"
+                aria-label={t("nodes.recentResults")}
+              >
+                {taskOperations.map((operation) => (
+                  <div
+                    key={operation.taskId}
+                    className={styles.taskSummaryItem}
+                    role={operation.status === "failed" ? "alert" : "status"}
+                    aria-live="polite"
+                  >
+                    <strong>
+                      {t("nodes.operationSeparator", {
+                        pack: operation.pack.name,
+                        operation:
+                          operation.pack.source === "Git" && operation.operation === "update"
+                            ? t("card.fetch")
+                            : operationName(operation.operation),
+                      })}
+                    </strong>
+                    <span>{operationStatusLabel(operation.status)}</span>
+                    {operationMessage(operation) && <span>{operationMessage(operation)}</span>}
+                    {operation.queueStartFailed && (
+                      <Button
+                        size="sm"
+                        className={styles.taskSummaryRetryButton}
+                        type="button"
+                        disabled={
+                          snapshot.installedStatus !== "ready" ||
+                          operation.status === "starting" ||
+                          operation.status === "pending"
+                        }
+                        onClick={() => void controller.retryQueueStart(operation.packKey)}
+                      >
+                        {t("nodes.retryQueue")}
+                      </Button>
+                    )}
+                    {operation.restartRequired && <span>{t("nodes.restartRequired")}</span>}
+                  </div>
+                ))}
+              </div>
             </section>
           )}
 
@@ -378,15 +526,31 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
             </span>
           </div>
 
-          {snapshot.catalogStatus !== "loading" && filteredPacks.length === 0 && (
-            <div className={styles.emptyState}>
-              {snapshot.catalogStatus === "error" && snapshot.packs.length === 0
-                ? t("nodes.empty.noCatalog")
-                : search.trim()
-                  ? t("nodes.empty.search")
-                  : t("nodes.empty.filter")}
-            </div>
-          )}
+          {(workflowFilter
+            ? snapshot.workflowStatus !== "loading"
+            : snapshot.catalogStatus !== "loading") &&
+            filteredPacks.length === 0 && (
+              <div className={styles.emptyState}>
+                {workflowFilter
+                  ? deferredSearch.trim()
+                    ? t("nodes.empty.search")
+                    : snapshot.workflowStatus === "unavailable"
+                      ? t("nodes.workflow.noGraph")
+                      : snapshot.workflowStatus === "degraded" &&
+                          !snapshot.workflowAvailabilityKnown
+                        ? t("nodes.workflow.availabilityUnknown")
+                        : t(
+                            filter === "workflow-missing"
+                              ? "nodes.workflow.missingEmpty"
+                              : "nodes.workflow.empty",
+                          )
+                  : snapshot.catalogStatus === "error" && snapshot.packs.length === 0
+                    ? t("nodes.empty.noCatalog")
+                    : search.trim()
+                      ? t("nodes.empty.search")
+                      : t("nodes.empty.filter")}
+              </div>
+            )}
 
           {packRows.length > 0 && (
             <div className={styles.virtualListViewport}>
@@ -409,7 +573,9 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
                         operation={findOperationForPack(snapshot.operations, pack)}
                         versionState={snapshot.versions[pack.key]}
                         selectedVersion={selectedVersionFor(pack.key, pack.latestVersion?.version)}
-                        actionsEnabled={snapshot.installedStatus === "ready"}
+                        actionsEnabled={
+                          snapshot.installedStatus === "ready" && !snapshot.bulkOperation
+                        }
                         onLoadVersions={() => ensureVersions(pack)}
                         onRetryVersions={() => retryVersions(pack)}
                         onSelectVersion={(version) =>
@@ -418,10 +584,7 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
                         onSubmit={(operation, version) =>
                           void controller.submit(pack, operation, version)
                         }
-                        onRetryQueueStart={() => {
-                          const operation = findOperationForPack(snapshot.operations, pack)
-                          if (operation) void controller.retryQueueStart(operation.packKey)
-                        }}
+                        onBrowse={() => void controller.browseLocalFolder(pack)}
                       />
                     ))}
                   </div>

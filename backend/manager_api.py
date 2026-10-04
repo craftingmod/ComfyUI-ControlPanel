@@ -727,13 +727,19 @@ def registry_cache_path(source_dir: Path) -> Path:
   return cache_dir / registry_cache.DB_FILENAME
 
 
-def installed_registry_node_ids(catalog_nodes: list[dict[str, Any]]) -> set[str]:
+def custom_node_roots() -> list[Path]:
   roots = [CUSTOM_NODES_DIR]
   with contextlib.suppress(ImportError, AttributeError):
     import folder_paths
 
     roots = [Path(path) for path in folder_paths.get_folder_paths("custom_nodes")]
-  return registry_installed.discover_installed_registry_nodes(roots, catalog_nodes)
+  return roots
+
+
+def installed_registry_node_ids(catalog_nodes: list[dict[str, Any]]) -> set[str]:
+  return registry_installed.discover_installed_registry_nodes(
+    custom_node_roots(), catalog_nodes
+  )
 
 
 def deploy_controlpanel_manager_cache_to_manager(
@@ -1071,10 +1077,14 @@ def comfy_cli_command(*args: str) -> list[str]:
 
 async def update_git_nodes_with_git(
   on_line: Callable[[str], None] | None = None,
+  *,
+  repository: Path | None = None,
 ) -> dict[str, Any]:
   return await manager_git.update_git_nodes_with_git(
     workspace=COMFYUI_ROOT,
-    repositories=discover_git_repositories,
+    repositories=(lambda: [repository])
+    if repository is not None
+    else discover_git_repositories,
     update_repository=update_git_repository,
     on_line=on_line,
   )
@@ -1280,6 +1290,26 @@ async def _start_job_response(
 
 async def _job_update_git_nodes(job: ManagerJob) -> dict[str, Any]:
   return await update_git_nodes_with_git(job.append_log)
+
+
+def resolve_git_node_repository(node_key: str) -> Path:
+  matches = [
+    repo
+    for repo in discover_git_repositories()
+    if repo.name == node_key
+    and repo.resolve() != CUSTOM_NODES_DIR.resolve()
+    and _is_relative_to(repo.resolve(), CUSTOM_NODES_DIR.resolve())
+  ]
+  if len(matches) != 1:
+    raise ManagerApiError(
+      "The installed Git node folder was not found or is ambiguous."
+    )
+  return matches[0]
+
+
+async def _job_update_git_node(job: ManagerJob, repository: Path) -> dict[str, Any]:
+  repository = resolve_git_node_repository(repository.name)
+  return await update_git_nodes_with_git(job.append_log, repository=repository)
 
 
 async def _job_check_for_updates(job: ManagerJob) -> dict[str, Any]:
