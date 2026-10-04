@@ -39,8 +39,8 @@
   }
 
   &[data-size="icon"] {
-    width: var(--space-2xl);
-    height: var(--space-2xl);
+    width: var(--space-xl);
+    height: var(--space-xl);
     padding: 0;
     border-radius: 50%;
     font-size: 24px;

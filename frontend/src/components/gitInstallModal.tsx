@@ -82,7 +82,7 @@ export function GitInstallModal({
         <Button type="button" onClick={onClose}>
           Cancel
         </Button>
-        <Button type="button" onClick={install}>
+        <Button type="button" variant="danger" onClick={install}>
           Install
         </Button>
       </div>

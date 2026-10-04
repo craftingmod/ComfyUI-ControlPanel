@@ -4,6 +4,7 @@ import { createPortal } from "react-dom"
 import { Button } from "./ui/button.tsx"
 
 import styles from "./controlPanel.module.css"
+import { X } from "lucide-react";
 
 type ControlPanelDialogProps = {
   title: string
@@ -105,7 +106,7 @@ export function ControlPanelDialog({
             {title}
           </h2>
           <Button size="icon" type="button" aria-label="Close" onClick={onClose}>
-            ×
+            <X />
           </Button>
         </div>
         {children}
