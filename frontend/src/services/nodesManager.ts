@@ -24,6 +24,7 @@ export type RegistryNode = {
   github_stars?: number
   downloads?: number
   last_update?: string
+  updatedAt?: string
   updated_at?: string
   created_at?: string
   latest_version?: RegistryVersion
@@ -301,9 +302,9 @@ function makeManagedPack(
           : undefined,
     downloads: typeof node?.downloads === "number" ? node.downloads : undefined,
     updatedAt:
-      nonEmptyString(node?.last_update) ??
       nonEmptyString(node?.updated_at) ??
-      nonEmptyString(node?.created_at) ??
+      nonEmptyString(node?.updatedAt) ??
+      nonEmptyString(node?.last_update) ??
       nonEmptyString(latestVersion?.createdAt) ??
       nonEmptyString(latestVersion?.created_at),
     latestVersion,

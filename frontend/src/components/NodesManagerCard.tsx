@@ -1,3 +1,4 @@
+import { Download, RotateCwClock, Star } from "lucide-react"
 import { useId } from "react"
 
 import {
@@ -146,9 +147,20 @@ export function NodesManagerCard({
       <p className={styles.description}>{pack.description || "No description provided."}</p>
 
       <div className={styles.metadata}>
-        <span title="GitHub stars">★ {formatCount(pack.stars)}</span>
-        <span title="Downloads">↓ {formatCount(pack.downloads)}</span>
-        {updated && <span>Updated {updated}</span>}
+        <span title="GitHub stars">
+          <Star className={styles.metadataIcon} aria-hidden="true" fill="currentColor" />
+          {formatCount(pack.stars)}
+        </span>
+        <span title="Downloads">
+          <Download className={styles.metadataIcon} aria-hidden="true" />
+          {formatCount(pack.downloads)}
+        </span>
+        {updated && (
+          <span title={`Updated ${updated}`}>
+            <RotateCwClock className={styles.metadataIcon} aria-hidden="true" />
+            Updated {updated}
+          </span>
+        )}
       </div>
       <p className={styles.author}>By {pack.author || "Unknown author"}</p>
 

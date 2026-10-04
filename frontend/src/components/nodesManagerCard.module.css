@@ -103,6 +103,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+.metadata > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+}
+
+.metadataIcon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
 .author,
 .repositoryText {
   overflow: hidden;
