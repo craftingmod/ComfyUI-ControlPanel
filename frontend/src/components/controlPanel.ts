@@ -11,6 +11,7 @@ import { ControlPanelPage } from "../pages/ControlPanelPage.tsx"
 import { fetchInstalledPackages } from "../services/cnrMetadata.ts"
 import type { FixMetadataSummary } from "../services/cnrMetadataController.ts"
 import { createControlPanelApi, isUpdateJob } from "../services/controlPanelApi.ts"
+import { restartWithManager } from "../services/managerRestart.ts"
 import {
   buildNodeRestoreManifest,
   dependencySyncCommand,
@@ -52,6 +53,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
   let statusPollTimer: number | undefined
   let panelGeneration = 0
   let snapshotRequestGeneration = 0
+  let restartPending = false
 
   function setViewState(patch: Partial<ControlPanelViewState>): void {
     viewState = { ...viewState, ...patch }
@@ -432,26 +434,28 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
   }
 
   async function restartComfyUI(): Promise<void> {
-    const label = "panel.action.restart"
-    const body = { confirm: true }
-    const operation = t(label)
+    if (restartPending) return
+    restartPending = true
+    setViewState({ restartPending: true })
     writeLog(t("operation.restartStarted"))
-    debugLog(readBooleanSetting, `${operation} request`, { route: API_ROUTES.RESTART, body })
+    toast("info", "ComfyUI-ControlPanel", t("operation.restarting"))
     try {
-      const data = await api.fetchJson(API_ROUTES.RESTART, body)
-      writeLog(
-        formatOperationResult(label, API_ROUTES.RESTART, data) ??
-          t("operation.completedLog", { operation }),
-      )
-      toast("info", "ComfyUI-ControlPanel", t("operation.restarting"))
+      await restartWithManager(app, t)
+      const message = t("operation.completedLog", { operation: t("panel.action.restart") })
+      writeLog(message)
+      toast("success", "ComfyUI-ControlPanel", message)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       writeLog(t("operation.restartFailed", { error: message }))
       toast("error", "ComfyUI-ControlPanel", message)
+    } finally {
+      restartPending = false
+      setViewState({ restartPending: false })
     }
   }
 
   async function confirmRestart(): Promise<void> {
+    if (restartPending) return
     const confirmed = await app.extensionManager.dialog.confirm({
       title: t("operation.restartConfirmTitle"),
       message: t("operation.restartConfirm"),

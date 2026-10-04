@@ -316,16 +316,4 @@ def register_routes(api: Any) -> bool:
       return api._error_response("Update job was not found.", status=404)
     return api._json_response({"ok": True, "job": job.to_dict()})
 
-  @routes.post(f"{api.API_PREFIX}/restart")
-  @control_route(manager_policy=api._MANAGER_POLICY_MIDDLE)
-  async def restart(request):
-    data = await api._read_json(request)
-    if data.get("confirm") is not True:
-      return api._error_response("Restart requires confirm=true.", status=400)
-    try:
-      result = await api.restart_comfyui(request)
-      return api._json_response({"ok": True, **result})
-    except Exception as error:
-      return api._error_response(str(error), status=500)
-
   return True

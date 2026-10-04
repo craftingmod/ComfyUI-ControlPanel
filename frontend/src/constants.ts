@@ -38,5 +38,4 @@ export const API_ROUTES = {
   CHECK_UPDATES: `${API_PREFIX}/updates/check`,
   UPDATE_COMFYUI: `${API_PREFIX}/update/comfyui`,
   UPDATE_STATUS: `${API_PREFIX}/update/status`,
-  RESTART: `${API_PREFIX}/restart`,
 } as const

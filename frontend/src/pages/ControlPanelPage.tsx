@@ -328,7 +328,12 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
                 <Button type="button" onClick={showEnvironment}>
                   {t("panel.action.showEnvironment")}
                 </Button>
-                <Button variant="danger" type="button" onClick={() => void actions.restart()}>
+                <Button
+                  variant="danger"
+                  type="button"
+                  disabled={view.restartPending}
+                  onClick={() => void actions.restart()}
+                >
                   {t("panel.action.restart")}
                 </Button>
               </div>

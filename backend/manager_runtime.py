@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from typing import Any
 
 
 def resolve_comfyui_root(extension_root: Path, configured_path: str | None) -> Path:
@@ -42,41 +40,3 @@ def resolve_comfyui_user_dir(comfyui_root: Path, argv: list[str]) -> Path:
       return Path(argv[index + 1]).expanduser().resolve()
 
   return (comfyui_root / "user").resolve()
-
-
-def clear_terminal_for_restart(stdout: Any, clear_sequence: str, logger: Any) -> None:
-  try:
-    stdout.write(clear_sequence)
-    stdout.flush()
-  except Exception:
-    logger.debug(
-      "[ControlPanel] Failed to clear terminal before restart.", exc_info=True
-    )
-
-
-async def restart_comfyui(clear_terminal, schedule_restart) -> dict[str, Any]:
-  clear_terminal()
-  schedule_restart()
-  return {
-    "provider": "local-restart",
-    "message": "Local ComfyUI restart was scheduled.",
-  }
-
-
-def schedule_restart(restart_current_process, delay_seconds: float = 1.0) -> None:
-  async def delayed_restart() -> None:
-    await asyncio.sleep(delay_seconds)
-    restart_current_process()
-
-  asyncio.create_task(delayed_restart())
-
-
-def restart_exec_args(executable: str, argv: list[str]) -> list[str]:
-  return [executable, *argv]
-
-
-def restart_current_process(executable: str, argv: list[str], execv) -> None:
-  args = restart_exec_args(executable, argv)
-  print("\nRestarting...\n\n", flush=True)
-  print(f"Command: {args}", flush=True)
-  execv(executable, args)

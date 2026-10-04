@@ -4,6 +4,7 @@ import type { JsonObject, ToastSeverity } from "../types.ts"
 
 export type ControlPanelViewState = {
   isOpen: boolean
+  restartPending?: boolean
   log: string
   managerCacheControlsEnabled: boolean
   managerCacheStatus: TranslationKey

@@ -67,7 +67,6 @@ API_PREFIX = "/control-panel"
 _ROUTES_REGISTERED = False
 _OPERATION_LOCK = asyncio.Lock()
 _MANAGER_CACHE_REFRESH_LOCK = threading.Lock()
-_CLEAR_TERMINAL_CSI = "\033[2J\033[H"
 _MANAGER_CACHE_FILES = (
   "custom-node-list.json",
   "extension-node-map.json",
@@ -1228,16 +1227,6 @@ async def request_manager_update_comfyui(request) -> dict[str, Any]:
   }
 
 
-def clear_terminal_for_restart() -> None:
-  manager_runtime.clear_terminal_for_restart(sys.stdout, _CLEAR_TERMINAL_CSI, LOGGER)
-
-
-async def restart_comfyui(_request) -> dict[str, Any]:
-  return await manager_runtime.restart_comfyui(
-    clear_terminal_for_restart, schedule_restart
-  )
-
-
 def open_path_in_file_manager(path: Path) -> dict[str, Any]:
   return manager_process.open_path_in_file_manager(path)
 
@@ -1253,18 +1242,6 @@ async def _with_operation_lock(operation):
       return _error_response(str(error), status=400)
     except Exception as error:
       return _error_response(str(error), status=500)
-
-
-def schedule_restart(delay_seconds: float = 1.0) -> None:
-  manager_runtime.schedule_restart(restart_current_process, delay_seconds)
-
-
-def restart_exec_args() -> list[str]:
-  return manager_runtime.restart_exec_args(sys.executable, sys.argv)
-
-
-def restart_current_process() -> None:
-  manager_runtime.restart_current_process(sys.executable, sys.argv, os.execv)
 
 
 def register_routes() -> bool:

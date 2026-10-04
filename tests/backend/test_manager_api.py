@@ -1,5 +1,4 @@
 import asyncio
-import io
 import json
 import os
 import sys
@@ -577,35 +576,6 @@ def test_same_server_url_respects_forwarded_proto():
     manager_api._same_server_url(request, "/manager/reboot")
     == "https://example.test/manager/reboot"
   )
-
-
-def test_restart_comfyui_schedules_local_restart(monkeypatch):
-  calls = []
-
-  def fake_schedule_restart():
-    calls.append("scheduled")
-
-  monkeypatch.setattr(manager_api, "schedule_restart", fake_schedule_restart)
-  monkeypatch.setattr(
-    manager_api, "clear_terminal_for_restart", lambda: calls.append("cleared")
-  )
-  monkeypatch.delenv("__COMFY_CLI_SESSION__", raising=False)
-
-  result = asyncio.run(manager_api.restart_comfyui(SimpleNamespace()))
-
-  assert calls == ["cleared", "scheduled"]
-  assert result["provider"] == "local-restart"
-  assert result["message"] == "Local ComfyUI restart was scheduled."
-
-
-def test_clear_terminal_for_restart_writes_csi(monkeypatch):
-  stdout = io.StringIO()
-
-  monkeypatch.setattr(manager_api.sys, "stdout", stdout)
-
-  manager_api.clear_terminal_for_restart()
-
-  assert stdout.getvalue() == manager_api._CLEAR_TERMINAL_CSI
 
 
 def test_request_manager_update_comfyui_uses_v2_queue_route(monkeypatch):
@@ -1910,54 +1880,3 @@ def test_start_job_rejects_concurrent_running_jobs(monkeypatch):
   assert first_job.status in {"queued", "running"}
 
   manager_jobs.reset_jobs_for_tests()
-
-
-def test_restart_current_process_execs_active_python_command(monkeypatch, capsys):
-  calls = []
-  original_argv = [
-    "C:/Users/alyac/AppData/Roaming/uv/python/cpython-3.13/python.exe",
-    "main.py",
-    "--listen",
-    "0.0.0.0",
-  ]
-
-  def fake_execv(path, args):
-    calls.append((path, args))
-
-  monkeypatch.setattr(
-    manager_api.sys, "executable", "V:/ComfyUI/portable_260706/.venv/Scripts/python.exe"
-  )
-  monkeypatch.setattr(manager_api.sys, "orig_argv", original_argv, raising=False)
-  monkeypatch.setattr(
-    manager_api.sys, "argv", ["main.py", "--listen", "0.0.0.0"], raising=False
-  )
-  monkeypatch.setattr(manager_api.os, "execv", fake_execv)
-
-  manager_api.restart_current_process()
-
-  assert calls == [
-    (
-      "V:/ComfyUI/portable_260706/.venv/Scripts/python.exe",
-      [
-        "V:/ComfyUI/portable_260706/.venv/Scripts/python.exe",
-        "main.py",
-        "--listen",
-        "0.0.0.0",
-      ],
-    )
-  ]
-  assert "Restarting..." in capsys.readouterr().out
-
-
-def test_restart_exec_args_uses_active_python_and_current_argv(monkeypatch):
-  monkeypatch.setattr(manager_api.sys, "executable", "C:/Python/python.exe")
-  monkeypatch.setattr(
-    manager_api.sys, "orig_argv", ["C:/Base/python.exe", "main.py"], raising=False
-  )
-  monkeypatch.setattr(manager_api.sys, "argv", ["main.py", "--listen"], raising=False)
-
-  assert manager_api.restart_exec_args() == [
-    "C:/Python/python.exe",
-    "main.py",
-    "--listen",
-  ]
