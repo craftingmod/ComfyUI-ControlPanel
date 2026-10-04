@@ -54,7 +54,8 @@
   "dependencies": {
     "lucide-react": "^1.52.0",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "react-virtuoso": "^4.18.16"
   },
   "devDependencies": {
     "@comfyorg/comfyui-frontend-types": "1.47.12",

@@ -56,6 +56,12 @@
       "sourceType": "github",
       "computedHash": "e7bd8c738165172545376209b09b4bb4a4784744fd70933c694ca1032a3e2caa"
     },
+    "react-virtuoso": {
+      "source": "virtuoso-dev/skills",
+      "sourceType": "github",
+      "skillPath": "react-virtuoso/SKILL.md",
+      "computedHash": "fa036735aafc07c94ea0f8acdf0236d8029c9844aab08580f1e47001bedcc75c"
+    },
     "vercel-react-best-practices": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",
