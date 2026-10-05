@@ -29,8 +29,7 @@ import type { NodesManagerOperationState } from "../services/nodesManagerControl
 import { Button } from "./ui/button.tsx"
 
 import styles from "./nodesManagerCard.module.css"
-
-const IconSize = 16
+import { IconSize } from "@/constants.ts";
 
 type VersionState = {
   loading: boolean

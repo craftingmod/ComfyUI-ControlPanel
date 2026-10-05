@@ -40,3 +40,5 @@ export const API_ROUTES = {
   UPDATE_COMFYUI: `${API_PREFIX}/update/comfyui`,
   UPDATE_STATUS: `${API_PREFIX}/update/status`,
 } as const
+
+export const IconSize = 16

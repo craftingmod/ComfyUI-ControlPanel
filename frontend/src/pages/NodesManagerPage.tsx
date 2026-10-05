@@ -30,6 +30,7 @@ import type {
 import { findOperationForPack } from "../services/nodesManagerController.ts"
 
 import styles from "./nodesManager.module.css"
+import { IconSize } from "@/constants.ts";
 
 const FILTER_GROUPS: {
   key: TranslationKey
@@ -369,9 +370,9 @@ export function NodesManagerPage({
                   onClick={() => void controller.submitAll(filter)}
                 >
                   {filter === "git" ? (
-                    <HardDriveDownload size={24} aria-hidden="true" />
+                    <HardDriveDownload size={IconSize} aria-hidden="true" />
                   ) : (
-                    <Download size={24} aria-hidden="true" />
+                    <Download size={IconSize} aria-hidden="true" />
                   )}
                   {t(filter === "git" ? "nodes.fetchAll" : "nodes.updateAll")}
                 </Button>
@@ -392,7 +393,7 @@ export function NodesManagerPage({
                   }
                   onClick={() => void controller.submitAll("workflow-missing", selectedVersions)}
                 >
-                  <Download size={24} aria-hidden="true" />
+                  <Download size={IconSize} aria-hidden="true" />
                   {t("nodes.installMissing")}
                 </Button>
               )}
@@ -402,7 +403,7 @@ export function NodesManagerPage({
                   onClick={onAddGitNode}
                   disabled={Boolean(snapshot.bulkOperation)}
                 >
-                  <GitMerge size={24} aria-hidden="true" />
+                  <GitMerge size={IconSize} aria-hidden="true" />
                   {t("nodes.addGitNode")}
                 </Button>
               )}
@@ -411,9 +412,9 @@ export function NodesManagerPage({
                 busy={snapshot.checking}
                 busyLabel={t("nodes.refreshing")}
                 onClick={() => void controller.refresh()}
+                title={t("nodes.refresh")}
               >
-                <RefreshCw size={24} aria-hidden="true" />
-                {t("nodes.refresh")}
+                <RefreshCw size={IconSize} aria-hidden="true" />
               </Button>
             </div>
           </div>
