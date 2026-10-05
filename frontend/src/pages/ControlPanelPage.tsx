@@ -203,19 +203,8 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
                 title={t("panel.group.installUpdate")}
                 ariaLabel={t("panel.aria.installActions")}
               >
-                <Button type="button" onClick={() => setGitInstallOpen(true)}>
-                  {t("panel.action.installGit")}
-                </Button>
                 <Button type="button" onClick={openUpdateCheck}>
                   {t("panel.action.checkUpdates")}
-                </Button>
-                <Button
-                  className={styles.buttonWide}
-                  variant="primary"
-                  type="button"
-                  onClick={() => void actions.nodesManager.open()}
-                >
-                  {t("panel.action.nodesManager")}
                 </Button>
                 <Button
                   type="button"
@@ -229,15 +218,12 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
                   {t("panel.action.updateComfyUI")}
                 </Button>
                 <Button
+                  className={styles.buttonWide}
+                  variant="primary"
                   type="button"
-                  onClick={() =>
-                    void actions.startUpdateJob(
-                      "panel.action.updateGitNodes",
-                      API_ROUTES.UPDATE_CUSTOM_NODES,
-                    )
-                  }
+                  onClick={() => void actions.nodesManager.open()}
                 >
-                  {t("panel.action.updateGitNodes")}
+                  {t("panel.action.nodesManager")}
                 </Button>
               </ControlPanelActionGroup>
               <ControlPanelActionGroup
@@ -313,17 +299,6 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
                   }
                 >
                   {t("panel.action.openCustomNodesFolder")}
-                </Button>
-              </ControlPanelActionGroup>
-              <ControlPanelActionGroup
-                title={t("panel.group.nodeRestore")}
-                ariaLabel={t("panel.aria.nodeRestoreActions")}
-              >
-                <Button type="button" onClick={() => void actions.backupInstalledNodes()}>
-                  {t("panel.action.backupInstalledNodes")}
-                </Button>
-                <Button variant="danger" type="button" onClick={chooseNodeRestoreFile}>
-                  {t("panel.action.restoreLatestNodes")}
                 </Button>
               </ControlPanelActionGroup>
               <ControlPanelActionGroup

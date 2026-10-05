@@ -1,4 +1,12 @@
-import { HardDriveDownload, Download, RefreshCw, GitMerge, X } from "lucide-react"
+import {
+  HardDriveDownload,
+  Download,
+  RefreshCw,
+  GitMerge,
+  X,
+  DatabaseBackup,
+  DatabaseArrowDown,
+} from "lucide-react"
 import {
   forwardRef,
   useCallback,
@@ -362,9 +370,11 @@ export function NodesManagerPage({
               {filter === "installed" && (
                 <>
                   <Button type="button" onClick={onBackupInstalledNodes}>
+                    <DatabaseBackup size={IconSize} aria-hidden="true" />
                     {t("nodes.backup")}
                   </Button>
                   <Button variant="danger" type="button" onClick={onChooseNodeRestoreFile}>
+                    <DatabaseArrowDown size={IconSize} aria-hidden="true" />
                     {t("nodes.restore")}
                   </Button>
                 </>
@@ -412,7 +422,7 @@ export function NodesManagerPage({
                   {t("nodes.installMissing")}
                 </Button>
               )}
-              {onAddGitNode && (
+              {filter === "git" && onAddGitNode && (
                 <Button
                   type="button"
                   onClick={onAddGitNode}

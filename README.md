@@ -14,14 +14,12 @@ This custom node pack is primarily maintained as a personal-use replacement for
 
 ## Features
 
-![Panel Preview](./assets/panel.avif)
+![Panel Preview](./assets/panel.webp)
 
-- Install a custom node directly from a Git URL.
-- Update ComfyUI and Git-installed custom nodes without enabling the legacy Manager UI.
+- Update ComfyUI without enabling the legacy Manager UI.
 - Replace the Manager repository cache with a safer and more efficient cache path.
 - Update or rebuild the Manager cache when Replace Manager Repository Data is enabled.
 - Save and restore Manager snapshots through the Comfy CLI.
-- Download a latest-version custom-node restore manifest and restore Registry/Git nodes from an uploaded JSON file.
 - Open the `custom_nodes` and Manager snapshots folders from the panel on local installs.
 - Show the parsed `comfy --json env` output in a table-style environment dialog.
 - Restart ComfyUI from the control panel.
@@ -31,11 +29,14 @@ This custom node pack is primarily maintained as a personal-use replacement for
 
 ### Node Manager
 
-![Manager](./assets/manager.avif)
+![Manager](./assets/manager.webp)
 
 - Allow to use cache instead of off-cache fetch every time
 - Effective and fast scroll between node view
 - Manage Git nodes with fetch support
+- Download a latest/specific version of custom-node and restore Registry/Git nodes from an uploaded JSON file.
+- Install a custom node directly from a Git URL.
+- Update Git-installed custom nodes.
 
 ## Requirements
 

@@ -34,6 +34,14 @@ function buttonByText(text: string): HTMLButtonElement {
   return button
 }
 
+function filterButtonByText(text: string): HTMLButtonElement {
+  const button = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('aside[aria-label="Extension filters"] button'),
+  ).find((candidate) => candidate.firstElementChild?.textContent?.trim() === text)
+  if (!button) throw new Error(`Missing filter button: ${text}`)
+  return button
+}
+
 function setInputValue(input: HTMLInputElement | HTMLSelectElement, value: string): void {
   const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")?.set
   setter?.call(input, value)
@@ -310,6 +318,7 @@ it("opens Nodes Manager directly without showing or fetching Panel status", asyn
     expect(document.querySelector('[aria-labelledby="cp-nodes-manager-title"]')).not.toBeNull()
     expect(document.querySelector('[aria-labelledby="cp-title"]')).toBeNull()
     expect(fetchApi).not.toHaveBeenCalledWith(API_ROUTES.STATUS, expect.anything())
+    await act(async () => filterButtonByText("Git-installed").click())
     await act(async () => buttonByText("Add git node").click())
     expect(document.querySelector('[aria-labelledby="cp-git-install-title"]')).not.toBeNull()
     await act(async () => buttonByText("Cancel").click())
@@ -323,11 +332,39 @@ it("opens Nodes Manager directly without showing or fetching Panel status", asyn
   }
 })
 
-it("opens the existing Git installer from Nodes Manager without replacing the Panel action", async () => {
+it("orders the Install / Update buttons before the Nodes Manager action", async () => {
+  const panel = await mountControlPanel()
+  try {
+    const group = document.querySelector<HTMLElement>(
+      'section[aria-label="Install and update actions"]',
+    )!
+    const buttons = Array.from(group.querySelectorAll<HTMLButtonElement>("button"))
+    expect(buttons.map((button) => button.textContent?.trim())).toEqual([
+      "Check for Updates",
+      "Update ComfyUI",
+      "Nodes Manager",
+    ])
+    expect(buttons[2].dataset.variant).toBe("primary")
+  } finally {
+    await panel.destroy()
+  }
+})
+
+it("opens the Git installer from Nodes Manager's Git filter", async () => {
   const mounted = await mountControlPanel()
   try {
-    expect(buttonByText("Install via Git URL")).toBeDefined()
+    expect(
+      Array.from(document.querySelectorAll<HTMLButtonElement>("button")).some(
+        (button) => button.textContent?.trim() === "Install via Git URL",
+      ),
+    ).toBe(false)
     await act(async () => mounted.actions.nodesManager.open())
+    expect(
+      Array.from(document.querySelectorAll<HTMLButtonElement>("button")).some(
+        (button) => button.textContent?.trim() === "Add git node",
+      ),
+    ).toBe(false)
+    await act(async () => filterButtonByText("Git-installed").click())
     const addGit = buttonByText("Add git node")
     expect(addGit.querySelector(".lucide-git-merge")).not.toBeNull()
     await act(async () => {
@@ -364,7 +401,11 @@ it("opens the existing Git installer from Nodes Manager without replacing the Pa
     expect(mounted.actions.nodesManager.getSnapshot().isOpen).toBe(true)
     expect(document.activeElement === addGit).toBe(true)
     await act(async () => mounted.actions.nodesManager.close())
-    expect(buttonByText("Install via Git URL").disabled).toBe(false)
+    expect(
+      Array.from(document.querySelectorAll<HTMLButtonElement>("button")).some(
+        (button) => button.textContent?.trim() === "Install via Git URL",
+      ),
+    ).toBe(false)
   } finally {
     await mounted.destroy()
   }
@@ -373,7 +414,9 @@ it("opens the existing Git installer from Nodes Manager without replacing the Pa
 it("keeps the operation log and Git form values when the Panel closes and reopens", async () => {
   const panel = await mountControlPanel()
   try {
-    await act(async () => buttonByText("Install via Git URL").click())
+    await act(async () => panel.actions.nodesManager.open())
+    await act(async () => filterButtonByText("Git-installed").click())
+    await act(async () => buttonByText("Add git node").click())
     const url = document.querySelector<HTMLInputElement>("#cp-git-url")!
     const folder = document.querySelector<HTMLInputElement>("#cp-folder-name")!
     await act(async () => {
@@ -389,7 +432,9 @@ it("keeps the operation log and Git form values when the Panel closes and reopen
     expect(
       document.querySelector('[role="dialog"][aria-labelledby="cp-title"]')?.textContent,
     ).toContain("Retained operation log")
-    await act(async () => buttonByText("Install via Git URL").click())
+    await act(async () => panel.actions.nodesManager.open())
+    await act(async () => filterButtonByText("Git-installed").click())
+    await act(async () => buttonByText("Add git node").click())
     expect(document.querySelector<HTMLInputElement>("#cp-git-url")?.value).toBe(
       "https://example.test/nodes.git",
     )
@@ -528,9 +573,11 @@ it("reports an environment loading error and permits selecting the same JSON fil
     Object.defineProperty(input, "files", { configurable: true, value: [] })
     input.click = vi.fn()
     const file = new File(["{}"], "nodes.json", { type: "application/json" })
+    await act(async () => panel.actions.nodesManager.open())
+    await act(async () => filterButtonByText("All Installed").click())
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      await act(async () => buttonByText("Restore Latest Nodes").click())
+      await act(async () => buttonByText("Restore").click())
       expect(input.value).toBe("")
       value = "C:\\fakepath\\nodes.json"
       Object.defineProperty(input, "files", { configurable: true, value: [file] })
@@ -538,7 +585,14 @@ it("reports an environment loading error and permits selecting the same JSON fil
       const mode = document.querySelector<HTMLSelectElement>("#cp-node-restore-mode")!
       expect(mode.value).toBe("latest")
       if (attempt === 1) await act(async () => setInputValue(mode, "backup"))
-      await act(async () => buttonByText("Restore").click())
+      const restoreDialog = document.querySelector<HTMLElement>(
+        '[role="dialog"][aria-labelledby="cp-node-restore-mode-title"]',
+      )!
+      await act(async () =>
+        Array.from(restoreDialog.querySelectorAll<HTMLButtonElement>("button"))
+          .find((button) => button.textContent?.trim() === "Restore")!
+          .click(),
+      )
     }
     expect(input.accept).toBe(".json,application/json")
     expect(panel.actions.restoreNodesFromFile).toHaveBeenCalledTimes(2)
