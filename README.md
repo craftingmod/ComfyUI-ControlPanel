@@ -33,9 +33,9 @@ This custom node pack is primarily maintained as a personal-use replacement for
 
 ![Manager](./assets/manager.avif)
 
- - Allow to use cache instead of off-cache fetch every time
- - Effective and fast scroll between node view
- - Manage Git nodes with fetch support
+- Allow to use cache instead of off-cache fetch every time
+- Effective and fast scroll between node view
+- Manage Git nodes with fetch support
 
 ## Requirements
 
