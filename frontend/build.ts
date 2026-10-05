@@ -4,19 +4,22 @@ import { fileURLToPath } from "node:url"
 
 export const FRONTEND_ROOT = path.dirname(fileURLToPath(import.meta.url))
 export const FRONTEND_ENTRY = path.join(FRONTEND_ROOT, "src", "index.ts")
+export const REACT_VENDOR_ENTRY = path.join(FRONTEND_ROOT, "src", "vendor-react.ts")
 export const OUTPUT_DIRECTORY = path.resolve(FRONTEND_ROOT, "..", "dist")
 
 export const buildConfig = {
-  entrypoints: [FRONTEND_ENTRY],
+  entrypoints: [FRONTEND_ENTRY, REACT_VENDOR_ENTRY],
   outdir: OUTPUT_DIRECTORY,
   target: "browser",
   format: "esm",
+  splitting: true,
   minify: true,
   define: { "process.env.NODE_ENV": '"production"' },
   external: ["*/scripts/app.js", "*/scripts/api.js"],
   naming: {
     entry: "[name].[ext]",
-    chunk: "[name]-[hash].[ext]",
+    // Keep shared runtime chunks out of ComfyUI's recursive .js discovery.
+    chunk: "vendor-react-[hash].mjs",
     asset: "[name].[ext]",
   },
 } satisfies Bun.BuildConfig

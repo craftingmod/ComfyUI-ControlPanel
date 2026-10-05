@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises"
 
-import { FRONTEND_ENTRY, OUTPUT_DIRECTORY, buildConfig } from "./build.ts"
+import { OUTPUT_DIRECTORY, buildConfig } from "./build.ts"
 
 await rm(OUTPUT_DIRECTORY, { recursive: true, force: true })
 
@@ -13,13 +13,14 @@ const child = Bun.spawn(
   [
     "bun",
     "build",
-    FRONTEND_ENTRY,
+    ...buildConfig.entrypoints,
     "--outdir",
     OUTPUT_DIRECTORY,
     "--target",
     buildConfig.target ?? "browser",
     "--format",
     buildConfig.format ?? "esm",
+    "--splitting",
     "--define",
     'process.env.NODE_ENV="development"',
     ...(buildConfig.external ?? []).flatMap((module) => ["--external", module]),
