@@ -17,6 +17,8 @@ import {
 } from "lucide-react"
 import { useId, useState } from "react"
 
+import { IconSize } from "@/constants.ts"
+
 import { useI18n, type TranslationKey, type TranslationValues } from "../i18n/index.tsx"
 import {
   safeImageUrl,
@@ -29,7 +31,6 @@ import type { NodesManagerOperationState } from "../services/nodesManagerControl
 import { Button } from "./ui/button.tsx"
 
 import styles from "./nodesManagerCard.module.css"
-import { IconSize } from "@/constants.ts";
 
 type VersionState = {
   loading: boolean
