@@ -55,6 +55,22 @@ def test_validate_manifest_keeps_only_explicit_git_folder():
     (
       {
         "format_version": 1,
+        "registry_nodes": [{"id": "safe-node", "version": "../outside"}],
+        "git_nodes": [],
+      },
+      "version is invalid",
+    ),
+    (
+      {
+        "format_version": 1,
+        "registry_nodes": [{"id": "safe-node", "version": "..\\outside"}],
+        "git_nodes": [],
+      },
+      "version is invalid",
+    ),
+    (
+      {
+        "format_version": 1,
         "registry_nodes": [],
         "git_nodes": [
           {"url": "https://github.com/example/node.git", "folder": "../bad"}
@@ -118,16 +134,21 @@ def test_restore_installs_latest_nodes_clones_git_and_requests_stopped_dependenc
     commands.append((args, cwd, timeout))
     return {"stdout": "ok"}
 
-  async def fake_install_git(url, folder=None):
-    clones.append((url, folder))
+  async def fake_install_git(url, folder=None, commit=None):
+    clones.append((url, folder, commit))
     return {"destination": str(tmp_path / (folder or "GitNode"))}
 
   result = asyncio.run(
     manager_restore.restore_node_manifest(
       {
         "format_version": 1,
-        "registry_nodes": [{"id": "registry-node"}],
-        "git_nodes": [{"url": "https://github.com/example/GitNode.git"}],
+        "registry_nodes": [{"id": "registry-node", "version": "1.2.3"}],
+        "git_nodes": [
+          {
+            "url": "https://github.com/example/GitNode.git",
+            "commit": "1111111111111111111111111111111111111111",
+          }
+        ],
       },
       workspace=tmp_path,
       custom_nodes_dir=tmp_path,
@@ -153,7 +174,7 @@ def test_restore_installs_latest_nodes_clones_git_and_requests_stopped_dependenc
       1800,
     ),
   ]
-  assert clones == [("https://github.com/example/GitNode.git", None)]
+  assert clones == [("https://github.com/example/GitNode.git", None, None)]
   assert result["installed"] == 2
   assert result["failed"] == 0
   assert result["restart_required"] is True
@@ -169,3 +190,84 @@ def test_restore_installs_latest_nodes_clones_git_and_requests_stopped_dependenc
     logs[-1]
     == "Close ComfyUI, then run `comfy node uv-sync` for this workspace to sync dependencies."
   )
+
+
+def test_restore_uses_registry_versions_and_git_commits_from_manifest(tmp_path):
+  commands = []
+  clones = []
+
+  async def fake_run_command_stream(args, cwd, timeout=1800, on_line=None):
+    commands.append((args, cwd, timeout))
+    return {"stdout": "ok"}
+
+  async def fake_install_git(url, folder=None, commit=None):
+    clones.append((url, folder, commit))
+    return {"destination": str(tmp_path / (folder or "GitNode"))}
+
+  result = asyncio.run(
+    manager_restore.restore_node_manifest(
+      {
+        "format_version": 1,
+        "registry_nodes": [{"id": "registry-node", "version": "1.2.3"}],
+        "git_nodes": [
+          {
+            "url": "https://github.com/example/GitNode.git",
+            "commit": "1111111111111111111111111111111111111111",
+          }
+        ],
+      },
+      workspace=tmp_path,
+      custom_nodes_dir=tmp_path,
+      comfy_command=lambda *args: ["comfy", "--workspace", str(tmp_path), *args],
+      install_git=fake_install_git,
+      run_command_stream=fake_run_command_stream,
+      version_mode="backup",
+    )
+  )
+
+  assert commands == [
+    (
+      [
+        "comfy",
+        "--workspace",
+        str(tmp_path),
+        "node",
+        "registry-install",
+        "registry-node",
+        "--version",
+        "1.2.3",
+      ],
+      tmp_path,
+      1800,
+    )
+  ]
+  assert clones == [
+    (
+      "https://github.com/example/GitNode.git",
+      None,
+      "1111111111111111111111111111111111111111",
+    )
+  ]
+  assert result["failed"] == 0
+
+
+@pytest.mark.parametrize("version_mode", ["pinned", [], None])
+def test_restore_rejects_invalid_version_mode(tmp_path, version_mode):
+  async def fake_install_git(*args):
+    return {}
+
+  async def fake_run_command_stream(*args, **kwargs):
+    return {}
+
+  with pytest.raises(ManagerApiError, match="version mode is invalid"):
+    asyncio.run(
+      manager_restore.restore_node_manifest(
+        {"format_version": 1, "registry_nodes": [], "git_nodes": []},
+        workspace=tmp_path,
+        custom_nodes_dir=tmp_path,
+        comfy_command=lambda *args: list(args),
+        install_git=fake_install_git,
+        run_command_stream=fake_run_command_stream,
+        version_mode=version_mode,
+      )
+    )

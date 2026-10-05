@@ -12,6 +12,8 @@ import {
 import type { ScrollerProps } from "react-virtuoso"
 import { Virtuoso, type Components, type VirtuosoHandle } from "react-virtuoso"
 
+import { IconSize } from "@/constants.ts"
+
 import { ControlPanelDialog } from "../components/controlPanelDialog.tsx"
 import { NodesManagerCard } from "../components/NodesManagerCard.tsx"
 import { Button } from "../components/ui/button.tsx"
@@ -30,7 +32,6 @@ import type {
 import { findOperationForPack } from "../services/nodesManagerController.ts"
 
 import styles from "./nodesManager.module.css"
-import { IconSize } from "@/constants.ts";
 
 const FILTER_GROUPS: {
   key: TranslationKey
@@ -89,12 +90,16 @@ const VIRTUOSO_COMPONENTS = { Scroller: ExtensionScroller } satisfies Components
 type NodesManagerPageProps = {
   controller: NodesManagerController
   onAddGitNode?: () => void
+  onBackupInstalledNodes: () => void
+  onChooseNodeRestoreFile: () => void
   isBackground?: boolean
 }
 
 export function NodesManagerPage({
   controller,
   onAddGitNode,
+  onBackupInstalledNodes,
+  onChooseNodeRestoreFile,
   isBackground,
 }: NodesManagerPageProps) {
   const { locale, t } = useI18n()
@@ -354,6 +359,16 @@ export function NodesManagerPage({
               </label>
             </div>
             <div className={styles.toolbarActions}>
+              {filter === "installed" && (
+                <>
+                  <Button type="button" onClick={onBackupInstalledNodes}>
+                    {t("nodes.backup")}
+                  </Button>
+                  <Button variant="danger" type="button" onClick={onChooseNodeRestoreFile}>
+                    {t("nodes.restore")}
+                  </Button>
+                </>
+              )}
               {(filter === "git" || filter === "updates") && (
                 <Button
                   type="button"

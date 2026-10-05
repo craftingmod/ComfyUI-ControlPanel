@@ -17,6 +17,7 @@ import {
   dependencySyncCommand,
   parseNodeRestoreManifest,
 } from "../services/nodeRestore.ts"
+import type { NodeRestoreVersionMode } from "../services/nodeRestore.ts"
 import { createNodesManagerController } from "../services/nodesManagerController.ts"
 import type { JsonObject, ToastSeverity, UpdateJob } from "../types.ts"
 import type { ControlPanelActions, ControlPanelViewState } from "./controlPanelTypes.ts"
@@ -412,7 +413,10 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     }
   }
 
-  async function restoreNodesFromFile(file: File): Promise<void> {
+  async function restoreNodesFromFile(
+    file: File,
+    versionMode: NodeRestoreVersionMode,
+  ): Promise<void> {
     try {
       const manifest = parseNodeRestoreManifest(await file.text(), t)
       const confirmed = await app.extensionManager.dialog.confirm({
@@ -420,11 +424,15 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
         message: t("operation.restoreNodesConfirm", {
           registryCount: manifest.registry_nodes.length,
           gitCount: manifest.git_nodes.length,
+          versionMode: t(
+            versionMode === "latest" ? "nodeRestore.latestVersions" : "nodeRestore.backupVersions",
+          ),
         }),
       })
       if (confirmed) {
         await startUpdateJob("operation.restoreNodesLabel", API_ROUTES.NODE_RESTORE_RESTORE, {
           manifest,
+          version_mode: versionMode,
         })
       }
     } catch (error) {

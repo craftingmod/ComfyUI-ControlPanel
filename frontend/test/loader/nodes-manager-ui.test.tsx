@@ -130,7 +130,10 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-async function mountNodesManager(snapshot: NodesManagerSnapshot) {
+async function mountNodesManager(
+  snapshot: NodesManagerSnapshot,
+  actions: { onBackupInstalledNodes?: () => void; onChooseNodeRestoreFile?: () => void } = {},
+) {
   const manager = createManager(snapshot)
   const host = document.createElement("div")
   document.body.append(host)
@@ -140,7 +143,11 @@ async function mountNodesManager(snapshot: NodesManagerSnapshot) {
       <VirtuosoMockContext.Provider
         value={{ itemHeight: MOCK_LIST_ITEM_HEIGHT, viewportHeight: MOCK_LIST_VIEWPORT_HEIGHT }}
       >
-        <NodesManagerPage controller={manager.controller} />
+        <NodesManagerPage
+          controller={manager.controller}
+          onBackupInstalledNodes={actions.onBackupInstalledNodes ?? (() => undefined)}
+          onChooseNodeRestoreFile={actions.onChooseNodeRestoreFile ?? (() => undefined)}
+        />
       </VirtuosoMockContext.Provider>,
     ),
   )
@@ -152,6 +159,34 @@ async function mountNodesManager(snapshot: NodesManagerSnapshot) {
     },
   }
 }
+
+it("shows Backup and Restore only in All Installed and reuses the provided actions", async () => {
+  const onBackupInstalledNodes = vi.fn()
+  const onChooseNodeRestoreFile = vi.fn()
+  const mounted = await mountNodesManager(
+    managerSnapshot([
+      managedPack("installed-pack", {
+        installed: { key: "installed-pack", version: "1.0.0", enabled: true },
+      }),
+    ]),
+    { onBackupInstalledNodes, onChooseNodeRestoreFile },
+  )
+
+  try {
+    expect(() => findButton("Backup")).toThrow("Missing button: Backup")
+    await act(async () => findButtonContaining("All Installed").click())
+
+    await act(async () => findButton("Backup").click())
+    await act(async () => findButton("Restore").click())
+
+    expect(onBackupInstalledNodes).toHaveBeenCalledTimes(1)
+    expect(onChooseNodeRestoreFile).toHaveBeenCalledTimes(1)
+    await act(async () => findButtonContaining("All Extensions").click())
+    expect(() => findButton("Backup")).toThrow("Missing button: Backup")
+  } finally {
+    await mounted.destroy()
+  }
+})
 
 function scrollVirtualListTo(top: number, itemCount: number): HTMLElement {
   const scroller = document.querySelector<HTMLElement>("[data-virtuoso-scroller]")

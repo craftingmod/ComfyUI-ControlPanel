@@ -11,6 +11,7 @@ from .manager_process import ManagerApiError
 MANIFEST_VERSION = 1
 MAX_MANIFEST_NODES = 1000
 _NODE_ID_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,99}$")
+_REGISTRY_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+-]{0,199}$")
 _FOLDER_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 _GIT_COMMIT_PATTERN = re.compile(r"^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$")
 
@@ -56,16 +57,11 @@ def _validate_unmanaged_folder(value: Any) -> str:
 
 
 def _validate_recorded_version(value: Any) -> str:
-  if not isinstance(value, str):
-    raise ManagerApiError("Registry node version must be a string.")
-  version = value.strip()
-  if (
-    not version
-    or len(version) > 200
-    or any(ord(character) < 32 for character in version)
+  if not isinstance(value, str) or not _REGISTRY_VERSION_PATTERN.fullmatch(
+    value.strip()
   ):
     raise ManagerApiError("Registry node version is invalid.")
-  return version
+  return value.strip()
 
 
 def _validate_git_commit(value: Any) -> str:
@@ -176,21 +172,30 @@ async def restore_node_manifest(
   workspace: Path,
   custom_nodes_dir: Path,
   comfy_command: Callable[..., list[str]],
-  install_git: Callable[[str, str | None], Awaitable[dict[str, Any]]],
+  install_git: Callable[[str, str | None, str | None], Awaitable[dict[str, Any]]],
   run_command_stream: Callable[..., Awaitable[dict[str, Any]]],
+  version_mode: str = "latest",
   on_line: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
   manifest = validate_node_restore_manifest(manifest_value)
+  if not isinstance(version_mode, str) or version_mode not in {"latest", "backup"}:
+    raise ManagerApiError("Node restore version mode is invalid.")
   registry_results: list[dict[str, Any]] = []
   git_results: list[dict[str, Any]] = []
   installed_count = 0
 
   for entry in manifest["registry_nodes"]:
     node_id = entry["id"]
-    on_line and on_line(f"Installing registry node: {node_id}")
+    version = entry.get("version") if version_mode == "backup" else None
+    on_line and on_line(f"Installing registry node: {node_id} ({version or 'latest'})")
     try:
+      command = (
+        comfy_command("node", "registry-install", node_id, "--version", version)
+        if version
+        else comfy_command("node", "install", node_id, "--no-deps")
+      )
       result = await run_command_stream(
-        comfy_command("node", "install", node_id, "--no-deps"),
+        command,
         workspace,
         timeout=1800,
         on_line=on_line,
@@ -205,6 +210,7 @@ async def restore_node_manifest(
   for entry in manifest["git_nodes"]:
     url = entry["url"]
     folder = entry.get("folder")
+    commit = entry.get("commit") if version_mode == "backup" else None
     destination_name = folder or repo_name_from_git_url(url)
     destination = (custom_nodes_dir / destination_name).resolve()
     if destination.exists():
@@ -221,7 +227,7 @@ async def restore_node_manifest(
       continue
     on_line and on_line(f"Cloning Git node: {destination_name}")
     try:
-      result = await install_git(url, folder)
+      result = await install_git(url, folder, commit)
       git_results.append({"url": url, "folder": destination_name, "result": result})
       installed_count += 1
       on_line and on_line(f"Cloned Git node: {destination_name}")

@@ -224,6 +224,7 @@ def register_routes(api: Any) -> bool:
   async def restore_nodes(request):
     data = await api._read_json(request)
     manifest = data.get("manifest")
+    version_mode = data.get("version_mode", "latest")
     if api.manifest_requires_git_url_install(manifest):
       denied = api.control_request_denied_response(request, api._MANAGER_POLICY_GIT_URL)
       if denied is not None:
@@ -231,7 +232,7 @@ def register_routes(api: Any) -> bool:
     return await api._start_job_response(
       "node-restore",
       "Restore Custom Nodes",
-      lambda job: api._job_restore_nodes(job, manifest),
+      lambda job: api._job_restore_nodes(job, manifest, version_mode),
     )
 
   @routes.post(f"{api.API_PREFIX}/update-all")

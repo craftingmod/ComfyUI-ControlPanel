@@ -11,6 +11,8 @@ export type NodeRestoreManifest = JsonObject & {
   unmanaged_nodes: Array<{ folder: string }>
 }
 
+export type NodeRestoreVersionMode = "latest" | "backup"
+
 function asRecord(value: unknown): JsonObject | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as JsonObject)

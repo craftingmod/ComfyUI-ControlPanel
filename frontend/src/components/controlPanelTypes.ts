@@ -1,4 +1,5 @@
 import type { TranslationKey, TranslationValues } from "../i18n/messages.ts"
+import type { NodeRestoreVersionMode } from "../services/nodeRestore.ts"
 import type { NodesManagerController } from "../services/nodesManagerController.ts"
 import type { JsonObject, ToastSeverity } from "../types.ts"
 
@@ -35,7 +36,7 @@ export type ControlPanelActions = ControlPanelViewStore & {
   listSnapshots: () => Promise<string[] | undefined>
   restoreSnapshot: (target: string, onConfirmed: () => void) => Promise<void>
   backupInstalledNodes: () => Promise<void>
-  restoreNodesFromFile: (file: File) => Promise<void>
+  restoreNodesFromFile: (file: File, versionMode: NodeRestoreVersionMode) => Promise<void>
   showEnvironment: () => Promise<JsonObject>
   showUpdateCheck: () => Promise<void>
   restart: () => Promise<void>

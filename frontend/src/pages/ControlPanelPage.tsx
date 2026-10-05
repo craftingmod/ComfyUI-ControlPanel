@@ -17,6 +17,7 @@ import { Button } from "../components/ui/button.tsx"
 import { UpdateCheckModal } from "../components/updateCheckModal.tsx"
 import { API_ROUTES } from "../constants.ts"
 import { useI18n } from "../i18n/index.tsx"
+import type { NodeRestoreVersionMode } from "../services/nodeRestore.ts"
 import type { ToastSeverity } from "../types.ts"
 import { NodesManagerPage } from "./NodesManagerPage.tsx"
 
@@ -40,12 +41,15 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
   const [snapshotRestoreOpen, setSnapshotRestoreOpen] = useState(false)
   const [snapshotNames, setSnapshotNames] = useState<string[]>([])
   const [selectedSnapshot, setSelectedSnapshot] = useState("")
+  const [nodeRestoreFile, setNodeRestoreFile] = useState<File>()
+  const [nodeRestoreMode, setNodeRestoreMode] = useState<NodeRestoreVersionMode>("latest")
   const [environmentOpen, setEnvironmentOpen] = useState(false)
   const [environmentData, setEnvironmentData] = useState<Record<string, unknown>>()
   const [environmentError, setEnvironmentError] = useState<string>()
   const [updateCheckOpen, setUpdateCheckOpen] = useState(false)
   const logRef = useRef<HTMLPreElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const nodeRestoreModeRef = useRef<HTMLSelectElement>(null)
   const snapshotRequestRef = useRef(0)
   const environmentRequestRef = useRef(0)
   const panelOpenRef = useRef(view.isOpen)
@@ -149,6 +153,13 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
     input.click()
   }
 
+  function restoreNodeFile(): void {
+    const file = nodeRestoreFile
+    if (!file) return
+    setNodeRestoreFile(undefined)
+    void actions.restoreNodesFromFile(file, nodeRestoreMode)
+  }
+
   function toast(severity: ToastSeverity, summary: string, detail: string): void {
     actions.toast(severity, summary, detail)
   }
@@ -156,6 +167,7 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
   const hasSubdialog =
     gitInstallOpen ||
     snapshotRestoreOpen ||
+    Boolean(nodeRestoreFile) ||
     environmentOpen ||
     updateCheckOpen ||
     nodesManagerView.isOpen
@@ -171,7 +183,10 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
         onChange={(event) => {
           const input = event.currentTarget
           const file = input.files?.[0]
-          if (file) void actions.restoreNodesFromFile(file)
+          if (file) {
+            setNodeRestoreMode("latest")
+            setNodeRestoreFile(file)
+          }
         }}
       />
       {view.isOpen && (
@@ -373,7 +388,9 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
       <NodesManagerPage
         controller={actions.nodesManager}
         onAddGitNode={() => setGitInstallOpen(true)}
-        isBackground={gitInstallOpen}
+        onBackupInstalledNodes={actions.backupInstalledNodes}
+        onChooseNodeRestoreFile={chooseNodeRestoreFile}
+        isBackground={gitInstallOpen || Boolean(nodeRestoreFile)}
       />
       <GitInstallModal
         isOpen={(view.isOpen || nodesManagerView.isOpen) && gitInstallOpen}
@@ -404,6 +421,39 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
         output={view.updateCheckOutput}
         onClose={() => setUpdateCheckOpen(false)}
       />
+      {nodeRestoreFile && (
+        <ControlPanelDialog
+          title={t("operation.restoreNodesConfirmTitle")}
+          titleId="cp-node-restore-mode-title"
+          initialFocusRef={nodeRestoreModeRef}
+          onClose={() => setNodeRestoreFile(undefined)}
+        >
+          <p>{t("nodeRestore.versionChoiceDescription")}</p>
+          <div className={styles.field}>
+            <label htmlFor="cp-node-restore-mode">{t("nodeRestore.versionMode")}</label>
+            <select
+              ref={nodeRestoreModeRef}
+              id="cp-node-restore-mode"
+              name="node-restore-mode"
+              value={nodeRestoreMode}
+              onChange={(event) =>
+                setNodeRestoreMode(event.currentTarget.value as NodeRestoreVersionMode)
+              }
+            >
+              <option value="latest">{t("nodeRestore.latestVersions")}</option>
+              <option value="backup">{t("nodeRestore.backupVersions")}</option>
+            </select>
+          </div>
+          <div className={styles.modalActions}>
+            <Button type="button" onClick={() => setNodeRestoreFile(undefined)}>
+              {t("snapshot.cancel")}
+            </Button>
+            <Button variant="danger" type="button" onClick={restoreNodeFile}>
+              {t("snapshot.restore")}
+            </Button>
+          </div>
+        </ControlPanelDialog>
+      )}
     </>
   )
 }

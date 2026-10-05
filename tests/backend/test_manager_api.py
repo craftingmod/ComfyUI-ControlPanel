@@ -697,6 +697,72 @@ def test_install_git_url_uses_git_clone_without_shell(monkeypatch, tmp_path):
   assert result["destination"] == str(tmp_path / "comfyui-test")
 
 
+def test_install_git_url_checks_out_the_recorded_commit(monkeypatch, tmp_path):
+  calls = []
+
+  async def fake_run_command(args, cwd, timeout=600):
+    calls.append((args, cwd, timeout))
+    if args[:2] == ["git", "clone"]:
+      os.makedirs(args[-1])
+    return {"returncode": 0}
+
+  monkeypatch.setattr(manager_api, "CUSTOM_NODES_DIR", tmp_path)
+  monkeypatch.setattr(manager_api, "run_command", fake_run_command)
+
+  result = asyncio.run(
+    manager_api.install_git_url(
+      "https://github.com/user/comfyui-test.git",
+      commit="1111111111111111111111111111111111111111",
+    )
+  )
+
+  destination = tmp_path / "comfyui-test"
+  assert calls == [
+    (
+      [
+        "git",
+        "clone",
+        "--no-checkout",
+        "https://github.com/user/comfyui-test.git",
+        str(destination),
+      ],
+      tmp_path,
+      600,
+    ),
+    (
+      ["git", "checkout", "--detach", "1111111111111111111111111111111111111111"],
+      destination,
+      600,
+    ),
+  ]
+  assert result["destination"] == str(destination)
+
+
+def test_install_git_url_removes_partial_clone_when_commit_checkout_fails(
+  monkeypatch, tmp_path
+):
+  destination = tmp_path / "comfyui-test"
+
+  async def fake_run_command(args, cwd, timeout=600):
+    if args[:2] == ["git", "clone"]:
+      destination.mkdir()
+      return {"returncode": 0}
+    raise manager_api.ManagerApiError("commit not found")
+
+  monkeypatch.setattr(manager_api, "CUSTOM_NODES_DIR", tmp_path)
+  monkeypatch.setattr(manager_api, "run_command", fake_run_command)
+
+  with pytest.raises(manager_api.ManagerApiError, match="commit not found"):
+    asyncio.run(
+      manager_api.install_git_url(
+        "https://github.com/user/comfyui-test.git",
+        commit="1111111111111111111111111111111111111111",
+      )
+    )
+
+  assert not destination.exists()
+
+
 def test_manager_cache_filename_uses_channel_url_hash(monkeypatch):
   calls = []
   filename = "custom-node-list.json"

@@ -10,6 +10,7 @@ import logging
 import os
 import platform
 import re
+import shutil
 import sqlite3
 import sys
 import threading
@@ -169,15 +170,31 @@ def discover_git_repositories(root: Path = CUSTOM_NODES_DIR) -> list[Path]:
   return repos
 
 
-async def install_git_url(url: str, name: str | None = None) -> dict[str, Any]:
+async def install_git_url(
+  url: str,
+  name: str | None = None,
+  commit: str | None = None,
+) -> dict[str, Any]:
   git_url = validate_git_url(url)
   destination = resolve_custom_node_destination(name or repo_name_from_git_url(git_url))
   if destination.exists():
     raise ManagerApiError(f"Destination already exists: {destination.name}")
 
-  result = await run_command(
-    ["git", "clone", git_url, str(destination)], CUSTOM_NODES_DIR
-  )
+  clone_command = ["git", "clone"]
+  if commit:
+    clone_command.append("--no-checkout")
+  clone_command.extend((git_url, str(destination)))
+  cloned = False
+  try:
+    result = await run_command(clone_command, CUSTOM_NODES_DIR)
+    cloned = True
+    if commit:
+      checkout = await run_command(["git", "checkout", "--detach", commit], destination)
+      result = {"clone": result, "checkout": checkout}
+  except Exception:
+    if commit and cloned:
+      shutil.rmtree(destination, ignore_errors=True)
+    raise
   return {"destination": str(destination), "result": result}
 
 
@@ -1163,6 +1180,7 @@ async def node_restore_inventory() -> dict[str, Any]:
 async def restore_nodes_from_manifest(
   manifest: Any,
   on_line: Callable[[str], None] | None = None,
+  version_mode: str = "latest",
 ) -> dict[str, Any]:
   return await manager_restore.restore_node_manifest(
     manifest,
@@ -1171,6 +1189,7 @@ async def restore_nodes_from_manifest(
     comfy_command=comfy_cli_command,
     install_git=install_git_url,
     run_command_stream=run_command_stream,
+    version_mode=version_mode,
     on_line=on_line,
   )
 
@@ -1302,9 +1321,13 @@ async def _job_restore_snapshot(job: ManagerJob, target: str) -> dict[str, Any]:
   return await restore_snapshot_with_comfy_cli(target, job.append_log)
 
 
-async def _job_restore_nodes(job: ManagerJob, manifest: Any) -> dict[str, Any]:
-  job.append_log("Restoring custom nodes from a latest-version manifest.")
-  return await restore_nodes_from_manifest(manifest, job.append_log)
+async def _job_restore_nodes(
+  job: ManagerJob,
+  manifest: Any,
+  version_mode: str = "latest",
+) -> dict[str, Any]:
+  job.append_log(f"Restoring custom nodes using {version_mode} versions.")
+  return await restore_nodes_from_manifest(manifest, job.append_log, version_mode)
 
 
 async def _job_refresh_manager_cache(job: ManagerJob) -> dict[str, Any]:

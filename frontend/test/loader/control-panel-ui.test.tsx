@@ -514,6 +514,7 @@ it("reports an environment loading error and permits selecting the same JSON fil
       '[role="dialog"][aria-labelledby="cp-environment-title"]',
     )!
     expect(environmentDialog.textContent).toContain("offline")
+    await act(async () => environmentDialog.querySelector<HTMLButtonElement>("button")!.click())
 
     const input = document.querySelector<HTMLInputElement>("#cp-node-restore-file")!
     let value = "selected.json"
@@ -534,11 +535,15 @@ it("reports an environment loading error and permits selecting the same JSON fil
       value = "C:\\fakepath\\nodes.json"
       Object.defineProperty(input, "files", { configurable: true, value: [file] })
       await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })))
+      const mode = document.querySelector<HTMLSelectElement>("#cp-node-restore-mode")!
+      expect(mode.value).toBe("latest")
+      if (attempt === 1) await act(async () => setInputValue(mode, "backup"))
+      await act(async () => buttonByText("Restore").click())
     }
     expect(input.accept).toBe(".json,application/json")
     expect(panel.actions.restoreNodesFromFile).toHaveBeenCalledTimes(2)
-    expect(panel.actions.restoreNodesFromFile).toHaveBeenNthCalledWith(1, file)
-    expect(panel.actions.restoreNodesFromFile).toHaveBeenNthCalledWith(2, file)
+    expect(panel.actions.restoreNodesFromFile).toHaveBeenNthCalledWith(1, file, "latest")
+    expect(panel.actions.restoreNodesFromFile).toHaveBeenNthCalledWith(2, file, "backup")
   } finally {
     await panel.destroy()
   }
