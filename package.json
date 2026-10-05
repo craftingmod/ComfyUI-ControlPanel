@@ -46,7 +46,7 @@
     "typecheck": "bun build:css-type && bun typecheck:frontend && bun typecheck:test",
     "typecheck:frontend": "tsc --noEmit -p ./tsconfig.json && tsc --noEmit -p ./frontend/src/tsconfig.json",
     "typecheck:test": "tsc --noEmit -p ./frontend/test/tsconfig.json",
-    "uv:local": "mkdir -p .ci-test-tmp && UV_CACHE_DIR=\"$(pwd)/.ci-cache/uv\" UV_TOOL_DIR=\"$(pwd)/.ci-cache/uv-tools\" TEMP=\"$(pwd)/.ci-cache/tmp\" TMP=\"$(pwd)/.ci-cache/tmp\" TMPDIR=\"$(pwd)/.ci-cache/tmp\" uv --cache-dir \"$(pwd)/.ci-cache/uv\"",
+    "uv:local": "mkdir -p .ci-cache && UV_CACHE_DIR=\"$(pwd)/.ci-cache/uv\" UV_TOOL_DIR=\"$(pwd)/.ci-cache/uv-tools\" TEMP=\"$(pwd)/.ci-cache/tmp\" TMP=\"$(pwd)/.ci-cache/tmp\" TMPDIR=\"$(pwd)/.ci-cache/tmp\" uv --cache-dir \"$(pwd)/.ci-cache/uv\"",
     "validate": "bun typecheck && bun lint && bun fmt:check && bun run test",
     "validate:agent": "bun typecheck && bun lint:agent && bun fmt:check && bun test:agent",
     "validate:ci": "bun validate",

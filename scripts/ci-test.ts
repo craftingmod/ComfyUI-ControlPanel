@@ -3,7 +3,7 @@ import { mkdirSync, rmSync } from "node:fs"
 import { join, resolve } from "node:path"
 
 const root = resolve(import.meta.dir, "..")
-const runDirectory = join(root, ".ci-test-tmp", randomUUID())
+const runDirectory = join(root, ".ci-cache", randomUUID())
 const showDots = !process.argv.includes("--no-dots")
 const environment = {
   ...process.env,
