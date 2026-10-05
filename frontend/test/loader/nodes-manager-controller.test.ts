@@ -27,6 +27,7 @@ function workflowNode(type: string, pythonModule?: string) {
 }
 
 type FixtureOptions = {
+  useFlaggedLatest?: boolean
   localPacks?: unknown[]
   catalog?: RegistryNode[]
   gitJobStatus?: "running" | "succeeded"
@@ -157,6 +158,7 @@ function createFixture(options: FixtureOptions = {}) {
       return workflowGraph
     },
     extensionManager: {
+      setting: { get: () => options.useFlaggedLatest ?? false },
       toast: { add: (toast: unknown) => toasts.push(toast) },
       dialog: {
         confirm: async (value: { title: string; message: string }) => {
@@ -187,6 +189,50 @@ function createFixture(options: FixtureOptions = {}) {
 }
 
 describe("Nodes Manager controller", () => {
+  it("gates default Flagged updates and confirms the exact version for individual and bulk updates", async () => {
+    for (const enabled of [false, true]) {
+      let installedVersion = "1.0.0"
+      let applyInstall = false
+      const fixture = createFixture({
+        useFlaggedLatest: enabled,
+        onEnqueue: () => {
+          if (applyInstall) installedVersion = "2.0.0"
+        },
+        catalog: [{ id: "pack-id", latest_version: { version: "2.0.0", status: "Flagged" } }],
+        installedRead: () =>
+          new Response(
+            JSON.stringify({ folder: { cnr_id: "pack-id", ver: installedVersion, enabled: true } }),
+          ),
+        history: (ui_id, client_id) => ({
+          history: { ui_id, client_id, status: { completed: true, status_str: "success" } },
+        }),
+      })
+      await fixture.controller.open()
+      const pack = fixture.controller.getSnapshot().packs[0]!
+      expect(pack.updateAvailable).toBe(enabled)
+      expect(await fixture.controller.submit(pack, "update")).toBe(enabled)
+      if (enabled) {
+        const task = fixture.requests.find((request) => request.route === "/v2/manager/queue/task")!
+          .body as ManagerQueuePayload
+        expect(task.kind).toBe("install")
+        expect(task.params.selected_version).toBe("2.0.0")
+        expect(fixture.controller.getSnapshot().operations[pack.key]?.status).toBe("unknown")
+        installedVersion = "2.0.0"
+        await fixture.controller.refresh()
+        expect(fixture.controller.getSnapshot().operations[pack.key]?.status).toBe("succeeded")
+        installedVersion = "1.0.0"
+        await fixture.controller.refresh()
+        applyInstall = true
+        await fixture.controller.submitAll("updates")
+        expect(fixture.counts().enqueueCount).toBe(2)
+        expect(fixture.controller.getSnapshot().operations[pack.key]?.status).toBe("succeeded")
+      } else {
+        await fixture.controller.submitAll("updates")
+        expect(fixture.counts().enqueueCount).toBe(0)
+      }
+      fixture.controller.close()
+    }
+  })
   it("passes only the local folder name to Browse without queueing Manager operations", async () => {
     const key = "V:/custom_nodes/local pack"
     const fixture = createFixture({

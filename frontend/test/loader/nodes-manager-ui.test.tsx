@@ -227,7 +227,7 @@ it("shows bulk actions only in their toolbar categories and disables unavailable
     expect(document.querySelector('[data-bulk="true"]')).toBeNull()
     await act(async () => findButtonContaining("Git-installed").click())
     const fetchAll = findButton("Fetch all")
-    expect(fetchAll.parentElement?.dataset.bulk).toBe("true")
+    expect(fetchAll.closest<HTMLElement>("[data-bulk]")?.dataset.bulk).toBe("true")
     await act(async () => fetchAll.click())
     expect(mounted.controller.submitAll).toHaveBeenCalledWith("git")
     await act(async () => findButtonContaining("Updates Available").click())
@@ -264,7 +264,7 @@ it("shows Install missing only in its workflow category and disables it without 
     expect(document.querySelector('[data-bulk="true"]')).toBeNull()
     await act(async () => findButtonContaining("Missing").click())
     const installMissing = findButton("Install missing")
-    expect(installMissing.parentElement?.dataset.bulk).toBe("true")
+    expect(installMissing.closest<HTMLElement>("[data-bulk]")?.dataset.bulk).toBe("true")
     expect(installMissing.disabled).toBe(false)
 
     await act(async () =>
@@ -493,6 +493,37 @@ it("warns on the installed Flagged version, independent of the latest version's 
       expect(
         document.querySelector<HTMLButtonElement>('[data-action="load-version"]')?.dataset.variant,
       ).toBe(expected)
+    } finally {
+      await mounted.destroy()
+    }
+  }
+})
+
+it("requires the Flagged latest setting for default updates while allowing explicit version selection", async () => {
+  for (const enabled of [false, true]) {
+    const pack = managedPack("example-pack", {
+      latestVersion: { version: "0.9.0", status: "Flagged" },
+      useFlaggedVersionAsLatest: enabled,
+      installed: { key: "example-pack", version: "0.8.0", enabled: true },
+    })
+    const mounted = await mountNodesManager(managerSnapshot([pack]))
+    try {
+      const update = document.querySelector<HTMLButtonElement>('[data-action="update"]')!
+      expect(update.disabled).toBe(!enabled)
+      if (enabled) {
+        await act(async () => update.click())
+        expect(mounted.controller.submit).toHaveBeenCalledWith(pack, "update", undefined)
+      }
+      await act(async () =>
+        document.querySelector<HTMLButtonElement>('[data-action="load-version"]')!.click(),
+      )
+      const selector = document.querySelector<HTMLSelectElement>(
+        'select[name="version-example-pack"]',
+      )!
+      await act(async () => setValue(selector, "0.9.0"))
+      expect(update.disabled).toBe(false)
+      await act(async () => update.click())
+      expect(mounted.controller.submit).toHaveBeenLastCalledWith(pack, "switch", "0.9.0")
     } finally {
       await mounted.destroy()
     }

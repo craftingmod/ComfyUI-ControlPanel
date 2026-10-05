@@ -1,4 +1,4 @@
-import { HardDriveDownload, Download, RefreshCw, X } from "lucide-react"
+import { HardDriveDownload, Download, RefreshCw, GitMerge, X } from "lucide-react"
 import {
   forwardRef,
   useCallback,
@@ -87,9 +87,15 @@ const VIRTUOSO_COMPONENTS = { Scroller: ExtensionScroller } satisfies Components
 
 type NodesManagerPageProps = {
   controller: NodesManagerController
+  onAddGitNode?: () => void
+  isBackground?: boolean
 }
 
-export function NodesManagerPage({ controller }: NodesManagerPageProps) {
+export function NodesManagerPage({
+  controller,
+  onAddGitNode,
+  isBackground,
+}: NodesManagerPageProps) {
   const { locale, t } = useI18n()
   const snapshot = useSyncExternalStore(
     controller.subscribe,
@@ -275,6 +281,7 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
       titleId="cp-nodes-manager-title"
       className={styles.managerDialog}
       initialFocusRef={searchRef}
+      isBackground={isBackground}
       onClose={controller.close}
     >
       <div className={styles.managerBody}>
@@ -308,92 +315,107 @@ export function NodesManagerPage({ controller }: NodesManagerPageProps) {
           <div
             className={styles.toolbar}
             data-bulk={filter === "git" || filter === "updates" || filter === "workflow-missing"}
+            data-add-git={Boolean(onAddGitNode)}
           >
-            <label className={styles.searchField}>
-              <span className={styles.visuallyHidden}>
-                {t(workflowFilter ? "nodes.workflow.searchLabel" : "nodes.searchLabel")}
-              </span>
-              <input
-                ref={searchRef}
-                type="search"
-                name="nodes-manager-search"
-                autoComplete="off"
-                placeholder={t(
-                  workflowFilter ? "nodes.workflow.searchPlaceholder" : "nodes.searchPlaceholder",
-                )}
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.currentTarget.value)
-                }}
-              />
-            </label>
-            <label className={styles.sortField}>
-              <span className={styles.visuallyHidden}>{t("nodes.sortLabel")}</span>
-              <select
-                name="nodes-manager-sort"
-                value={sort}
-                onChange={(event) => {
-                  setSort(event.currentTarget.value as NodesManagerSort)
-                }}
-              >
-                <option value="name">{t("nodes.sort.name")}</option>
-                <option value="stars">{t("nodes.sort.stars")}</option>
-                <option value="updated">{t("nodes.sort.updated")}</option>
-                <option value="downloads">{t("nodes.sort.downloads")}</option>
-              </select>
-            </label>
-            {(filter === "git" || filter === "updates") && (
-              <Button
-                type="button"
-                variant="primary"
-                busy={Boolean(snapshot.bulkOperation)}
-                disabled={
-                  snapshot.checking ||
-                  snapshot.installedStatus !== "ready" ||
-                  counts[filter] === 0 ||
-                  taskOperations.some((operation) =>
-                    ["starting", "pending", "unknown"].includes(operation.status),
-                  )
-                }
-                onClick={() => void controller.submitAll(filter)}
-              >
-                {filter === "git" ? (
-                  <HardDriveDownload size={24} aria-hidden="true" />
-                ) : (
+            <div className={styles.toolbarFields}>
+              <label className={styles.searchField}>
+                <span className={styles.visuallyHidden}>
+                  {t(workflowFilter ? "nodes.workflow.searchLabel" : "nodes.searchLabel")}
+                </span>
+                <input
+                  ref={searchRef}
+                  type="search"
+                  name="nodes-manager-search"
+                  autoComplete="off"
+                  placeholder={t(
+                    workflowFilter ? "nodes.workflow.searchPlaceholder" : "nodes.searchPlaceholder",
+                  )}
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.currentTarget.value)
+                  }}
+                />
+              </label>
+              <label className={styles.sortField}>
+                <span className={styles.visuallyHidden}>{t("nodes.sortLabel")}</span>
+                <select
+                  name="nodes-manager-sort"
+                  value={sort}
+                  onChange={(event) => {
+                    setSort(event.currentTarget.value as NodesManagerSort)
+                  }}
+                >
+                  <option value="name">{t("nodes.sort.name")}</option>
+                  <option value="stars">{t("nodes.sort.stars")}</option>
+                  <option value="updated">{t("nodes.sort.updated")}</option>
+                  <option value="downloads">{t("nodes.sort.downloads")}</option>
+                </select>
+              </label>
+            </div>
+            <div className={styles.toolbarActions}>
+              {(filter === "git" || filter === "updates") && (
+                <Button
+                  type="button"
+                  variant="primary"
+                  busy={Boolean(snapshot.bulkOperation)}
+                  disabled={
+                    snapshot.checking ||
+                    snapshot.installedStatus !== "ready" ||
+                    counts[filter] === 0 ||
+                    taskOperations.some((operation) =>
+                      ["starting", "pending", "unknown"].includes(operation.status),
+                    )
+                  }
+                  onClick={() => void controller.submitAll(filter)}
+                >
+                  {filter === "git" ? (
+                    <HardDriveDownload size={24} aria-hidden="true" />
+                  ) : (
+                    <Download size={24} aria-hidden="true" />
+                  )}
+                  {t(filter === "git" ? "nodes.fetchAll" : "nodes.updateAll")}
+                </Button>
+              )}
+              {filter === "workflow-missing" && (
+                <Button
+                  type="button"
+                  variant="primary"
+                  busy={Boolean(snapshot.bulkOperation)}
+                  disabled={
+                    snapshot.checking ||
+                    snapshot.installedStatus !== "ready" ||
+                    !snapshot.workflowAvailabilityKnown ||
+                    installableMissingPacks.length === 0 ||
+                    taskOperations.some((operation) =>
+                      ["starting", "pending", "unknown"].includes(operation.status),
+                    )
+                  }
+                  onClick={() => void controller.submitAll("workflow-missing", selectedVersions)}
+                >
                   <Download size={24} aria-hidden="true" />
-                )}
-                {t(filter === "git" ? "nodes.fetchAll" : "nodes.updateAll")}
-              </Button>
-            )}
-            {filter === "workflow-missing" && (
+                  {t("nodes.installMissing")}
+                </Button>
+              )}
+              {onAddGitNode && (
+                <Button
+                  type="button"
+                  onClick={onAddGitNode}
+                  disabled={Boolean(snapshot.bulkOperation)}
+                >
+                  <GitMerge size={24} aria-hidden="true" />
+                  {t("nodes.addGitNode")}
+                </Button>
+              )}
               <Button
                 type="button"
-                variant="primary"
-                busy={Boolean(snapshot.bulkOperation)}
-                disabled={
-                  snapshot.checking ||
-                  snapshot.installedStatus !== "ready" ||
-                  !snapshot.workflowAvailabilityKnown ||
-                  installableMissingPacks.length === 0 ||
-                  taskOperations.some((operation) =>
-                    ["starting", "pending", "unknown"].includes(operation.status),
-                  )
-                }
-                onClick={() => void controller.submitAll("workflow-missing", selectedVersions)}
+                busy={snapshot.checking}
+                busyLabel={t("nodes.refreshing")}
+                onClick={() => void controller.refresh()}
               >
-                <Download size={24} aria-hidden="true" />
-                {t("nodes.installMissing")}
+                <RefreshCw size={24} aria-hidden="true" />
+                {t("nodes.refresh")}
               </Button>
-            )}
-            <Button
-              type="button"
-              busy={snapshot.checking}
-              busyLabel={t("nodes.refreshing")}
-              onClick={() => void controller.refresh()}
-            >
-              <RefreshCw size={24} aria-hidden="true" />
-              {t("nodes.refresh")}
-            </Button>
+            </div>
           </div>
 
           {snapshot.catalogWarning && (

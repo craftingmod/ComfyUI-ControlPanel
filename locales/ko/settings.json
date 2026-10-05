@@ -16,7 +16,7 @@
     }
   },
   "ControlPanel_Allow_Flagged_Version_As_Latest": {
-    "name": "Flagged 버전을 최신 버전으로 허용",
-    "tooltip": "Manager 내보내기에서 캐시된 최신 Flagged 버전을 최신 버전으로 사용하고 Registry 상태 유지"
+    "name": "Flagged 버전을 최신 버전으로 사용",
+    "tooltip": "Nodes Manager와 Manager 내보내기에서 더 최신인 캐시된 Flagged 버전을 기본 설치, 업데이트 대상으로 사용하며 Registry 상태를 유지합니다"
   }
 }

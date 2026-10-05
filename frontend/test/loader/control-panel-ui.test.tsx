@@ -293,6 +293,53 @@ it("does not start status polling when a job POST resolves after the Panel close
   }
 })
 
+it("opens the existing Git installer from Nodes Manager without replacing the Panel action", async () => {
+  const mounted = await mountControlPanel()
+  try {
+    expect(buttonByText("Install via Git URL")).toBeDefined()
+    await act(async () => mounted.actions.nodesManager.open())
+    const addGit = buttonByText("Add git node")
+    expect(addGit.querySelector(".lucide-git-merge")).not.toBeNull()
+    await act(async () => {
+      addGit.focus()
+      addGit.click()
+    })
+    const manager = document.querySelector<HTMLElement>(
+      '[role="dialog"][aria-labelledby="cp-nodes-manager-title"]',
+    )!
+    expect(manager.hasAttribute("inert")).toBe(true)
+    const gitDialog = document.querySelector<HTMLElement>(
+      '[role="dialog"][aria-labelledby="cp-git-install-title"]',
+    )!
+    await act(async () =>
+      setInputValue(
+        document.querySelector<HTMLInputElement>("#cp-git-url")!,
+        "https://example.test/nodes.git",
+      ),
+    )
+    await act(async () =>
+      Array.from(gitDialog.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent?.trim() === "Install")!
+        .click(),
+    )
+    expect(mounted.actions.runOperation).toHaveBeenCalledWith(
+      "git.title",
+      API_ROUTES.INSTALL_GIT_URL,
+      {
+        url: "https://example.test/nodes.git",
+      },
+    )
+    expect(document.querySelector('[aria-labelledby="cp-git-install-title"]')).toBeNull()
+    expect(manager.hasAttribute("inert")).toBe(false)
+    expect(mounted.actions.nodesManager.getSnapshot().isOpen).toBe(true)
+    expect(document.activeElement === addGit).toBe(true)
+    await act(async () => mounted.actions.nodesManager.close())
+    expect(buttonByText("Install via Git URL").disabled).toBe(false)
+  } finally {
+    await mounted.destroy()
+  }
+})
+
 it("keeps the operation log and Git form values when the Panel closes and reopens", async () => {
   const panel = await mountControlPanel()
   try {

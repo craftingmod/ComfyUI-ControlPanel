@@ -6,9 +6,14 @@ import { API_ROUTES, SETTINGS_IDS } from "../../src/constants.ts"
 import type { ManagerExtension } from "../../src/types.ts"
 
 const openPanel = vi.fn()
+const refreshManager = vi.fn(async () => undefined)
+let managerOpen = false
 
 await mock.module("../../src/components/controlPanel.ts", () => ({
-  createControlPanelController: () => ({ open: openPanel }),
+  createControlPanelController: () => ({
+    open: openPanel,
+    nodesManager: { getSnapshot: () => ({ isOpen: managerOpen }), refresh: refreshManager },
+  }),
 }))
 await mock.module("../../src/services/cnrMetadataController.ts", () => ({
   createCnrMetadataController: () => ({ initialize: vi.fn(), fixActiveWorkflow: vi.fn() }),
@@ -103,7 +108,11 @@ it("categorizes every setting and restores the flagged toggle before posting use
     (setting) => String(setting.id) === SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST,
   )!
   expect(toggle.defaultValue).toBe(false)
+  expect(toggle.name).toBe("Use flagged version as latest")
+  managerOpen = true
   toggle.onChange?.(false)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(refreshManager).not.toHaveBeenCalled()
   expect(fetchApi).not.toHaveBeenCalledWith(
     API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST,
     expect.anything(),
@@ -125,4 +134,6 @@ it("categorizes every setting and restores the flagged toggle before posting use
       body: JSON.stringify({ enabled: false }),
     }),
   )
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(refreshManager).toHaveBeenCalledTimes(1)
 })

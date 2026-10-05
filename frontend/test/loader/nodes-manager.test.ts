@@ -12,6 +12,40 @@ import {
 } from "../../src/services/nodesManager.ts"
 
 describe("Nodes Manager service contracts", () => {
+  it("uses newer Flagged versions for default updates only when enabled and queues that exact version", () => {
+    const catalog = {
+      nodes: [
+        {
+          id: "pack",
+          latest_version: { version: "1.0.0", status: "Active" },
+          latest_flagged_version: { version: "2.0.0", status: "NodeVersionStatusFlagged" },
+        },
+      ],
+    }
+    const installed = { pack: { cnr_id: "pack", ver: "1.0.0", enabled: true } }
+    const [disabled] = normalizeManagedPacks(catalog, installed)
+    const [enabled] = normalizeManagedPacks(catalog, installed, true)
+    expect(disabled?.updateAvailable).toBe(false)
+    expect(disabled?.latestVersion?.version).toBe("1.0.0")
+    expect(enabled?.updateAvailable).toBe(true)
+    expect(enabled?.latestVersion?.status).toBe("NodeVersionStatusFlagged")
+    expect(buildManagerQueuePayload(enabled!, "update", "client", "task")).toMatchObject({
+      kind: "install",
+      params: { selected_version: "2.0.0", version: "2.0.0" },
+    })
+    const [fallback] = normalizeManagedPacks(
+      { nodes: [{ id: "pack", latest_version: catalog.nodes[0]!.latest_flagged_version }] },
+      installed,
+    )
+    expect(fallback?.updateAvailable).toBe(false)
+    expect(() => buildManagerQueuePayload(fallback!, "update", "client", "task")).toThrow(
+      "Use flagged version as latest",
+    )
+    expect(buildManagerQueuePayload(fallback!, "switch", "client", "task", "2.0.0").kind).toBe(
+      "install",
+    )
+  })
+
   it("preserves cached Flagged version metadata separately from the latest install target", () => {
     const flagged = { version: "0.9.0", status: "NodeVersionStatusFlagged" }
     const [pack] = normalizeManagedPacks(

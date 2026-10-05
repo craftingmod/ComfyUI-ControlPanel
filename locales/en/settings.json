@@ -16,7 +16,7 @@
     }
   },
   "ControlPanel_Allow_Flagged_Version_As_Latest": {
-    "name": "Allow flagged version as latest",
-    "tooltip": "Use a newer cached Flagged version as latest in Manager exports, preserving its Registry status"
+    "name": "Use flagged version as latest",
+    "tooltip": "Use a newer cached Flagged version as the latest install and update target in Nodes Manager and Manager exports, preserving its Registry status"
   }
 }

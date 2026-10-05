@@ -7,7 +7,7 @@
     "Enable Debug Logging": "Enable Debug Logging",
     "Replace Manager Repository Data": "Replace Manager Repository Data",
     "Manager Repository Data Source": "Manager Repository Data Source",
-    "Allow flagged version as latest": "Allow flagged version as latest"
+    "Use flagged version as latest": "Use flagged version as latest"
   },
   "ComfyUI-ControlPanel": {
     "actionBar.panel": "Panel",
@@ -20,8 +20,8 @@
     "settings.repositoryOverrideTooltip": "Use ControlPanel's cached Manager repository data and force ComfyUI Manager offline channel settings",
     "settings.repositoryDataSource": "Manager Repository Data Source",
     "settings.repositoryDataSourceTooltip": "Choose where ControlPanel fetches ComfyUI Manager repository data",
-    "settings.allowFlaggedLatest": "Allow flagged version as latest",
-    "settings.allowFlaggedLatestTooltip": "Use a newer cached Flagged version as latest in Manager exports, preserving its Registry status",
+    "settings.allowFlaggedLatest": "Use flagged version as latest",
+    "settings.allowFlaggedLatestTooltip": "Use a newer cached Flagged version as the latest install and update target in Nodes Manager and Manager exports, preserving its Registry status",
     "settings.homepage": "Homepage",
     "panel.title": "⚙️ ComfyUI-ControlPanel",
     "panel.group.installUpdate": "Install / Update",
@@ -131,6 +131,7 @@
     "nodes.fetchAll": "Fetch all",
     "nodes.updateAll": "Update All",
     "nodes.installMissing": "Install missing",
+    "nodes.addGitNode": "Add git node",
     "nodes.filter.workflow": "In Workflow",
     "nodes.filter.workflowMissing": "Missing",
     "nodes.sidebarHelp": "Install and update tasks run through ComfyUI-Manager. Restart ComfyUI to load node changes.",

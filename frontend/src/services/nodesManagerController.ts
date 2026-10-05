@@ -1,5 +1,6 @@
 import type { ComfyApp } from "@comfyorg/comfyui-frontend-types"
 
+import { SETTINGS_IDS } from "../constants.ts"
 import { createTranslator, type TranslationKey, type TranslationValues } from "../i18n/messages.ts"
 import type { MetadataGraph } from "./graphWalker.ts"
 import {
@@ -160,7 +161,7 @@ function effectIsPresent(
     case "disable":
       return found.enabled === false
     case "update":
-      return true
+      return operation.selectedVersion ? found.version === operation.selectedVersion : true
   }
 }
 
@@ -172,6 +173,8 @@ function terminalStatus(item: ManagerTaskHistory): "success" | "error" | "skip" 
 
 export function createNodesManagerController(app: ComfyApp): NodesManagerController {
   const service = createNodesManagerService(app)
+  const useFlaggedLatest = () =>
+    app.extensionManager.setting?.get?.(SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST) === true
   const t = createTranslator(() => app.extensionManager.setting?.get?.("Comfy.Locale"))
   const listeners = new Set<() => void>()
   let snapshot: NodesManagerSnapshot = {
@@ -360,7 +363,7 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
       }
     }
 
-    const packs = normalizeManagedPacks({ nodes: catalogNodes }, installed)
+    const packs = normalizeManagedPacks({ nodes: catalogNodes }, installed, useFlaggedLatest())
     workflowGraph = currentGraph
     workflowMappingsAvailable = workflowMappingsResult.status === "fulfilled"
     workflowMappings =
@@ -469,7 +472,11 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
         try {
           const installed = await service.loadInstalled()
           if (!isCurrent() || installedGeneration !== installedReadGeneration) return
-          const packs = normalizeManagedPacks({ nodes: catalogNodes }, installed)
+          const packs = normalizeManagedPacks(
+            { nodes: catalogNodes },
+            installed,
+            useFlaggedLatest(),
+          )
           update({
             installed,
             installedStatus: "ready",
@@ -510,7 +517,11 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
             installedErrorKey: undefined,
             installedErrorValues: undefined,
           })
-          const packs = normalizeManagedPacks({ nodes: catalogNodes }, installed)
+          const packs = normalizeManagedPacks(
+            { nodes: catalogNodes },
+            installed,
+            useFlaggedLatest(),
+          )
           update({
             packs,
             ...workflowPatch(packs, installed, true),
@@ -562,7 +573,7 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
           installedErrorKey: undefined,
           installedErrorValues: undefined,
         })
-        const packs = normalizeManagedPacks({ nodes: catalogNodes }, installed)
+        const packs = normalizeManagedPacks({ nodes: catalogNodes }, installed, useFlaggedLatest())
         update({
           packs,
           ...workflowPatch(packs, installed, true),
@@ -742,6 +753,14 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
     operation: ManagerOperation,
     selectedVersion?: string,
   ): Promise<boolean> {
+    if (
+      operation === "update" &&
+      pack.source === "Registry" &&
+      pack.latestVersion?.status?.toLowerCase().includes("flagged")
+    ) {
+      if (!useFlaggedLatest()) return false
+      selectedVersion = pack.latestVersion.version
+    }
     if (
       pack.readOnly ||
       (pack.source === "Git" && (operation === "install" || operation === "switch")) ||

@@ -82,13 +82,24 @@
 }
 
 .toolbar {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(160px, 210px) auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-sm);
 }
 
-.toolbar[data-bulk="true"] {
-  grid-template-columns: minmax(0, 1fr) minmax(160px, 210px) auto auto;
+.toolbarFields {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 348px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 210px);
+  gap: var(--space-sm);
+}
+
+.toolbarActions {
+  display: flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
 }
 
 .searchField,
@@ -352,20 +363,5 @@
   .filterButton {
     flex: 0 0 auto;
     white-space: nowrap;
-  }
-}
-
-@media (width <= 620px) {
-  .toolbar,
-  .toolbar[data-bulk="true"] {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .searchField {
-    grid-column: 1 / -1;
-  }
-
-  .sortField {
-    grid-column: 1;
   }
 }

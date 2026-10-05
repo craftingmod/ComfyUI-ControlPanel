@@ -58,6 +58,7 @@ export type ManagedPack = {
   updatedAt?: string
   latestVersion?: RegistryVersion
   latestFlaggedVersion?: RegistryVersion
+  useFlaggedVersionAsLatest?: boolean
   installed?: InstalledPack
   managerNodeId: string
   isUnknown: boolean
@@ -291,10 +292,19 @@ function packSource(pack: InstalledPack | undefined): ManagedPack["source"] {
 function makeManagedPack(
   node: RegistryNode | undefined,
   installed: InstalledPack | undefined,
+  useFlaggedVersionAsLatest = false,
 ): ManagedPack {
   const id = node ? catalogId(node) : managerId(installed!)
   const installedVersion = installed?.version
-  const latestVersion = node?.latest_version
+  let latestVersion = node?.latest_version
+  const flaggedVersion = node?.latest_flagged_version
+  if (
+    useFlaggedVersionAsLatest &&
+    flaggedVersion &&
+    (!latestVersion || (compareSemVer(flaggedVersion.version, latestVersion.version) ?? 0) > 0)
+  )
+    latestVersion = flaggedVersion
+  const flaggedLatest = latestVersion?.status?.toLowerCase().includes("flagged") ?? false
   const comparison = compareSemVer(installedVersion ?? "", latestVersion?.version ?? "")
   const source = packSource(installed)
   return {
@@ -320,13 +330,18 @@ function makeManagedPack(
       nonEmptyString(latestVersion?.created_at),
     latestVersion,
     latestFlaggedVersion: node?.latest_flagged_version,
+    useFlaggedVersionAsLatest,
     installed,
     readOnly: installed?.local === true,
     managerNodeId: installed ? managerId(installed) : id,
     isUnknown: Boolean(installed && !installed.cnrId),
     source,
     updateAvailable: Boolean(
-      installed?.cnrId && source === "Registry" && comparison !== undefined && comparison < 0,
+      installed?.cnrId &&
+      source === "Registry" &&
+      comparison !== undefined &&
+      comparison < 0 &&
+      (!flaggedLatest || useFlaggedVersionAsLatest),
     ),
   }
 }
@@ -334,6 +349,7 @@ function makeManagedPack(
 export function normalizeManagedPacks(
   catalogValue: unknown,
   installedValue: unknown,
+  useFlaggedVersionAsLatest = false,
 ): ManagedPack[] {
   const catalogRecord = asRecord(catalogValue)
   const rawNodes = catalogRecord?.nodes
@@ -346,7 +362,7 @@ export function normalizeManagedPacks(
   const installed = groupInstalledPacks(normalizeInstalledPacks(installedValue))
   const packs = catalog.map((node) => {
     const match = matchInstalledPack(node, installed)
-    return makeManagedPack(node, match)
+    return makeManagedPack(node, match, useFlaggedVersionAsLatest)
   })
   const matchedIdentities = new Set(
     packs.flatMap((pack) => (pack.installed ? [installedIdentity(pack.installed)] : [])),
@@ -451,8 +467,15 @@ export function buildManagerQueuePayload(
   }
   let kind: ManagerQueueKind
   let params: Record<string, string | boolean>
-  if (operation === "install" || operation === "switch") {
-    const exactVersion = selectedVersion?.trim()
+  const flaggedUpdate =
+    operation === "update" &&
+    pack.source === "Registry" &&
+    pack.latestVersion?.status?.toLowerCase().includes("flagged")
+  if (flaggedUpdate && !pack.useFlaggedVersionAsLatest) {
+    throw new Error("Enable Use flagged version as latest before updating to a Flagged version.")
+  }
+  if (operation === "install" || operation === "switch" || flaggedUpdate) {
+    const exactVersion = flaggedUpdate ? pack.latestVersion?.version : selectedVersion?.trim()
     if (!exactVersion) {
       throw new Error("Select a Registry version before installing this pack.")
     }

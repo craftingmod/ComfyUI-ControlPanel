@@ -369,6 +369,11 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
           </div>
         </ControlPanelDialog>
       )}
+      <NodesManagerPage
+        controller={actions.nodesManager}
+        onAddGitNode={() => setGitInstallOpen(true)}
+        isBackground={gitInstallOpen}
+      />
       <GitInstallModal
         isOpen={view.isOpen && gitInstallOpen}
         url={gitUrl}
@@ -398,7 +403,6 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
         output={view.updateCheckOutput}
         onClose={() => setUpdateCheckOpen(false)}
       />
-      <NodesManagerPage controller={actions.nodesManager} />
     </>
   )
 }

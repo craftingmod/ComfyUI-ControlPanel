@@ -124,15 +124,24 @@ async function syncManagerRepositoryDataOverrideSetting(): Promise<void> {
 }
 
 function updateManagerBooleanSetting(route: string, enabled: boolean): void {
-  void fetchJson(route, { enabled }).catch((error) => {
-    const message = error instanceof Error ? error.message : String(error)
-    app.extensionManager.toast.add({
-      severity: "error",
-      summary: "ComfyUI-ControlPanel",
-      detail: message,
-      life: 5000,
+  void fetchJson(route, { enabled })
+    .then(async () => {
+      if (
+        route === API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST &&
+        controlPanel.nodesManager.getSnapshot().isOpen
+      ) {
+        await controlPanel.nodesManager.refresh()
+      }
     })
-  })
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error)
+      app.extensionManager.toast.add({
+        severity: "error",
+        summary: "ComfyUI-ControlPanel",
+        detail: message,
+        life: 5000,
+      })
+    })
 }
 
 function updateManagerRepositoryDataChannelSetting(channel: unknown): void {
@@ -233,7 +242,7 @@ function createExtensionObject(): ManagerExtension {
       {
         id: settingId(SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST),
         name: translateCurrent("settings.allowFlaggedLatest"),
-        category: ["ControlPanel", "Manager", "Allow flagged version as latest"],
+        category: ["ControlPanel", "Manager", "Use flagged version as latest"],
         type: "boolean",
         tooltip: translateCurrent("settings.allowFlaggedLatestTooltip"),
         defaultValue: false,

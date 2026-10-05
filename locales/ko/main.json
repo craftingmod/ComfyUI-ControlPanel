@@ -7,7 +7,7 @@
     "Enable Debug Logging": "디버그 로그 사용",
     "Replace Manager Repository Data": "매니저 저장소 데이터 대체",
     "Manager Repository Data Source": "매니저 저장소 데이터 출처",
-    "Allow flagged version as latest": "Flagged 버전을 최신 버전으로 허용"
+    "Use flagged version as latest": "Flagged 버전을 최신 버전으로 사용"
   },
   "ComfyUI-ControlPanel": {
     "actionBar.panel": "패널",
@@ -20,8 +20,8 @@
     "settings.repositoryOverrideTooltip": "ControlPanel의 캐시된 매니저 저장소 데이터를 사용하고 ComfyUI Manager의 오프라인 채널 설정 적용",
     "settings.repositoryDataSource": "매니저 저장소 데이터 출처",
     "settings.repositoryDataSourceTooltip": "ControlPanel에서 ComfyUI Manager 저장소 데이터를 가져올 위치 선택",
-    "settings.allowFlaggedLatest": "Flagged 버전을 최신 버전으로 허용",
-    "settings.allowFlaggedLatestTooltip": "Manager 내보내기에서 캐시된 최신 Flagged 버전을 최신 버전으로 사용하고 Registry 상태 유지",
+    "settings.allowFlaggedLatest": "Flagged 버전을 최신 버전으로 사용",
+    "settings.allowFlaggedLatestTooltip": "Nodes Manager와 Manager 내보내기에서 더 최신인 캐시된 Flagged 버전을 기본 설치, 업데이트 대상으로 사용하며 Registry 상태를 유지합니다",
     "settings.homepage": "홈페이지",
     "panel.title": "⚙️ ComfyUI-ControlPanel",
     "panel.group.installUpdate": "설치 / 업데이트",
@@ -131,6 +131,7 @@
     "nodes.fetchAll": "Fetch all",
     "nodes.updateAll": "Update All",
     "nodes.installMissing": "누락 항목 설치",
+    "nodes.addGitNode": "Add git node",
     "nodes.filter.workflow": "워크플로에 포함",
     "nodes.filter.workflowMissing": "누락",
     "nodes.sidebarHelp": "설치 및 업데이트 작업은 ComfyUI-Manager를 통해 실행됩니다. 노드 변경 사항을 적용하려면 ComfyUI를 다시 시작하세요.",
