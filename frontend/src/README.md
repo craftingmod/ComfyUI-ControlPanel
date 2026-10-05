@@ -30,7 +30,7 @@ ControlPanel to load the new backend routes.
 
 Import component styles from `.module.css` files. `bun run build:css-type` generates
 their class declarations in `frontend/.generated/`, and `typecheck` runs it first.
-The entry installs the emitted `dist/index.css` through `stylesheet.ts`.
+The entry installs the emitted `web/index.css` through `stylesheet.ts`.
 
 `styles/globals.css` owns inherited theme/runtime tokens and scoped native-note
 rules. Use literal `0` for zero spacing and `var(--space-*)` for nonzero padding,

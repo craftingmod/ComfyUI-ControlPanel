@@ -5,7 +5,7 @@ from .backend import (
   register_routes,
 )
 
-WEB_DIRECTORY = "./dist"
+WEB_DIRECTORY = "./web"
 
 __all__ = [
   "NODE_CLASS_MAPPINGS",

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 
 export const FRONTEND_ROOT = path.dirname(fileURLToPath(import.meta.url))
 export const FRONTEND_ENTRY = path.join(FRONTEND_ROOT, "src", "index.ts")
-export const OUTPUT_DIRECTORY = path.resolve(FRONTEND_ROOT, "..", "dist")
+export const OUTPUT_DIRECTORY = path.resolve(FRONTEND_ROOT, "..", "web")
 
 export const buildConfig = {
   entrypoints: [FRONTEND_ENTRY],

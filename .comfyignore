@@ -11,8 +11,8 @@
 !/backend/**
 !/locales/
 !/locales/**
-!/dist/
-!/dist/**
+!/web/
+!/web/**
 
 # Distribution metadata
 !/LICENSE

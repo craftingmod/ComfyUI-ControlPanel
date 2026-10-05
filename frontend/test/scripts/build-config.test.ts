@@ -4,10 +4,10 @@ import path from "node:path"
 import { FRONTEND_ENTRY, FRONTEND_ROOT, OUTPUT_DIRECTORY, buildConfig } from "../../build.ts"
 
 describe("Bun build config", () => {
-  it("builds the frontend entry into the repository dist directory", () => {
+  it("builds the frontend entry into the repository web directory", () => {
     expect(FRONTEND_ROOT).toBe(path.resolve(process.cwd(), "frontend"))
     expect(FRONTEND_ENTRY).toBe(path.resolve(process.cwd(), "frontend/src/index.ts"))
-    expect(OUTPUT_DIRECTORY).toBe(path.resolve(process.cwd(), "dist"))
+    expect(OUTPUT_DIRECTORY).toBe(path.resolve(process.cwd(), "web"))
     expect(buildConfig.entrypoints).toEqual([FRONTEND_ENTRY])
     expect(buildConfig.outdir).toBe(OUTPUT_DIRECTORY)
   })

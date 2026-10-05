@@ -71,9 +71,9 @@ staged before the swap, so a failed build leaves the installed package in place.
 - `frontend/src/components/`: reusable React components.
 - `frontend/src/pages/`: React roots, including pages, modals, and sidebars.
 - `frontend/src/index.ts`: frontend extension registration.
-- `dist/`: generated frontend bundle.
+- `web/`: generated frontend bundle.
 
-The root `__init__.py` exposes `comfy_entrypoint()` and `WEB_DIRECTORY = "./dist"`.
+The root `__init__.py` exposes `comfy_entrypoint()` and `WEB_DIRECTORY = "./web"`.
 
 See [docs/TESTING.md](docs/TESTING.md) for validation and runtime testing.
 
@@ -108,7 +108,7 @@ button example. Pass composed class strings directly to React's `className`.
 
 ### Build
 
-React and ReactDOM are bundled into `dist/index.js`; `app` and `api` come from
+React and ReactDOM are bundled into `web/index.js`; `app` and `api` come from
 ComfyUI. `bun run build` uses React's production runtime. `bun run dev` uses the
 development runtime with source maps.
 
@@ -116,7 +116,7 @@ development runtime with source maps.
 After adding or renaming classes while watching, run `bun run build:css-type`.
 Use `bun run build:css-type --check` to check declarations without writing them.
 
-Bun bundles styles into `dist/index.css`, loaded by `frontend/src/stylesheet.ts`.
+Bun bundles styles into `web/index.css`, loaded by `frontend/src/stylesheet.ts`.
 The normal lint commands include Stylelint; `bun run lint:css` runs it separately.
 Scope native DOM styles with data attributes, as the example does with
 `[data-template-theme]` and `[data-template-native-note]`.
@@ -131,7 +131,7 @@ bun run build:custom-node
 
 The ZIP is written to `build/<DisplayName>-<version>.zip`. This template's
 `.comfyignore` excludes everything except the listed runtime files and metadata.
-`[tool.comfy].includes` adds the generated `dist/` and `backend/_version.py` files.
+`[tool.comfy].includes` adds the generated `web/` and `backend/_version.py` files.
 The version file is used by Registry publishing. Versions between tags include
 suffixes such as `.post7.dev0+<commit>`.
 
