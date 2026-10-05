@@ -293,6 +293,36 @@ it("does not start status polling when a job POST resolves after the Panel close
   }
 })
 
+it("opens Nodes Manager directly without showing or fetching Panel status", async () => {
+  const fetchApi = vi.fn(async () => new Response(JSON.stringify({})))
+  const app = {
+    api: { fetchApi },
+    extensionManager: { toast: { add: vi.fn() } },
+  } as unknown as import("@comfyorg/comfyui-frontend-types").ComfyApp
+  const controller = createControlPanelController({
+    app,
+    readBooleanSetting: () => false,
+    fixCnrId: async () => undefined,
+  })
+  try {
+    await act(async () => controller.openNodesManager())
+    expect(controller.getSnapshot().isOpen).toBe(false)
+    expect(document.querySelector('[aria-labelledby="cp-nodes-manager-title"]')).not.toBeNull()
+    expect(document.querySelector('[aria-labelledby="cp-title"]')).toBeNull()
+    expect(fetchApi).not.toHaveBeenCalledWith(API_ROUTES.STATUS, expect.anything())
+    await act(async () => buttonByText("Add git node").click())
+    expect(document.querySelector('[aria-labelledby="cp-git-install-title"]')).not.toBeNull()
+    await act(async () => buttonByText("Cancel").click())
+    await act(async () => controller.nodesManager.close())
+    expect(document.querySelector('[aria-labelledby="cp-nodes-manager-title"]')).toBeNull()
+    await act(async () => controller.openNodesManager())
+    expect(controller.getSnapshot().isOpen).toBe(false)
+    expect(document.querySelector('[aria-labelledby="cp-nodes-manager-title"]')).not.toBeNull()
+  } finally {
+    await act(async () => controller.close())
+  }
+})
+
 it("opens the existing Git installer from Nodes Manager without replacing the Panel action", async () => {
   const mounted = await mountControlPanel()
   try {

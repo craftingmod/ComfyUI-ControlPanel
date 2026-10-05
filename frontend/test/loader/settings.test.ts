@@ -6,13 +6,19 @@ import { API_ROUTES, SETTINGS_IDS } from "../../src/constants.ts"
 import type { ManagerExtension } from "../../src/types.ts"
 
 const openPanel = vi.fn()
+const openNodesManager = vi.fn(async () => undefined)
 const refreshManager = vi.fn(async () => undefined)
 let managerOpen = false
 
 await mock.module("../../src/components/controlPanel.ts", () => ({
   createControlPanelController: () => ({
     open: openPanel,
-    nodesManager: { getSnapshot: () => ({ isOpen: managerOpen }), refresh: refreshManager },
+    openNodesManager,
+    nodesManager: {
+      open: openNodesManager,
+      getSnapshot: () => ({ isOpen: managerOpen }),
+      refresh: refreshManager,
+    },
   }),
 }))
 await mock.module("../../src/services/cnrMetadataController.ts", () => ({
@@ -50,6 +56,7 @@ it("categorizes every setting and restores the flagged toggle before posting use
     return
   }
   let extension: ManagerExtension | undefined
+  let pinNodesManager = false
   const fetchApi = vi.fn(async (route: string) => {
     // A slow status response must not let ComfyUI finish loading before registration.
     if (route === API_ROUTES.STATUS) {
@@ -66,7 +73,14 @@ it("categorizes every setting and restores the flagged toggle before posting use
   })
   const app = {
     api: { fetchApi },
-    extensionManager: { setting: { set }, toast: { add: vi.fn() } },
+    extensionManager: {
+      setting: {
+        set,
+        get: (id: string) =>
+          id === SETTINGS_IDS.PIN_NODES_MANAGER_TO_TOOLBAR ? pinNodesManager : undefined,
+      },
+      toast: { add: vi.fn() },
+    },
     registerExtension: (registered: ManagerExtension) => {
       extension = registered
     },
@@ -95,6 +109,20 @@ it("categorizes every setting and restores the flagged toggle before posting use
   expect(command).toBeDefined()
   await command!.function()
   expect(openPanel).toHaveBeenCalledTimes(2)
+  const pinSetting = extension!.settings!.find(
+    (setting) => String(setting.id) === SETTINGS_IDS.PIN_NODES_MANAGER_TO_TOOLBAR,
+  )!
+  expect(pinSetting.name).toBe("Pin Nodes Manager to toolbar")
+  expect(pinSetting.defaultValue).toBe(false)
+  expect(extension!.actionBarButtons?.map((button) => button.label)).toEqual(["Panel"])
+  pinNodesManager = true
+  const nodesButton = extension!.actionBarButtons!.find((button) => button.label === "Nodes")!
+  expect(nodesButton.icon).toBe("icon-[lucide--plug]")
+  nodesButton.onClick()
+  expect(openPanel).toHaveBeenCalledTimes(2)
+  expect(openNodesManager).toHaveBeenCalledTimes(1)
+  pinNodesManager = false
+  expect(extension!.actionBarButtons?.map((button) => button.label)).toEqual(["Panel"])
   expect(
     extension!.menuCommands?.some((group) => group.commands.includes("control-panel.open")),
   ).toBeTrue()

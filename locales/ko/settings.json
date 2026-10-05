@@ -1,4 +1,7 @@
 {
+  "ControlPanel_Pin_Nodes_Manager_To_Toolbar": {
+    "name": "Nodes Manager를 툴바에 고정"
+  },
   "ControlPanel_Debug_Logging": {
     "name": "디버그 로그 사용",
     "tooltip": "매니저 작업 중 브라우저 콘솔에 자세한 로그 표시"

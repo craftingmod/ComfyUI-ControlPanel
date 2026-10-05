@@ -1,4 +1,7 @@
 {
+  "ControlPanel_Pin_Nodes_Manager_To_Toolbar": {
+    "name": "Pin Nodes Manager to toolbar"
+  },
   "ControlPanel_Debug_Logging": {
     "name": "Enable Debug Logging",
     "tooltip": "Show detailed debug logs in the browser console during manager operations"

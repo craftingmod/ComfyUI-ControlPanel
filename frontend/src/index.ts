@@ -202,6 +202,13 @@ function createExtensionObject(): ManagerExtension {
         defaultValue: undefined,
       },
       {
+        id: settingId(SETTINGS_IDS.PIN_NODES_MANAGER_TO_TOOLBAR),
+        name: translateCurrent("settings.pinNodesManager"),
+        category: ["ControlPanel", "General", "Pin Nodes Manager to toolbar"],
+        type: "boolean",
+        defaultValue: false,
+      },
+      {
         id: settingId(SETTINGS_IDS.DEBUG_LOGGING),
         name: translateCurrent("settings.debugLogging"),
         category: ["ControlPanel", "General", "Enable Debug Logging"],
@@ -273,14 +280,27 @@ function createExtensionObject(): ManagerExtension {
         })
       })
     },
-    actionBarButtons: [
-      {
-        icon: "icon-[lucide--wrench]",
-        label: translateCurrent("actionBar.panel"),
-        tooltip: translateCurrent("actionBar.tooltip"),
-        onClick: controlPanel.open,
-      },
-    ],
+    get actionBarButtons() {
+      const buttons = [
+        {
+          icon: "icon-[lucide--wrench]",
+          label: translateCurrent("actionBar.panel"),
+          tooltip: translateCurrent("actionBar.tooltip"),
+          onClick: controlPanel.open,
+        },
+      ]
+      if (readBooleanSetting(SETTINGS_IDS.PIN_NODES_MANAGER_TO_TOOLBAR)) {
+        buttons.push({
+          icon: "icon-[lucide--plug]",
+          label: "Nodes",
+          tooltip: translateCurrent("actionBar.nodesTooltip"),
+          onClick: () => {
+            void controlPanel.openNodesManager()
+          },
+        })
+      }
+      return buttons
+    },
   }
 }
 

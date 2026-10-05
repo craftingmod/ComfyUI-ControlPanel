@@ -7,6 +7,7 @@ export const LOGGING_PREFIX = `[${SETTINGS_PREFIX}]`
 export const SETTINGS_IDS = {
   VERSION: `${SETTINGS_PREFIX}.Version`,
   DEBUG_LOGGING: `${SETTINGS_PREFIX}.Debug_Logging`,
+  PIN_NODES_MANAGER_TO_TOOLBAR: `${SETTINGS_PREFIX}.Pin_Nodes_Manager_To_Toolbar`,
   MANAGER_REPOSITORY_DATA_OVERRIDE: `${SETTINGS_PREFIX}.Manager_Repository_Data_Override`,
   MANAGER_REPOSITORY_DATA_CHANNEL: `${SETTINGS_PREFIX}.Manager_Repository_Data_Channel`,
   ALLOW_FLAGGED_VERSION_AS_LATEST: `${SETTINGS_PREFIX}.Allow_Flagged_Version_As_Latest`,

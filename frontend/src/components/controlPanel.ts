@@ -31,6 +31,7 @@ type JobOutput = "panel" | "update-check"
 
 export type ControlPanelController = ControlPanelActions & {
   open: () => void
+  openNodesManager: () => Promise<void>
 }
 
 export function createControlPanelController(options: ControlPanelOptions): ControlPanelController {
@@ -522,7 +523,7 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
     rebuildManagerCache,
   }
 
-  function open(): void {
+  function ensureHost(): void {
     if (!host) {
       host = document.createElement("div")
       host.dataset.templateTheme = ""
@@ -536,9 +537,18 @@ export function createControlPanelController(options: ControlPanelOptions): Cont
       )
     }
     if (!host.isConnected) document.body.append(host)
+  }
+
+  function open(): void {
+    ensureHost()
     setViewState({ isOpen: true })
     void refreshPanelStatus()
   }
 
-  return { ...actions, open }
+  async function openNodesManager(): Promise<void> {
+    ensureHost()
+    await nodesManager.open()
+  }
+
+  return { ...actions, open, openNodesManager }
 }

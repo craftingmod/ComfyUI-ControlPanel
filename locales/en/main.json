@@ -12,6 +12,8 @@
   "ComfyUI-ControlPanel": {
     "actionBar.panel": "Panel",
     "actionBar.tooltip": "Open ControlPanel",
+    "actionBar.nodesTooltip": "Open Nodes Manager",
+    "settings.pinNodesManager": "Pin Nodes Manager to toolbar",
     "command.open": "Open ControlPanel",
     "command.repairMetadata": "Repair Metadata",
     "settings.debugLogging": "Enable Debug Logging",

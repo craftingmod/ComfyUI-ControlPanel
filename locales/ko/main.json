@@ -12,6 +12,8 @@
   "ComfyUI-ControlPanel": {
     "actionBar.panel": "패널",
     "actionBar.tooltip": "ControlPanel 열기",
+    "actionBar.nodesTooltip": "Nodes Manager 열기",
+    "settings.pinNodesManager": "Nodes Manager를 툴바에 고정",
     "command.open": "ControlPanel 열기",
     "command.repairMetadata": "메타데이터 복구",
     "settings.debugLogging": "디버그 로그 사용",

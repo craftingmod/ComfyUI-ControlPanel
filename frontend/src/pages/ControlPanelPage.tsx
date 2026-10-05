@@ -196,6 +196,7 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
                 </Button>
                 <Button
                   className={styles.buttonWide}
+                  variant="primary"
                   type="button"
                   onClick={() => void actions.nodesManager.open()}
                 >
@@ -375,7 +376,7 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
         isBackground={gitInstallOpen}
       />
       <GitInstallModal
-        isOpen={view.isOpen && gitInstallOpen}
+        isOpen={(view.isOpen || nodesManagerView.isOpen) && gitInstallOpen}
         url={gitUrl}
         folderName={gitFolderName}
         onUrlChange={setGitUrl}
