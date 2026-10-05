@@ -9,7 +9,7 @@ def test_entrypoint_loads_control_panel_backend():
   module = load_package_from_path(
     "control_panel_entrypoint", REPO_ROOT / "__init__.py", repo_root=REPO_ROOT
   )
-  assert module.WEB_DIRECTORY == "./dist"
+  assert module.WEB_DIRECTORY == "./web"
   assert module.NODE_CLASS_MAPPINGS == {}
   assert module.NODE_DISPLAY_NAME_MAPPINGS == {}
   assert callable(module.register_routes)

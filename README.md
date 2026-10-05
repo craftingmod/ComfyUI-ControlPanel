@@ -7,7 +7,7 @@ not exposed in the modern ComfyUI Manager V4 UI unless the legacy UI is enabled.
 
 The extension is packaged as a single ComfyUI custom node pack. Backend routes
 live in `backend/`, the frontend extension lives in `frontend/`, and ComfyUI
-loads the built frontend from `dist/index.js` through `WEB_DIRECTORY = "./dist"`.
+loads the built frontend from `web/index.js` through `WEB_DIRECTORY = "./web"`.
 
 This custom node pack is primarily maintained as a personal-use replacement for
 [ComfyUI-Manager#3048](https://github.com/Comfy-Org/ComfyUI-Manager/pull/3048).
@@ -60,7 +60,7 @@ Restart ComfyUI after installation.
 
 As a manual alternative, install from the GitHub Release zip attached to a
 version tag, not from GitHub's automatic source archive. The release zip
-includes the built frontend file at `dist/index.js`, which ComfyUI needs at
+includes the built frontend file at `web/index.js`, which ComfyUI needs at
 runtime.
 
 For example, for `v1.1.0`, download the attached release asset named like:

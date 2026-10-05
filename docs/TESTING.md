@@ -26,6 +26,6 @@ See `docs/agent/NODES_MANAGER.md`.
 
 ## Generated files
 
-`dist/` is generated from `frontend/`; edit the source files rather than generated output.
+`web/` is generated from `frontend/`; edit the source files rather than generated output.
 
 Do not create task-specific cache or temporary directories.

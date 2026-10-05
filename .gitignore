@@ -6,6 +6,7 @@
 
 # Build
 dist/
+web/
 build/
 backend/_version.py
 coverage/
