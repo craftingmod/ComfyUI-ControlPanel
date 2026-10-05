@@ -26,12 +26,22 @@ def repo_name_from_git_url(url: str) -> str:
 
 def validate_git_url(url: str) -> str:
   normalized = url.strip()
-  parsed = urlparse(normalized)
-  if parsed.scheme in {"https", "http", "ssh", "git"} and parsed.netloc:
-    return normalized
-  if re.match(r"^git@[^:]+:[A-Za-z0-9_.~/-]+(?:\.git)?$", normalized):
-    return normalized
-  raise ManagerApiError("Only http(s), ssh, git, and git@host:path URLs are supported.")
+  try:
+    parsed = urlparse(normalized)
+    if (
+      parsed.scheme == "https"
+      and parsed.hostname
+      and parsed.username is None
+      and parsed.password is None
+      and not parsed.query
+      and not parsed.fragment
+    ):
+      return normalized
+  except ValueError:
+    pass
+  raise ManagerApiError(
+    "Only HTTPS Git URLs without embedded credentials are supported."
+  )
 
 
 def is_local_changes_pull_failure(message: str) -> bool:

@@ -638,12 +638,27 @@ def test_repo_name_from_git_url_handles_common_url_shapes():
   )
 
 
-def test_validate_git_url_rejects_local_paths_and_unknown_schemes():
-  with pytest.raises(manager_api.ManagerApiError):
-    manager_api.validate_git_url("../outside")
+def test_validate_git_url_allows_https_without_credentials_only():
+  for url in (
+    "https://github.com/user/comfyui-test.git",
+    "https://gitlab.com/group/comfyui-test.git",
+    "https://git.example.test/group/comfyui-test",
+  ):
+    assert manager_api.validate_git_url(url) == url
 
-  with pytest.raises(manager_api.ManagerApiError):
-    manager_api.validate_git_url("file:///tmp/repo")
+  for url in (
+    "https://x-access-token:ghp_secret@github.com/user/repo.git",
+    "https://ghp_secret@github.com/user/repo.git",
+    "https://github.com/user/repo.git?token=ghp_secret",
+    "https://github.com/user/repo.git#ghp_secret",
+    "http://github.com/user/repo.git",
+    "ssh://git@github.com/user/repo.git",
+    "git@github.com:user/repo.git",
+    "file:///tmp/repo",
+    "../outside",
+  ):
+    with pytest.raises(manager_api.ManagerApiError):
+      manager_api.validate_git_url(url)
 
 
 def test_resolve_custom_node_destination_sanitizes_folder_name():
