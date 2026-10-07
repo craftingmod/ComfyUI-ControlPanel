@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "comfyui-controlpanel"
-description = "A lightweight ComfyUI control panel for local administration and workflow metadata repair"
+description = "A ComfyUI extension for local administration, custom node management, backup and restore, and workflow metadata repair."
 dynamic = ["version"]
 requires-python = ">=3.12"
 readme = "README.md"

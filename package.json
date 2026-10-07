@@ -1,7 +1,7 @@
 {
   "name": "comfyui-controlpanel",
   "private": true,
-  "description": "A lightweight ComfyUI control panel for local administration and workflow metadata repair",
+  "description": "A ComfyUI extension for local administration, custom node management, backup and restore, and workflow metadata repair.",
   "keywords": [
     "comfyui",
     "custom node",
