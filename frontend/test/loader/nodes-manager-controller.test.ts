@@ -189,6 +189,50 @@ function createFixture(options: FixtureOptions = {}) {
 }
 
 describe("Nodes Manager controller", () => {
+  it("continues bulk updates after Manager reserves existing Registry version changes for restart", async () => {
+    const fixture = createFixture({
+      useFlaggedLatest: true,
+      catalog: ["first", "second"].map((id) => ({
+        id,
+        latest_version: { version: "2.0.0", status: "Flagged" },
+      })),
+      installed: {
+        first: { cnr_id: "first", ver: "1.0.0", enabled: true },
+        second: { cnr_id: "second", ver: "1.0.0", enabled: true },
+      },
+      history: (ui_id, client_id) => ({
+        history: { ui_id, client_id, status: { completed: true, status_str: "success" } },
+      }),
+    })
+    await fixture.controller.open()
+    await fixture.controller.submitAll("updates")
+    const tasks = fixture.requests.filter((request) => request.route === "/v2/manager/queue/task")
+    expect(tasks.map((request) => (request.body as ManagerQueuePayload).params.id)).toEqual([
+      "first",
+      "second",
+    ])
+    expect(fixture.counts().startCount).toBe(2)
+    for (const operation of Object.values(fixture.controller.getSnapshot().operations)) {
+      expect(operation).toMatchObject({
+        status: "unknown",
+        managerStatus: "success",
+        restartRequired: true,
+        messageKey: "nodes.versionChangeReserved",
+      })
+    }
+    await fixture.controller.submitAll("updates")
+    expect(fixture.counts().enqueueCount).toBe(2)
+    fixture.setInstalled({
+      first: { cnr_id: "first", ver: "2.0.0", enabled: true },
+      second: { cnr_id: "second", ver: "2.0.0", enabled: true },
+    })
+    await fixture.controller.refresh()
+    expect(
+      Object.values(fixture.controller.getSnapshot().operations).map((item) => item.status),
+    ).toEqual(["succeeded", "succeeded"])
+    fixture.controller.close()
+  })
+
   it("gates default Flagged updates and confirms the exact version for individual and bulk updates", async () => {
     for (const enabled of [false, true]) {
       let installedVersion = "1.0.0"

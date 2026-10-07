@@ -365,6 +365,8 @@ export function ControlPanelPage({ actions }: ControlPanelPageProps) {
         onAddGitNode={() => setGitInstallOpen(true)}
         onBackupInstalledNodes={actions.backupInstalledNodes}
         onChooseNodeRestoreFile={chooseNodeRestoreFile}
+        onRestart={() => void actions.restart()}
+        restartPending={view.restartPending}
         isBackground={gitInstallOpen || Boolean(nodeRestoreFile)}
       />
       <GitInstallModal

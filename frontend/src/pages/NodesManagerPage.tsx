@@ -100,6 +100,8 @@ type NodesManagerPageProps = {
   onAddGitNode?: () => void
   onBackupInstalledNodes: () => void
   onChooseNodeRestoreFile: () => void
+  onRestart: () => void
+  restartPending?: boolean
   isBackground?: boolean
 }
 
@@ -108,6 +110,8 @@ export function NodesManagerPage({
   onAddGitNode,
   onBackupInstalledNodes,
   onChooseNodeRestoreFile,
+  onRestart,
+  restartPending,
   isBackground,
 }: NodesManagerPageProps) {
   const { locale, t } = useI18n()
@@ -367,6 +371,20 @@ export function NodesManagerPage({
               </label>
             </div>
             <div className={styles.toolbarActions}>
+              {!snapshot.bulkOperation &&
+                taskOperations.some((operation) => operation.restartRequired) && (
+                  <Button
+                    type="button"
+                    variant="danger"
+                    busy={restartPending}
+                    disabled={taskOperations.some((operation) =>
+                      ["starting", "pending"].includes(operation.status),
+                    )}
+                    onClick={onRestart}
+                  >
+                    {t("panel.action.restart")}
+                  </Button>
+                )}
               {filter === "installed" && (
                 <>
                   <Button type="button" onClick={onBackupInstalledNodes}>

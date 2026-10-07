@@ -161,6 +161,7 @@
     "nodes.unknownError": "Unknown error",
     "nodes.operationUnconfirmed": "Manager reported completion, but the installed-pack list does not confirm the requested change. Refresh to check again.",
     "nodes.operationConfirmed": "Completed and confirmed from the installed-pack list. Restart ComfyUI to load the change.",
+    "nodes.versionChangeReserved": "Manager completed the version-change request. Restart ComfyUI to apply the reserved change, then refresh to confirm the installed version.",
     "nodes.installedRefreshFailed": "Manager installed nodes could not be refreshed.",
     "nodes.taskSkipped": "Manager skipped this task; no change was confirmed.",
     "nodes.managerError": "Manager reported an error.",

@@ -132,7 +132,12 @@ function deferred<T>() {
 
 async function mountNodesManager(
   snapshot: NodesManagerSnapshot,
-  actions: { onBackupInstalledNodes?: () => void; onChooseNodeRestoreFile?: () => void } = {},
+  actions: {
+    onBackupInstalledNodes?: () => void
+    onChooseNodeRestoreFile?: () => void
+    onRestart?: () => void
+    restartPending?: boolean
+  } = {},
 ) {
   const manager = createManager(snapshot)
   const host = document.createElement("div")
@@ -147,6 +152,8 @@ async function mountNodesManager(
           controller={manager.controller}
           onBackupInstalledNodes={actions.onBackupInstalledNodes ?? (() => undefined)}
           onChooseNodeRestoreFile={actions.onChooseNodeRestoreFile ?? (() => undefined)}
+          onRestart={actions.onRestart ?? (() => undefined)}
+          restartPending={actions.restartPending}
         />
       </VirtuosoMockContext.Provider>,
     ),
@@ -159,6 +166,55 @@ async function mountNodesManager(
     },
   }
 }
+
+it("shows Restart in the toolbar after a completed or reserved update and reuses the existing action", async () => {
+  const pack = managedPack("updated-pack")
+  const onRestart = vi.fn()
+  const mounted = await mountNodesManager(managerSnapshot([pack]), { onRestart })
+  const operation: NodesManagerOperationState = {
+    packKey: pack.key,
+    pack,
+    taskId: "update-task",
+    clientId: "client",
+    operation: "update",
+    status: "unknown",
+    managerStatus: "success",
+    restartRequired: true,
+  }
+  try {
+    expect(() => findButton("Restart")).toThrow("Missing button: Restart")
+    await act(async () =>
+      mounted.update({
+        operations: { [pack.key]: operation },
+        bulkOperation: "updates",
+      }),
+    )
+    expect(() => findButton("Restart")).toThrow("Missing button: Restart")
+    await act(async () => mounted.update({ bulkOperation: undefined }))
+    const button = findButton("Restart")
+    expect(button.closest("[data-bulk]")).not.toBeNull()
+    await act(async () => button.click())
+    expect(onRestart).toHaveBeenCalledTimes(1)
+    await act(async () =>
+      mounted.update({
+        operations: {
+          [pack.key]: { ...operation, status: "pending" },
+        },
+      }),
+    )
+    expect(findButton("Restart").disabled).toBe(true)
+    await act(async () =>
+      mounted.update({
+        operations: {
+          [pack.key]: { ...operation, status: "succeeded" },
+        },
+      }),
+    )
+    expect(findButton("Restart").disabled).toBe(false)
+  } finally {
+    await mounted.destroy()
+  }
+})
 
 it("shows Backup and Restore only in All Installed and reuses the provided actions", async () => {
   const onBackupInstalledNodes = vi.fn()

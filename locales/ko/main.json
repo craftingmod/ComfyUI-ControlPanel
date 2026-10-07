@@ -161,6 +161,7 @@
     "nodes.unknownError": "알 수 없는 오류",
     "nodes.operationUnconfirmed": "Manager에서 완료를 보고했지만 설치된 팩 목록에서 요청한 변경 사항이 확인되지 않았습니다. 새로고침하여 확인하세요.",
     "nodes.operationConfirmed": "설치된 팩 목록에서 완료를 확인했습니다. 변경 사항을 불러오려면 ComfyUI를 다시 시작하세요.",
+    "nodes.versionChangeReserved": "Manager가 버전 변경 요청을 완료했습니다. ComfyUI를 다시 시작하여 예약된 변경을 적용한 뒤 새로고침하여 설치된 버전을 확인하세요.",
     "nodes.installedRefreshFailed": "Manager의 설치 노드 목록을 새로고침하지 못했습니다.",
     "nodes.taskSkipped": "Manager가 작업을 건너뛰어 변경 사항이 확인되지 않았습니다.",
     "nodes.managerError": "Manager에서 오류를 보고했습니다.",

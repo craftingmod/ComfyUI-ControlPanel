@@ -406,10 +406,23 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
     if (operation.managerStatus !== "success") return
     const satisfied = effectIsPresent(operation, packFor(operation), installed)
     if (!satisfied) {
+      // Manager reserves existing Registry version replacements for the next startup.
+      const restartRequired = Boolean(
+        operation.pack.source === "Registry" &&
+        operation.pack.installed &&
+        ["install", "switch", "update"].includes(operation.operation) &&
+        operation.selectedVersion &&
+        findInstalledPack(installed, operation.pack)?.version === operation.pack.installed.version,
+      )
       replaceOperation({
-        ...withMessageKey(operation, "nodes.operationUnconfirmed"),
+        ...withMessageKey(
+          operation,
+          restartRequired ? "nodes.versionChangeReserved" : "nodes.operationUnconfirmed",
+        ),
         status: "unknown",
+        restartRequired,
       })
+      if (restartRequired) showToast("warn", t("toast.restartRequired"), t("toast.restartForNodes"))
       return
     }
     replaceOperation({
@@ -1048,9 +1061,16 @@ export function createNodesManagerController(app: ComfyApp): NodesManagerControl
           const unsubscribe = subscribe(check)
           check()
         })
-        const status = findOperationForPack(snapshot.operations, pack)?.status
+        const result = findOperationForPack(snapshot.operations, pack)
+        const status = result?.status
         if (status === "succeeded") succeeded += 1
-        if (workflowMissing ? status !== "succeeded" : status === "unknown") break
+        if (
+          workflowMissing
+            ? status !== "succeeded"
+            : status === "unknown" &&
+              !(result?.managerStatus === "success" && result.restartRequired)
+        )
+          break
       }
       if (
         filter === "updates" &&
