@@ -5,8 +5,7 @@
 !/__init__.py
 
 # Runtime directories
-!/assets/
-!/assets/**
+!/assets/icon.svg
 !/backend/
 !/backend/**
 !/locales/
