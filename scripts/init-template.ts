@@ -113,16 +113,15 @@ export async function initializeTemplate(
   const pyprojectPath = Path.join(projectRoot, "pyproject.toml")
   const packagePath = Path.join(projectRoot, "package.json")
   const constantsPath = Path.join(projectRoot, "frontend", "src", "constants.ts")
-  const nodePath = Path.join(projectRoot, "backend", "nodes", "example_normalize_text.py")
   const readmePath = Path.join(projectRoot, "README.md")
-  const [originalPyproject, originalPackage, originalConstants, originalNode, originalReadme] =
-    await Promise.all([
+  const [originalPyproject, originalPackage, originalConstants, originalReadme] = await Promise.all(
+    [
       fs.readFile(pyprojectPath, "utf8"),
       fs.readFile(packagePath, "utf8"),
       fs.readFile(constantsPath, "utf8"),
-      fs.readFile(nodePath, "utf8"),
       fs.readFile(readmePath, "utf8"),
-    ])
+    ],
+  )
 
   const projectSectionPattern = /(^\[project\]\s*$)([\s\S]*?)(?=^\[|(?![\s\S]))/m
   const projectSection = originalPyproject.match(projectSectionPattern)
@@ -181,19 +180,6 @@ export async function initializeTemplate(
     projectName,
     "PROJECT_NAME in frontend/src/constants.ts",
   )
-  let updatedNode = replaceQuotedValue(
-    originalNode,
-    /^(PROJECT_ID\s*=\s*)["'][^"']+["']\s*$/m,
-    projectId,
-    "PROJECT_ID in the example backend node",
-  )
-  updatedNode = replaceQuotedValue(
-    updatedNode,
-    /^(PROJECT_NAME\s*=\s*)["'][^"']+["']\s*$/m,
-    projectName,
-    "PROJECT_NAME in the example backend node",
-  )
-
   if (!/^# .+$/m.test(originalReadme)) {
     throw new Error("Could not find the project title in README.md")
   }
@@ -203,7 +189,6 @@ export async function initializeTemplate(
     fs.writeFile(pyprojectPath, updatedPyproject),
     fs.writeFile(packagePath, updatedPackage),
     fs.writeFile(constantsPath, updatedConstants),
-    fs.writeFile(nodePath, updatedNode),
     fs.writeFile(readmePath, updatedReadme),
   ])
 }

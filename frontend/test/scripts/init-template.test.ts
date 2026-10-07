@@ -21,7 +21,6 @@ it("initializes current project files while preserving dynamic version and alias
     "pyproject.toml",
     "package.json",
     "frontend/src/constants.ts",
-    "backend/nodes/example_normalize_text.py",
     "README.md",
     "frontend/src/tsconfig.json",
     "frontend/test/tsconfig.json",
@@ -88,7 +87,7 @@ it("initializes current project files while preserving dynamic version and alias
     })
     expect(config).not.toHaveProperty("project.version")
     expect((await Bun.file(Path.join(projectRoot, "package.json")).json()).name).toBe("image-tools")
-    for (const file of ["frontend/src/constants.ts", "backend/nodes/example_normalize_text.py"]) {
+    for (const file of ["frontend/src/constants.ts"]) {
       const source = await Bun.file(Path.join(projectRoot, file)).text()
       expect(source).toContain('PROJECT_ID = "image-tools"')
       expect(source).toContain(`PROJECT_NAME = "${projectName}"`)
