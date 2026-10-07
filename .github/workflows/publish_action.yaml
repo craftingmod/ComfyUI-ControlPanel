@@ -37,6 +37,9 @@ jobs:
       - name: Build Registry package and version file
         run: bun run build:custom-node
 
+      - name: Use packaged metadata for Registry upload
+        run: unzip -p build/*.zip pyproject.toml > pyproject.toml
+
       - name: Publish Custom Node
         uses: Comfy-Org/publish-node-action@main
         with:
