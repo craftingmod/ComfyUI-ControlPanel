@@ -47,7 +47,16 @@ def _registry_db(path):
     registry_cache._create_schema(connection)
     connection.execute(
       "INSERT INTO nodes (node_id, payload) VALUES (?, ?)",
-      ("example-pack", json.dumps({"id": "example-pack", "name": "Example"})),
+      (
+        "example-pack",
+        json.dumps(
+          {
+            "id": "example-pack",
+            "name": "Example",
+            "latest_version": {"version": "1.2.0", "status": "NodeVersionStatusActive"},
+          }
+        ),
+      ),
     )
     active = {
       "id": "active-id",
@@ -91,7 +100,6 @@ def test_local_catalog_reads_sqlite_projection_without_writing(tmp_path):
   original = database.read_bytes()
 
   safe = nodes_manager.read_local_catalog(database, legacy)
-  flagged = nodes_manager.read_local_catalog(database, legacy, allow_flagged=True)
 
   assert safe["source"] == "sqlite"
   assert safe["nodes"][0]["latest_version"]["version"] == "1.2.0"
@@ -99,7 +107,6 @@ def test_local_catalog_reads_sqlite_projection_without_writing(tmp_path):
   assert (
     safe["nodes"][0]["latest_flagged_version"]["status"] == "NodeVersionStatusFlagged"
   )
-  assert flagged["nodes"][0]["latest_version"]["version"] == "1.10.0"
   assert database.read_bytes() == original
 
 
@@ -352,7 +359,6 @@ def _route_api(*, denied=None, tmp_path=None):
     registry_cache_path=lambda _source: Path("missing.db"),
     manager_user_dir=lambda: Path("manager-user"),
     manager_url_cache_filename=lambda _url: "hashed_nodes.json",
-    is_allow_flagged_version_as_latest_enabled=lambda: False,
   )
 
 

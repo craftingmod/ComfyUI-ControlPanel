@@ -137,40 +137,50 @@ class Registry:
     ]
 
 
-@pytest.mark.parametrize(
-  "active_number,flagged_number,expected",
-  [
-    ("0.9.0", "0.10.0", "0.10.0"),
-    ("0.10.0", "0.9.0", "0.10.0"),
-    ("0.9.0", "0.9.0+flagged", "0.9.0"),
-    ("1.0.0", "1.0.0-rc.10", "1.0.0"),
-    ("1.0.0-rc.9", "1.0.0-rc.10", "1.0.0-rc.10"),
-    (None, "0.10.0", "0.10.0"),
-  ],
-)
-def test_flagged_manager_projection_preserves_registry_cache(
-  tmp_path, active_number, flagged_number, expected
+@pytest.mark.parametrize("status", [ACTIVE, FLAGGED])
+@pytest.mark.parametrize("incremental", [False, True])
+def test_registry_latest_is_authoritative_and_preserves_status(
+  tmp_path, status, incremental
 ):
   api = Registry(tmp_path)
-  active = version("a", active_number) if active_number else None
-  flagged = version("a", flagged_number, FLAGGED)
-  api.active["a"] = active
-  api.histories["a"] = [flagged, *([active] if active else [])]
-  api.feed = [flagged]
+  if incremental:
+    api.sync()
+    api.now += 3600
+  latest = version("a", "0.10.0", status, "2026-06-01T00:10:00Z")
+  api.active["a"] = latest
+  api.histories["a"].insert(0, latest)
+  api.feed.insert(0, latest)
+  # The compatibility lookup, not a newer history row, owns latest_version.
+  api.histories["a"].insert(0, version("a", "0.11.0", FLAGGED))
   api.sync()
   original = api.path.read_bytes()
-
-  exported = registry_cache.read_registry_cache(api.path, allow_flagged=True)
-  latest = exported["nodes"][0]["latest_version"]
-  assert latest["version"] == expected
-  assert latest == (flagged if expected == flagged_number else active)
-  assert exported["installed_node_versions"]["a"]["latest_flagged"] == flagged
-  assert api.data()["nodes"][0]["latest_version"] == active
+  exported = registry_cache.read_registry_cache(api.path)
+  assert exported["nodes"][0]["latest_version"] == latest
+  assert api.summary()["latest_active"] == (latest if status == ACTIVE else None)
   assert api.path.read_bytes() == original
 
 
+@pytest.mark.parametrize("status", [PENDING, "NodeVersionStatusBanned"])
+def test_registry_latest_rejects_noninstallable_status_without_publishing(
+  tmp_path, status
+):
+  api = Registry(tmp_path)
+  api.active["a"] = version("a", "0.10.0", status)
+  with pytest.raises(ValueError, match="not Active or Flagged"):
+    api.sync()
+  assert not api.path.exists()
+
+
+def test_installed_node_missing_from_catalog_does_not_block_latest_refresh(tmp_path):
+  api = Registry(tmp_path)
+  api.catalog = [node for node in api.catalog if node["id"] != "a"]
+  api.sync()
+  assert [node["id"] for node in api.data()["nodes"]] == ["b"]
+  assert api.summary()["latest_active"] == api.active["a"]
+
+
 @pytest.mark.parametrize("export_path", ["startup", "refresh"])
-def test_flagged_setting_controls_manager_exports_and_redeploys_on_toggle(
+def test_manager_exports_registry_flagged_latest_without_setting(
   tmp_path, monkeypatch, export_path
 ):
   user_dir = tmp_path / "user"
@@ -181,6 +191,7 @@ def test_flagged_setting_controls_manager_exports_and_redeploys_on_toggle(
   api = Registry(tmp_path)
   api.path = manager_api.registry_cache_path(source_dir)
   flagged = version("a", "0.10.0", FLAGGED)
+  api.active["a"] = flagged
   api.histories["a"].insert(0, flagged)
   api.feed.insert(0, flagged)
   api.sync()
@@ -188,7 +199,7 @@ def test_flagged_setting_controls_manager_exports_and_redeploys_on_toggle(
   manager_api.write_controlpanel_settings(
     {
       "manager_repository_data_override_enabled": True,
-      "allow_flagged_version_as_latest": True,
+      "allow_flagged_version_as_latest": False,
     },
     user_dir,
   )
@@ -220,15 +231,6 @@ def test_flagged_setting_controls_manager_exports_and_redeploys_on_toggle(
   exported = json.loads(manager_path.read_text(encoding="utf-8"))
   assert exported["nodes"][0]["latest_version"] == flagged
   assert "installed_node_versions" not in exported
-
-  result = manager_api.set_allow_flagged_version_as_latest(False, user_dir)
-  assert result["deployment"]["registry_nodes"]["action"] == "deployed"
-  assert manager_api.is_allow_flagged_version_as_latest_enabled(user_dir) is False
-  assert manager_api.is_manager_repository_override_enabled(user_dir) is True
-  assert (
-    json.loads(manager_path.read_text(encoding="utf-8"))["nodes"][0]["latest_version"]
-    == api.active["a"]
-  )
   assert api.path.read_bytes() == original
 
 

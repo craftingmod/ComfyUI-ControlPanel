@@ -590,34 +590,29 @@ it("warns on the installed Flagged version, independent of the latest version's 
   }
 })
 
-it("requires the Flagged latest setting for default updates while allowing explicit version selection", async () => {
-  for (const enabled of [false, true]) {
-    const pack = managedPack("example-pack", {
-      latestVersion: { version: "0.9.0", status: "Flagged" },
-      useFlaggedVersionAsLatest: enabled,
-      installed: { key: "example-pack", version: "0.8.0", enabled: true },
-    })
-    const mounted = await mountNodesManager(managerSnapshot([pack]))
-    try {
-      const update = document.querySelector<HTMLButtonElement>('[data-action="update"]')!
-      expect(update.disabled).toBe(!enabled)
-      if (enabled) {
-        await act(async () => update.click())
-        expect(mounted.controller.submit).toHaveBeenCalledWith(pack, "update", undefined)
-      }
-      await act(async () =>
-        document.querySelector<HTMLButtonElement>('[data-action="load-version"]')!.click(),
-      )
-      const selector = document.querySelector<HTMLSelectElement>(
-        'select[name="version-example-pack"]',
-      )!
-      await act(async () => setValue(selector, "0.9.0"))
-      expect(update.disabled).toBe(false)
-      await act(async () => update.click())
-      expect(mounted.controller.submit).toHaveBeenLastCalledWith(pack, "switch", "0.9.0")
-    } finally {
-      await mounted.destroy()
-    }
+it("allows Registry Flagged latest updates and explicit version selection", async () => {
+  const pack = managedPack("example-pack", {
+    latestVersion: { version: "0.9.0", status: "Flagged" },
+    installed: { key: "example-pack", version: "0.8.0", enabled: true },
+  })
+  const mounted = await mountNodesManager(managerSnapshot([pack]))
+  try {
+    const update = document.querySelector<HTMLButtonElement>('[data-action="update"]')!
+    expect(update.disabled).toBe(false)
+    await act(async () => update.click())
+    expect(mounted.controller.submit).toHaveBeenCalledWith(pack, "update", undefined)
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-action="load-version"]')!.click(),
+    )
+    const selector = document.querySelector<HTMLSelectElement>(
+      'select[name="version-example-pack"]',
+    )!
+    await act(async () => setValue(selector, "0.9.0"))
+    expect(update.disabled).toBe(false)
+    await act(async () => update.click())
+    expect(mounted.controller.submit).toHaveBeenLastCalledWith(pack, "switch", "0.9.0")
+  } finally {
+    await mounted.destroy()
   }
 })
 

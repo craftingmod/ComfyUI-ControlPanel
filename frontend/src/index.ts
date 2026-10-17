@@ -25,7 +25,6 @@ function translateCurrent(
 type ControlPanelSettingsResponse = {
   manager_repository_data_override?: boolean
   manager_repository_data_channel?: string
-  allow_flagged_version_as_latest?: boolean
 }
 
 let managerSettingsSynced = false
@@ -114,34 +113,19 @@ async function syncManagerRepositoryDataOverrideSetting(): Promise<void> {
       data.manager_repository_data_channel === "github" ? "github" : "jsdelivr",
     ),
   )
-  await Promise.resolve(
-    app.extensionManager.setting.set(
-      settingId(SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST),
-      data.allow_flagged_version_as_latest === true,
-    ),
-  )
   managerSettingsSynced = true
 }
 
 function updateManagerBooleanSetting(route: string, enabled: boolean): void {
-  void fetchJson(route, { enabled })
-    .then(async () => {
-      if (
-        route === API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST &&
-        controlPanel.nodesManager.getSnapshot().isOpen
-      ) {
-        await controlPanel.nodesManager.refresh()
-      }
+  void fetchJson(route, { enabled }).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error)
+    app.extensionManager.toast.add({
+      severity: "error",
+      summary: "ComfyUI-ControlPanel",
+      detail: message,
+      life: 5000,
     })
-    .catch((error) => {
-      const message = error instanceof Error ? error.message : String(error)
-      app.extensionManager.toast.add({
-        severity: "error",
-        summary: "ComfyUI-ControlPanel",
-        detail: message,
-        life: 5000,
-      })
-    })
+  })
 }
 
 function updateManagerRepositoryDataChannelSetting(channel: unknown): void {
@@ -243,19 +227,6 @@ function createExtensionObject(): ManagerExtension {
         onChange: (value) => {
           if (managerSettingsSynced) {
             updateManagerRepositoryDataChannelSetting(value)
-          }
-        },
-      },
-      {
-        id: settingId(SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST),
-        name: translateCurrent("settings.allowFlaggedLatest"),
-        category: ["ControlPanel", "Manager", "Use flagged version as latest"],
-        type: "boolean",
-        tooltip: translateCurrent("settings.allowFlaggedLatestTooltip"),
-        defaultValue: false,
-        onChange: (value) => {
-          if (managerSettingsSynced) {
-            updateManagerBooleanSetting(API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST, value === true)
           }
         },
       },

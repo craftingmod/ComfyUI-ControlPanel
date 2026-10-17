@@ -234,27 +234,13 @@ def _summaries(connection: sqlite3.Connection) -> dict[str, dict[str, Any]]:
   return result
 
 
-def read_registry_cache(
-  db_path: Path, *, allow_flagged: bool = False
-) -> dict[str, Any]:
+def read_registry_cache(db_path: Path) -> dict[str, Any]:
   connection = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
   try:
     connection.execute("BEGIN")
     state = _state(connection)
     summaries = _summaries(connection)
     nodes = _catalog(connection)
-    for node in nodes:
-      summary = summaries.get(_node_id(node))
-      if summary is not None:
-        active = summary["latest_active"]
-        flagged = summary["latest_flagged"]
-        node["latest_version"] = active
-        if (
-          allow_flagged
-          and flagged is not None
-          and (active is None or _semver_key(flagged) > _semver_key(active))
-        ):
-          node["latest_version"] = flagged
     return {
       "nodes": nodes,
       "cache_metadata": state.get("cache_metadata", {}),
@@ -443,7 +429,7 @@ async def reconcile_installed_nodes(
     _save_summary(connection, node_id, versions, now, seeded=False)
 
 
-async def _refresh_latest_active(
+async def _refresh_latest_version(
   connection: sqlite3.Connection,
   session: Any,
   *,
@@ -471,31 +457,45 @@ async def _refresh_latest_active(
     data = await fetch_json(session, _url(nodes_url, params))
     if not isinstance(data, dict) or not isinstance(data.get("nodes"), list):
       raise ValueError(
-        "Comfy Registry active nodes response did not include a nodes list."
+        "Comfy Registry latest nodes response did not include a nodes list."
       )
     if data.get("totalPages", 1) not in (0, 1):
-      raise ValueError("Comfy Registry active nodes response was incomplete.")
+      raise ValueError("Comfy Registry latest nodes response was incomplete.")
     if "total" in data and (
       type(data["total"]) is not int or data["total"] != len(data["nodes"])
     ):
-      raise ValueError("Comfy Registry active nodes response included a partial batch.")
+      raise ValueError("Comfy Registry latest nodes response included a partial batch.")
     nodes = {}
     for node in data["nodes"]:
       if not isinstance(node, dict) or _node_id(node) not in batch:
         raise ValueError(
-          "Comfy Registry active nodes response included an unexpected node."
+          "Comfy Registry latest nodes response included an unexpected node."
         )
       nodes[_node_id(node)] = node
     for node_id in batch:
-      active = nodes.get(node_id, {}).get("latest_version")
-      if active is not None and not isinstance(active, dict):
-        raise ValueError("Comfy Registry active version was not an object.")
-      if not active or not active.get("version"):
-        active = None
-      if active is not None:
-        _semver_key(active)
-        if active.get("status") and _status(active) != "active":
-          raise ValueError("Comfy Registry latest_version was not Active.")
+      latest = nodes.get(node_id, {}).get("latest_version")
+      if latest is not None and not isinstance(latest, dict):
+        raise ValueError("Comfy Registry latest version was not an object.")
+      if not latest or not latest.get("version"):
+        latest = None
+      if latest is not None:
+        _semver_key(latest)
+        if latest.get("status") and _status(latest) not in ("active", "flagged"):
+          raise ValueError("Comfy Registry latest_version was not Active or Flagged.")
+      row = connection.execute(
+        "SELECT payload FROM nodes WHERE node_id=?", (node_id,)
+      ).fetchone()
+      if row is not None:
+        payload = json.loads(row[0])
+        payload["latest_version"] = latest
+        connection.execute(
+          "UPDATE nodes SET payload=? WHERE node_id=?", (_json(payload), node_id)
+        )
+      active = (
+        latest
+        if latest is None or not latest.get("status") or _status(latest) == "active"
+        else None
+      )
       summary = summaries[node_id]
       changed = not _same_version(active, summary["latest_active"])
       dirty = (
@@ -691,7 +691,7 @@ async def initial_sync(
     versions_url=versions_url,
     now=now,
   )
-  await _refresh_latest_active(
+  await _refresh_latest_version(
     connection,
     session,
     fetch_json=fetch_json,
@@ -759,7 +759,7 @@ async def incremental_sync(
     versions_url=versions_url,
     now=now,
   )
-  await _refresh_latest_active(
+  await _refresh_latest_version(
     connection,
     session,
     fetch_json=fetch_json,

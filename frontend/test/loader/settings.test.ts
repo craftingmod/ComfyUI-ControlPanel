@@ -7,8 +7,6 @@ import type { ManagerExtension } from "../../src/types.ts"
 
 const openPanel = vi.fn()
 const openNodesManager = vi.fn(async () => undefined)
-const refreshManager = vi.fn(async () => undefined)
-let managerOpen = false
 
 await mock.module("../../src/components/controlPanel.ts", () => ({
   createControlPanelController: () => ({
@@ -16,8 +14,6 @@ await mock.module("../../src/components/controlPanel.ts", () => ({
     openNodesManager,
     nodesManager: {
       open: openNodesManager,
-      getSnapshot: () => ({ isOpen: managerOpen }),
-      refresh: refreshManager,
     },
   }),
 }))
@@ -29,7 +25,7 @@ afterEach(() => {
   mock.restore()
 })
 
-it("categorizes every setting and restores the flagged toggle before posting user changes", async () => {
+it("categorizes settings and omits the obsolete Flagged latest toggle", async () => {
   // Isolate the virtual ComfyUI module from concurrent Bun.build() tests.
   if (process.env.CONTROLPANEL_ENTRYPOINT_TEST !== "1") {
     const child = Bun.spawn(
@@ -62,11 +58,7 @@ it("categorizes every setting and restores the flagged toggle before posting use
     if (route === API_ROUTES.STATUS) {
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
-    return new Response(
-      JSON.stringify(
-        route === API_ROUTES.SETTINGS ? { allow_flagged_version_as_latest: true } : { ok: true },
-      ),
-    )
+    return new Response(JSON.stringify({ ok: true }))
   })
   const set = vi.fn(async (id: string, value: unknown) => {
     extension?.settings?.find((setting) => setting.id === id)?.onChange?.(value)
@@ -132,36 +124,11 @@ it("categorizes every setting and restores the flagged toggle before posting use
       (setting) => setting.category?.length === 3 && setting.category[0] === "ControlPanel",
     ),
   ).toBe(true)
-  const toggle = settings.find(
-    (setting) => String(setting.id) === SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST,
-  )!
-  expect(toggle.defaultValue).toBe(false)
-  expect(toggle.name).toBe("Use flagged version as latest")
-  managerOpen = true
-  toggle.onChange?.(false)
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  expect(refreshManager).not.toHaveBeenCalled()
-  expect(fetchApi).not.toHaveBeenCalledWith(
-    API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST,
-    expect.anything(),
-  )
-
+  expect(settings.some((setting) => String(setting.id).includes("Flagged"))).toBe(false)
   fetchApi.mockClear()
   await extension!.setup?.(app)
   expect(fetchApi.mock.calls.map(([route]) => route)).toEqual([API_ROUTES.SETTINGS])
-  expect(set).toHaveBeenCalledWith(SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST, true)
-  expect(fetchApi).not.toHaveBeenCalledWith(
-    API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST,
-    expect.anything(),
+  expect(set.mock.calls.map(([id]) => id)).not.toContain(
+    "ControlPanel.Allow_Flagged_Version_As_Latest",
   )
-  toggle.onChange?.(false)
-  expect(fetchApi).toHaveBeenCalledWith(
-    API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST,
-    expect.objectContaining({
-      method: "POST",
-      body: JSON.stringify({ enabled: false }),
-    }),
-  )
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  expect(refreshManager).toHaveBeenCalledTimes(1)
 })

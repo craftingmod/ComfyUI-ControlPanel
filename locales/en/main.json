@@ -6,8 +6,7 @@
     "ComfyUI-ControlPanel": "ComfyUI-ControlPanel",
     "Enable Debug Logging": "Enable Debug Logging",
     "Replace Manager Repository Data": "Replace Manager Repository Data",
-    "Manager Repository Data Source": "Manager Repository Data Source",
-    "Use flagged version as latest": "Use flagged version as latest"
+    "Manager Repository Data Source": "Manager Repository Data Source"
   },
   "ComfyUI-ControlPanel": {
     "actionBar.panel": "Panel",
@@ -22,8 +21,6 @@
     "settings.repositoryOverrideTooltip": "Use ControlPanel's cached Manager repository data and force ComfyUI Manager offline channel settings",
     "settings.repositoryDataSource": "Manager Repository Data Source",
     "settings.repositoryDataSourceTooltip": "Choose where ControlPanel fetches ComfyUI Manager repository data",
-    "settings.allowFlaggedLatest": "Use flagged version as latest",
-    "settings.allowFlaggedLatestTooltip": "Use a newer cached Flagged version as the latest install and update target in Nodes Manager and Manager exports, preserving its Registry status",
     "settings.homepage": "Homepage",
     "panel.title": "⚙️ ComfyUI-ControlPanel",
     "panel.group.installUpdate": "Install / Update",
