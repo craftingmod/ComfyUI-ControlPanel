@@ -160,7 +160,10 @@ export function NodesManagerCard({
     : undefined
   const displayedVersion = installed
     ? installed.version
-    : !updateStatus || updateStatus === "active" || updateStatus === "nodeversionstatusactive"
+    : !updateStatus ||
+        updateStatus === "active" ||
+        updateStatus === "nodeversionstatusactive" ||
+        isFlagged(pack.latestVersion)
       ? pack.latestVersion?.version
       : undefined
   const busy = isOperationActive(operation)

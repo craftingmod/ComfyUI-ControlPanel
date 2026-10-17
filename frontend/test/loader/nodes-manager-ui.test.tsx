@@ -564,6 +564,28 @@ it("filters Git nodes with counts and search, including disabled Git installs", 
   }
 })
 
+it("shows uninstalled Active and Flagged latest versions while hiding Pending and Banned", async () => {
+  for (const [id, version, status, expected] of [
+    ["comfyui-animatediff-evolved", "1.6.0", "NodeVersionStatusFlagged", "1.6.0"],
+    ["comfyui_layerstyle", "2.0.42", "Flagged", "2.0.42"],
+    ["active-pack", "1.0.0", "NodeVersionStatusActive", "1.0.0"],
+    ["pending-pack", "1.0.0", "NodeVersionStatusPending", "—"],
+    ["banned-pack", "1.0.0", "NodeVersionStatusBanned", "—"],
+  ] as const) {
+    const pack = managedPack(id, { latestVersion: { version, status } })
+    const mounted = await mountNodesManager(managerSnapshot([pack]))
+    try {
+      expect(
+        document
+          .querySelector<HTMLButtonElement>('[data-action="load-version"]')
+          ?.textContent?.trim(),
+      ).toBe(expected)
+    } finally {
+      await mounted.destroy()
+    }
+  }
+})
+
 it("warns on the installed Flagged version, independent of the latest version's status", async () => {
   const flagged = { version: "0.9.0", status: "NodeVersionStatusFlagged" }
   for (const [installedVersion, latestVersion, latestFlaggedVersion, expected] of [
