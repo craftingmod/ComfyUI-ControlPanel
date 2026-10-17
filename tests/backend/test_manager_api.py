@@ -1651,7 +1651,8 @@ def test_startup_registry_cache_deploys_sqlite_projection(monkeypatch, tmp_path)
   )
   read_paths = []
 
-  def fake_read_registry_cache(path):
+  def fake_read_registry_cache(path, *, allow_flagged=False):
+    assert allow_flagged is True
     read_paths.append(path)
     return {
       "nodes": [

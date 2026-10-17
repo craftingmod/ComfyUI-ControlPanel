@@ -129,13 +129,16 @@ def read_local_catalog(
   database_path: Path,
   legacy_json_path: Path,
   *,
+  allow_flagged: bool = False,
   manager_json_path: Path | None = None,
 ) -> dict[str, Any]:
   sqlite_error: Exception | None = None
   legacy_error: Exception | None = None
   if database_path.is_file():
     try:
-      data = registry_cache.read_registry_cache(database_path)
+      data = registry_cache.read_registry_cache(
+        database_path, allow_flagged=allow_flagged
+      )
       return _catalog_payload(data, "sqlite")
     except (
       OSError,

@@ -7,6 +7,7 @@ import type { ManagerExtension } from "../../src/types.ts"
 
 const openPanel = vi.fn()
 const openNodesManager = vi.fn(async () => undefined)
+const refreshManager = vi.fn(async () => undefined)
 
 await mock.module("../../src/components/controlPanel.ts", () => ({
   createControlPanelController: () => ({
@@ -14,6 +15,8 @@ await mock.module("../../src/components/controlPanel.ts", () => ({
     openNodesManager,
     nodesManager: {
       open: openNodesManager,
+      getSnapshot: () => ({ isOpen: true }),
+      refresh: refreshManager,
     },
   }),
 }))
@@ -25,7 +28,7 @@ afterEach(() => {
   mock.restore()
 })
 
-it("categorizes settings and omits the obsolete Flagged latest toggle", async () => {
+it("defaults Flagged latest to enabled and persists user changes after startup sync", async () => {
   // Isolate the virtual ComfyUI module from concurrent Bun.build() tests.
   if (process.env.CONTROLPANEL_ENTRYPOINT_TEST !== "1") {
     const child = Bun.spawn(
@@ -124,11 +127,28 @@ it("categorizes settings and omits the obsolete Flagged latest toggle", async ()
       (setting) => setting.category?.length === 3 && setting.category[0] === "ControlPanel",
     ),
   ).toBe(true)
-  expect(settings.some((setting) => String(setting.id).includes("Flagged"))).toBe(false)
+  const toggle = settings.find(
+    (setting) => String(setting.id) === SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST,
+  )!
+  expect(toggle.defaultValue).toBe(true)
+  toggle.onChange?.(false)
+  expect(fetchApi).not.toHaveBeenCalledWith(
+    API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST,
+    expect.anything(),
+  )
   fetchApi.mockClear()
   await extension!.setup?.(app)
   expect(fetchApi.mock.calls.map(([route]) => route)).toEqual([API_ROUTES.SETTINGS])
-  expect(set.mock.calls.map(([id]) => id)).not.toContain(
-    "ControlPanel.Allow_Flagged_Version_As_Latest",
+  expect(set).toHaveBeenCalledWith(SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST, true)
+  expect(fetchApi).not.toHaveBeenCalledWith(
+    API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST,
+    expect.anything(),
   )
+  toggle.onChange?.(false)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(fetchApi).toHaveBeenCalledWith(
+    API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST,
+    expect.objectContaining({ method: "POST", body: JSON.stringify({ enabled: false }) }),
+  )
+  expect(refreshManager).toHaveBeenCalledTimes(1)
 })

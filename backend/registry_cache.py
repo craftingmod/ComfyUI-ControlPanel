@@ -234,13 +234,24 @@ def _summaries(connection: sqlite3.Connection) -> dict[str, dict[str, Any]]:
   return result
 
 
-def read_registry_cache(db_path: Path) -> dict[str, Any]:
+def read_registry_cache(
+  db_path: Path, *, allow_flagged: bool = False
+) -> dict[str, Any]:
   connection = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
   try:
     connection.execute("BEGIN")
     state = _state(connection)
     summaries = _summaries(connection)
     nodes = _catalog(connection)
+    if allow_flagged:
+      for node in nodes:
+        summary = summaries.get(_node_id(node))
+        flagged = summary["latest_flagged"] if summary else None
+        latest = node.get("latest_version")
+        if flagged is not None and (
+          latest is None or _semver_key(flagged) > _semver_key(latest)
+        ):
+          node["latest_version"] = flagged
     return {
       "nodes": nodes,
       "cache_metadata": state.get("cache_metadata", {}),
@@ -766,7 +777,7 @@ async def incremental_sync(
     nodes_url=nodes_url,
     metadata=metadata,
     now=now,
-    force=compatibility_changed,
+    force=compatibility_changed or full_catalog,
   )
   if due:
     touched = await _sync_activity(

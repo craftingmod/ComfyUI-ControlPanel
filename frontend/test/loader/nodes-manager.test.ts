@@ -12,6 +12,30 @@ import {
 } from "../../src/services/nodesManager.ts"
 
 describe("Nodes Manager service contracts", () => {
+  it("includes newer cached Flagged versions in Updates Available by default", () => {
+    const flagged = { version: "2.0.0", status: "NodeVersionStatusFlagged" }
+    const catalog = {
+      nodes: [
+        {
+          id: "pack",
+          latest_version: { version: "1.0.0", status: "Active" },
+          latest_flagged_version: flagged,
+        },
+      ],
+    }
+    const installed = { pack: { cnr_id: "pack", ver: "1.0.0", enabled: true } }
+    const enabled = normalizeManagedPacks(catalog, installed)
+    expect(filterAndSortManagedPacks(enabled, "updates", "", "name")).toHaveLength(1)
+    expect(enabled[0]?.latestVersion).toEqual(flagged)
+    expect(buildManagerQueuePayload(enabled[0]!, "update", "client", "task")).toMatchObject({
+      kind: "install",
+      params: { selected_version: "2.0.0", version: "2.0.0" },
+    })
+    const disabled = normalizeManagedPacks(catalog, installed, false)
+    expect(filterAndSortManagedPacks(disabled, "updates", "", "name")).toHaveLength(0)
+    expect(disabled[0]?.latestVersion?.version).toBe("1.0.0")
+  })
+
   it("uses the Registry Flagged latest without promoting a newer cached Flagged version", () => {
     const latest = { version: "2.0.0", status: "NodeVersionStatusFlagged" }
     const [pack] = normalizeManagedPacks(
@@ -25,13 +49,13 @@ describe("Nodes Manager service contracts", () => {
         ],
       },
       { pack: { cnr_id: "pack", ver: "1.0.0", enabled: true } },
+      false,
     )
     expect(pack?.latestVersion).toEqual(latest)
-    expect(pack?.updateAvailable).toBe(true)
-    expect(buildManagerQueuePayload(pack!, "update", "client", "task")).toMatchObject({
-      kind: "install",
-      params: { selected_version: "2.0.0", version: "2.0.0" },
-    })
+    expect(pack?.updateAvailable).toBe(false)
+    expect(() => buildManagerQueuePayload(pack!, "update", "client", "task")).toThrow(
+      "Use flagged version as latest",
+    )
   })
 
   it("preserves cached Flagged version metadata separately from the latest install target", () => {

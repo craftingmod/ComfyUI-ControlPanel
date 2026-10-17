@@ -357,6 +357,7 @@ def _route_api(*, denied=None, tmp_path=None):
     _error_response=lambda message, status=500: {"status": status, "error": message},
     controlpanel_manager_cache_source_dir=lambda: tmp_path or Path("."),
     registry_cache_path=lambda _source: Path("missing.db"),
+    is_allow_flagged_version_as_latest_enabled=lambda: True,
     manager_user_dir=lambda: Path("manager-user"),
     manager_url_cache_filename=lambda _url: "hashed_nodes.json",
   )

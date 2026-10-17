@@ -481,6 +481,10 @@ export function NodesManagerCard({
                   disabled={
                     !actionsEnabled ||
                     busy ||
+                    (!showVersionPanel &&
+                      !isGit &&
+                      isFlagged(targetVersion) &&
+                      pack.useFlaggedVersionAsLatest === false) ||
                     selectionUnavailable ||
                     (showVersionPanel && !canSwitch)
                   }

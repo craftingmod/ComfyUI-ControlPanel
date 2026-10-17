@@ -97,6 +97,7 @@ _CACHE_MAX_AGE_SECONDS = 86400
 _CONTROLPANEL_CONFIG_FILENAME = "config.json"
 _SETTING_MANAGER_REPOSITORY_OVERRIDE = "manager_repository_data_override_enabled"
 _SETTING_MANAGER_REPOSITORY_DATA_CHANNEL = "manager_repository_data_channel"
+_SETTING_ALLOW_FLAGGED_VERSION_AS_LATEST = "allow_flagged_version_as_latest"
 _SETTING_PREVIOUS_MANAGER_NETWORK_MODE = "manager_network_mode_before_override"
 _SETTING_MANAGER_CONFIG_WAS_MISSING = "manager_config_was_missing_before_override"
 _SETTING_ALLOW_REMOTE_CONTROL = "allow_remote_control"
@@ -242,6 +243,27 @@ def is_manager_repository_override_enabled(user_dir: Path | None = None) -> bool
   return bool(
     read_controlpanel_settings(user_dir).get(_SETTING_MANAGER_REPOSITORY_OVERRIDE)
   )
+
+
+def is_allow_flagged_version_as_latest_enabled(user_dir: Path | None = None) -> bool:
+  return (
+    read_controlpanel_settings(user_dir).get(
+      _SETTING_ALLOW_FLAGGED_VERSION_AS_LATEST, True
+    )
+    is True
+  )
+
+
+def set_allow_flagged_version_as_latest(
+  enabled: bool, user_dir: Path | None = None
+) -> dict[str, Any]:
+  settings = read_controlpanel_settings(user_dir)
+  settings[_SETTING_ALLOW_FLAGGED_VERSION_AS_LATEST] = enabled
+  write_controlpanel_settings(settings, user_dir)
+  deployment = {"skipped": "Manager repository data override is disabled."}
+  if is_manager_repository_override_enabled(user_dir):
+    deployment = deploy_controlpanel_manager_cache_to_manager(user_dir)
+  return {"enabled": enabled, "deployment": deployment}
 
 
 def is_remote_control_allowed(user_dir: Path | None = None) -> bool:
@@ -689,7 +711,10 @@ def deploy_registry_nodes_cache_to_manager(
   data = None
   if source_path.exists():
     try:
-      data = registry_cache.read_registry_cache(source_path)
+      data = registry_cache.read_registry_cache(
+        source_path,
+        allow_flagged=is_allow_flagged_version_as_latest_enabled(user_dir),
+      )
       data.pop("installed_node_versions", None)
     except (sqlite3.DatabaseError, ValueError, TypeError):
       on_line and on_line(

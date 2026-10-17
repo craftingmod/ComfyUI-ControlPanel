@@ -6,7 +6,8 @@
     "ComfyUI-ControlPanel": "ComfyUI-ControlPanel",
     "Enable Debug Logging": "Enable Debug Logging",
     "Replace Manager Repository Data": "Replace Manager Repository Data",
-    "Manager Repository Data Source": "Manager Repository Data Source"
+    "Manager Repository Data Source": "Manager Repository Data Source",
+    "Use flagged version as latest": "Use flagged version as latest"
   },
   "ComfyUI-ControlPanel": {
     "actionBar.panel": "Panel",
@@ -342,6 +343,8 @@
     "operation.restoreNodesLabel": "Restore Custom Nodes",
     "error.updateJobMissing": "The update job response did not include job details.",
     "error.nodeRestoreInvalid": "This is not a supported node restore manifest.",
-    "index.hiddenRemote": "ComfyUI-ControlPanel is hidden because this client is not localhost."
+    "index.hiddenRemote": "ComfyUI-ControlPanel is hidden because this client is not localhost.",
+    "settings.allowFlaggedLatest": "Use flagged version as latest",
+    "settings.allowFlaggedLatestTooltip": "Include newer cached Flagged versions in Updates Available and use them as the latest install and update targets in Nodes Manager and Manager exports. Registry status and Manager installation policy are preserved."
   }
 }

@@ -27,6 +27,7 @@ function workflowNode(type: string, pythonModule?: string) {
 }
 
 type FixtureOptions = {
+  useFlaggedLatest?: boolean
   localPacks?: unknown[]
   catalog?: RegistryNode[]
   gitJobStatus?: "running" | "succeeded"
@@ -157,7 +158,7 @@ function createFixture(options: FixtureOptions = {}) {
       return workflowGraph
     },
     extensionManager: {
-      setting: { get: () => undefined },
+      setting: { get: () => options.useFlaggedLatest },
       toast: { add: (toast: unknown) => toasts.push(toast) },
       dialog: {
         confirm: async (value: { title: string; message: string }) => {
@@ -188,6 +189,20 @@ function createFixture(options: FixtureOptions = {}) {
 }
 
 describe("Nodes Manager controller", () => {
+  it("keeps Flagged updates out of bulk operations when the setting is disabled", async () => {
+    const fixture = createFixture({
+      useFlaggedLatest: false,
+      catalog: [{ id: "pack-id", latest_version: { version: "2.0.0", status: "Flagged" } }],
+    })
+    await fixture.controller.open()
+    const pack = fixture.controller.getSnapshot().packs[0]!
+    expect(pack.updateAvailable).toBe(false)
+    expect(await fixture.controller.submit(pack, "update")).toBe(false)
+    await fixture.controller.submitAll("updates")
+    expect(fixture.counts().enqueueCount).toBe(0)
+    fixture.controller.close()
+  })
+
   it("continues bulk updates after Manager reserves existing Registry version changes for restart", async () => {
     const fixture = createFixture({
       catalog: ["first", "second"].map((id) => ({

@@ -160,6 +160,53 @@ def test_registry_latest_is_authoritative_and_preserves_status(
   assert api.path.read_bytes() == original
 
 
+@pytest.mark.parametrize(
+  "latest_number,flagged_number,expected",
+  [
+    ("0.9.0", "0.10.0", "0.10.0"),
+    ("0.10.0", "0.9.0", "0.10.0"),
+    ("1.0.0", "1.0.0-rc.1", "1.0.0"),
+    (None, "0.10.0", "0.10.0"),
+  ],
+)
+def test_flagged_projection_is_optional_and_does_not_modify_sqlite(
+  tmp_path, latest_number, flagged_number, expected
+):
+  api = Registry(tmp_path)
+  latest = version("a", latest_number) if latest_number else None
+  flagged = version("a", flagged_number, FLAGGED)
+  api.active["a"] = latest
+  api.histories["a"] = [flagged, *([latest] if latest else [])]
+  api.feed = [flagged]
+  api.sync()
+  original = api.path.read_bytes()
+  projected = registry_cache.read_registry_cache(api.path, allow_flagged=True)
+  assert projected["nodes"][0]["latest_version"]["version"] == expected
+  assert api.data()["nodes"][0]["latest_version"] == latest
+  assert api.path.read_bytes() == original
+
+
+def test_flagged_setting_defaults_to_enabled_and_preserves_saved_choice(
+  tmp_path, monkeypatch
+):
+  user_dir = tmp_path / "user"
+  assert manager_api.is_allow_flagged_version_as_latest_enabled(user_dir) is True
+  manager_api.write_controlpanel_settings(
+    {"manager_repository_data_override_enabled": True}, user_dir
+  )
+  deployments = []
+  monkeypatch.setattr(
+    manager_api,
+    "deploy_controlpanel_manager_cache_to_manager",
+    lambda directory: deployments.append(directory) or {},
+  )
+  for enabled in (False, True):
+    manager_api.set_allow_flagged_version_as_latest(enabled, user_dir)
+    assert manager_api.is_allow_flagged_version_as_latest_enabled(user_dir) is enabled
+    assert manager_api.is_manager_repository_override_enabled(user_dir) is True
+  assert deployments == [user_dir, user_dir]
+
+
 @pytest.mark.parametrize("status", [PENDING, "NodeVersionStatusBanned"])
 def test_registry_latest_rejects_noninstallable_status_without_publishing(
   tmp_path, status
@@ -507,6 +554,27 @@ def test_comfyui_change_refreshes_active_batch_inside_ttl_without_reseeding(tmp_
   assert api.history_calls() == []
   assert api.summary()["version_seeded_at"] == previous_seed
   assert api.state()["versions_anchor_id"] == previous_anchor
+
+
+def test_manual_rebuild_refreshes_latest_inside_ttl_without_reseeding(tmp_path):
+  api = Registry(tmp_path)
+  api.active["a"] = version("a", "2.9.3")
+  api.histories["a"] = [api.active["a"]]
+  api.feed = [api.active["a"]]
+  api.sync()
+  previous_seed = api.summary()["version_seeded_at"]
+  previous_anchor = api.state()["versions_anchor_id"]
+  latest = version("a", "2.10.1", FLAGGED, "2026-06-01T00:01:00Z")
+  api.active["a"] = latest
+  api.requests.clear()
+  api.now += 10
+  api.sync(force=True)
+  assert api.data()["nodes"][0]["latest_version"] == latest
+  assert api.summary()["last_active_refresh"] == api.now
+  assert api.summary()["version_seeded_at"] == previous_seed
+  assert api.state()["versions_anchor_id"] == previous_anchor
+  assert len([params for path, params in api.requests if path == "/nodes"]) == 1
+  assert api.history_calls() == []
 
 
 def test_summary_compares_semver_prerelease_numbers_and_release_precedence(tmp_path):
