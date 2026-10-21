@@ -7,7 +7,8 @@
     "Enable Debug Logging": "Enable Debug Logging",
     "Replace Manager Repository Data": "Replace Manager Repository Data",
     "Manager Repository Data Source": "Manager Repository Data Source",
-    "Use flagged version as latest": "Use flagged version as latest"
+    "Use flagged version as latest": "Use flagged version as latest",
+    "Update ComfyUI to Nightly": "Update ComfyUI to Nightly"
   },
   "ComfyUI-ControlPanel": {
     "actionBar.panel": "Panel",
@@ -345,6 +346,8 @@
     "error.nodeRestoreInvalid": "This is not a supported node restore manifest.",
     "index.hiddenRemote": "ComfyUI-ControlPanel is hidden because this client is not localhost.",
     "settings.allowFlaggedLatest": "Use flagged version as latest",
-    "settings.allowFlaggedLatestTooltip": "Include newer cached Flagged versions in Updates Available and use them as the latest install and update targets in Nodes Manager and Manager exports. Registry status and Manager installation policy are preserved."
+    "settings.allowFlaggedLatestTooltip": "Include newer cached Flagged versions in Updates Available and use them as the latest install and update targets in Nodes Manager and Manager exports. Registry status and Manager installation policy are preserved.",
+    "settings.updateComfyUiNightly": "Use Nightly for ComfyUI updates",
+    "settings.updateComfyUiNightlyTooltip": "When enabled, Update ComfyUI runs comfy update comfy --version nightly."
   }
 }

@@ -7,7 +7,8 @@
     "Enable Debug Logging": "디버그 로그 사용",
     "Replace Manager Repository Data": "매니저 저장소 데이터 대체",
     "Manager Repository Data Source": "매니저 저장소 데이터 출처",
-    "Use flagged version as latest": "Flagged 버전을 최신 버전으로 사용"
+    "Use flagged version as latest": "Flagged 버전을 최신 버전으로 사용",
+    "Update ComfyUI to Nightly": "ComfyUI를 Nightly로 업데이트"
   },
   "ComfyUI-ControlPanel": {
     "actionBar.panel": "패널",
@@ -345,6 +346,8 @@
     "error.nodeRestoreInvalid": "지원하지 않는 노드 복원 매니페스트입니다.",
     "index.hiddenRemote": "현재 클라이언트가 localhost가 아니므로 ComfyUI-ControlPanel을 숨겼습니다.",
     "settings.allowFlaggedLatest": "Flagged 버전을 최신 버전으로 사용",
-    "settings.allowFlaggedLatestTooltip": "더 최신인 캐시된 Flagged 버전을 Updates Available에 포함하고 Nodes Manager와 Manager 내보내기의 최신 설치, 업데이트 대상으로 사용합니다. Registry 상태와 Manager 설치 정책은 유지됩니다."
+    "settings.allowFlaggedLatestTooltip": "더 최신인 캐시된 Flagged 버전을 Updates Available에 포함하고 Nodes Manager와 Manager 내보내기의 최신 설치, 업데이트 대상으로 사용합니다. Registry 상태와 Manager 설치 정책은 유지됩니다.",
+    "settings.updateComfyUiNightly": "ComfyUI 업데이트에 Nightly 사용",
+    "settings.updateComfyUiNightlyTooltip": "활성화하면 ComfyUI 업데이트 시 comfy update comfy --version nightly를 실행합니다."
   }
 }

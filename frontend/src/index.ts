@@ -26,6 +26,7 @@ type ControlPanelSettingsResponse = {
   manager_repository_data_override?: boolean
   manager_repository_data_channel?: string
   allow_flagged_version_as_latest?: boolean
+  update_comfyui_nightly?: boolean
 }
 
 let managerSettingsSynced = false
@@ -118,6 +119,12 @@ async function syncManagerRepositoryDataOverrideSetting(): Promise<void> {
     app.extensionManager.setting.set(
       settingId(SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST),
       data.allow_flagged_version_as_latest !== false,
+    ),
+  )
+  await Promise.resolve(
+    app.extensionManager.setting.set(
+      settingId(SETTINGS_IDS.UPDATE_COMFYUI_NIGHTLY),
+      data.update_comfyui_nightly === true,
     ),
   )
   managerSettingsSynced = true
@@ -256,6 +263,19 @@ function createExtensionObject(): ManagerExtension {
         onChange: (value) => {
           if (managerSettingsSynced) {
             updateManagerBooleanSetting(API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST, value === true)
+          }
+        },
+      },
+      {
+        id: settingId(SETTINGS_IDS.UPDATE_COMFYUI_NIGHTLY),
+        name: translateCurrent("settings.updateComfyUiNightly"),
+        category: ["ControlPanel", "General", "Update ComfyUI to Nightly"],
+        type: "boolean",
+        tooltip: translateCurrent("settings.updateComfyUiNightlyTooltip"),
+        defaultValue: false,
+        onChange: (value) => {
+          if (managerSettingsSynced) {
+            updateManagerBooleanSetting(API_ROUTES.UPDATE_COMFYUI_NIGHTLY, value === true)
           }
         },
       },

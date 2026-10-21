@@ -98,6 +98,7 @@ _CONTROLPANEL_CONFIG_FILENAME = "config.json"
 _SETTING_MANAGER_REPOSITORY_OVERRIDE = "manager_repository_data_override_enabled"
 _SETTING_MANAGER_REPOSITORY_DATA_CHANNEL = "manager_repository_data_channel"
 _SETTING_ALLOW_FLAGGED_VERSION_AS_LATEST = "allow_flagged_version_as_latest"
+_SETTING_UPDATE_COMFYUI_NIGHTLY = "update_comfyui_nightly"
 _SETTING_PREVIOUS_MANAGER_NETWORK_MODE = "manager_network_mode_before_override"
 _SETTING_MANAGER_CONFIG_WAS_MISSING = "manager_config_was_missing_before_override"
 _SETTING_ALLOW_REMOTE_CONTROL = "allow_remote_control"
@@ -264,6 +265,21 @@ def set_allow_flagged_version_as_latest(
   if is_manager_repository_override_enabled(user_dir):
     deployment = deploy_controlpanel_manager_cache_to_manager(user_dir)
   return {"enabled": enabled, "deployment": deployment}
+
+
+def is_comfyui_nightly_update_enabled(user_dir: Path | None = None) -> bool:
+  return (
+    read_controlpanel_settings(user_dir).get(_SETTING_UPDATE_COMFYUI_NIGHTLY) is True
+  )
+
+
+def set_comfyui_nightly_update_enabled(
+  enabled: bool, user_dir: Path | None = None
+) -> dict[str, Any]:
+  settings = read_controlpanel_settings(user_dir)
+  settings[_SETTING_UPDATE_COMFYUI_NIGHTLY] = enabled
+  write_controlpanel_settings(settings, user_dir)
+  return {"enabled": enabled}
 
 
 def is_remote_control_allowed(user_dir: Path | None = None) -> bool:
@@ -1123,11 +1139,12 @@ async def check_for_updates(
 async def update_comfyui_with_comfy_cli(
   on_line: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-  command = comfy_cli_command("update", "comfy", "--version", "latest")
+  version = "nightly" if is_comfyui_nightly_update_enabled() else "latest"
+  command = comfy_cli_command("update", "comfy", "--version", version)
   result = await run_command_stream(
     command, COMFYUI_ROOT, timeout=3600, on_line=on_line
   )
-  return manager_cli.update_comfyui_response(result)
+  return manager_cli.update_comfyui_response(result, version=version)
 
 
 async def show_environment_with_comfy_cli() -> dict[str, Any]:
@@ -1341,7 +1358,7 @@ async def _job_rebuild_manager_cache(job: ManagerJob) -> dict[str, Any]:
 
 
 async def _job_update_comfyui(job: ManagerJob) -> dict[str, Any]:
-  job.append_log("Updating ComfyUI to the latest version with Comfy CLI.")
+  job.append_log("Updating ComfyUI with Comfy CLI.")
   return await update_comfyui_with_comfy_cli(job.append_log)
 
 

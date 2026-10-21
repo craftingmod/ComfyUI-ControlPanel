@@ -28,7 +28,7 @@ afterEach(() => {
   mock.restore()
 })
 
-it("defaults Flagged latest to enabled and persists user changes after startup sync", async () => {
+it("syncs and persists ControlPanel settings after startup", async () => {
   // Isolate the virtual ComfyUI module from concurrent Bun.build() tests.
   if (process.env.CONTROLPANEL_ENTRYPOINT_TEST !== "1") {
     const child = Bun.spawn(
@@ -61,7 +61,12 @@ it("defaults Flagged latest to enabled and persists user changes after startup s
     if (route === API_ROUTES.STATUS) {
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
-    return new Response(JSON.stringify({ ok: true }))
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        update_comfyui_nightly: route === API_ROUTES.SETTINGS,
+      }),
+    )
   })
   const set = vi.fn(async (id: string, value: unknown) => {
     extension?.settings?.find((setting) => setting.id === id)?.onChange?.(value)
@@ -130,7 +135,11 @@ it("defaults Flagged latest to enabled and persists user changes after startup s
   const toggle = settings.find(
     (setting) => String(setting.id) === SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST,
   )!
+  const nightlyToggle = settings.find(
+    (setting) => String(setting.id) === SETTINGS_IDS.UPDATE_COMFYUI_NIGHTLY,
+  )!
   expect(toggle.defaultValue).toBe(true)
+  expect(nightlyToggle.defaultValue).toBe(false)
   toggle.onChange?.(false)
   expect(fetchApi).not.toHaveBeenCalledWith(
     API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST,
@@ -140,6 +149,7 @@ it("defaults Flagged latest to enabled and persists user changes after startup s
   await extension!.setup?.(app)
   expect(fetchApi.mock.calls.map(([route]) => route)).toEqual([API_ROUTES.SETTINGS])
   expect(set).toHaveBeenCalledWith(SETTINGS_IDS.ALLOW_FLAGGED_VERSION_AS_LATEST, true)
+  expect(set).toHaveBeenCalledWith(SETTINGS_IDS.UPDATE_COMFYUI_NIGHTLY, true)
   expect(fetchApi).not.toHaveBeenCalledWith(
     API_ROUTES.ALLOW_FLAGGED_VERSION_AS_LATEST,
     expect.anything(),
@@ -151,4 +161,10 @@ it("defaults Flagged latest to enabled and persists user changes after startup s
     expect.objectContaining({ method: "POST", body: JSON.stringify({ enabled: false }) }),
   )
   expect(refreshManager).toHaveBeenCalledTimes(1)
+  nightlyToggle.onChange?.(false)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(fetchApi).toHaveBeenCalledWith(
+    API_ROUTES.UPDATE_COMFYUI_NIGHTLY,
+    expect.objectContaining({ method: "POST", body: JSON.stringify({ enabled: false }) }),
+  )
 })

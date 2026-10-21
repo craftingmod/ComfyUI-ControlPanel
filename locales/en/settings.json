@@ -21,5 +21,9 @@
   "ControlPanel_Allow_Flagged_Version_As_Latest": {
     "name": "Use flagged version as latest",
     "tooltip": "Include newer cached Flagged versions in Updates Available and use them as the latest install and update targets in Nodes Manager and Manager exports. Registry status and Manager installation policy are preserved."
+  },
+  "ControlPanel_Update_ComfyUI_Nightly": {
+    "name": "Use Nightly for ComfyUI updates",
+    "tooltip": "When enabled, Update ComfyUI uses git default branch instead of latest release."
   }
 }

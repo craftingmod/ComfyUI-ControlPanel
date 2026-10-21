@@ -7,11 +7,13 @@ from typing import Any
 from .manager_process import ManagerApiError
 
 
-def update_comfyui_response(result: dict[str, Any]) -> dict[str, Any]:
+def update_comfyui_response(
+  result: dict[str, Any], version: str = "latest"
+) -> dict[str, Any]:
   return {
     "provider": "comfy-cli",
     "restart_required": True,
-    "version": "latest",
+    "version": version,
     "result": result,
   }
 

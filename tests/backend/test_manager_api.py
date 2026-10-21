@@ -623,7 +623,7 @@ def test_job_update_comfyui_uses_comfy_cli_updater(monkeypatch):
 
   assert calls == ["comfy-cli"]
   assert result["provider"] == "comfy-cli"
-  assert "latest version with Comfy CLI" in job.logs[0]
+  assert "Updating ComfyUI with Comfy CLI" in job.logs[0]
   assert "comfy-cli updater ran" in job.logs[1]
 
 
@@ -1900,7 +1900,10 @@ def test_check_for_updates_handles_missing_fallback_branch_and_detached_head(
   assert result["nodes"][1]["status"] == "Detached HEAD"
 
 
-def test_update_comfyui_uses_comfy_cli_latest_version(monkeypatch, tmp_path):
+@pytest.mark.parametrize(("nightly", "version"), [(False, "latest"), (True, "nightly")])
+def test_update_comfyui_uses_selected_comfy_cli_version(
+  monkeypatch, tmp_path, nightly, version
+):
   calls = []
 
   async def fake_run_command_stream(args, cwd, timeout=1800, on_line=None):
@@ -1909,6 +1912,7 @@ def test_update_comfyui_uses_comfy_cli_latest_version(monkeypatch, tmp_path):
 
   on_line = lambda _line: None
   monkeypatch.setattr(manager_api, "COMFYUI_ROOT", tmp_path)
+  monkeypatch.setattr(manager_api, "is_comfyui_nightly_update_enabled", lambda: nightly)
   monkeypatch.setattr(
     manager_api, "_find_executable", lambda command: f"/bin/{command}"
   )
@@ -1925,7 +1929,7 @@ def test_update_comfyui_uses_comfy_cli_latest_version(monkeypatch, tmp_path):
         "update",
         "comfy",
         "--version",
-        "latest",
+        version,
       ],
       tmp_path,
       3600,
@@ -1933,8 +1937,18 @@ def test_update_comfyui_uses_comfy_cli_latest_version(monkeypatch, tmp_path):
     )
   ]
   assert result["provider"] == "comfy-cli"
-  assert result["version"] == "latest"
+  assert result["version"] == version
   assert result["restart_required"] is True
+
+
+def test_comfyui_nightly_update_setting_is_persisted(tmp_path):
+  assert manager_api.is_comfyui_nightly_update_enabled(tmp_path) is False
+  assert manager_api.set_comfyui_nightly_update_enabled(True, tmp_path) == {
+    "enabled": True
+  }
+  assert manager_api.is_comfyui_nightly_update_enabled(tmp_path) is True
+  manager_api.set_comfyui_nightly_update_enabled(False, tmp_path)
+  assert manager_api.is_comfyui_nightly_update_enabled(tmp_path) is False
 
 
 def test_latest_version_tag_prefers_highest_semver_tag():
